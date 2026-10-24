@@ -23,6 +23,7 @@ _VALID_TEMPLATES = {
     "download_to_userpath",
     "tcp_download_to_userpath",
     "ir_run_command",
+    "ir_reverse_shell",
 }
 
 

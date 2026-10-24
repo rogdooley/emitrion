@@ -200,7 +200,7 @@ def main() -> None:
             "move_then_run", "tcp_download", "tcp_stager", "bind_shell",
             "http_download", "http_exfil", "process_replace",
             "service_persist", "dll_inject", "registry_persist",
-            "check_path", "ir_run_command",
+            "check_path", "ir_run_command", "ir_reverse_shell",
         ],
     )
     parser.add_argument("--out", default="verify_out", help="Output directory")

