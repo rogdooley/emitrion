@@ -16,7 +16,9 @@ import struct
 
 from ..api_database import API_DATABASE, STRUCT_DATABASE
 from ..encode import (
+    encode_byte,
     encode_dword,
+    encode_word,
     safe_call_mem,
     safe_dword_store,
     safe_lea,
@@ -24,7 +26,6 @@ from ..encode import (
     safe_mem_store,
     safe_push_imm,
     safe_word_store,
-    encode_word,
 )
 from ..stack_alloc import StackLayout
 from .catalog import get_abi
@@ -88,6 +89,8 @@ class _LoweringContext:
         self.bc = badchars
         self.config = config
         self.constants: dict[str, int] = {}
+        self.struct_types: dict[str, str] = {}
+        self._hang_counter = 0
 
     def lower_block(self, block: Block) -> list[str]:
         lines: list[str] = []
@@ -104,11 +107,15 @@ class _LoweringContext:
             self.constants[op.name] = op.value
             return [f"    ; const {op.name} = 0x{op.value:x}"]
 
-        if isinstance(op, (ConstructString, AllocateLocal, AllocateStruct)):
+        if isinstance(op, AllocateStruct):
+            self.struct_types[op.name] = op.struct_type
+            return []
+
+        if isinstance(op, (ConstructString, AllocateLocal)):
             return []
 
         if isinstance(op, ZeroStruct):
-            return []
+            return self._lower_zero_struct(op)
 
         if isinstance(op, WriteStructField):
             return self._lower_write_struct_field(op)
@@ -223,56 +230,71 @@ class _LoweringContext:
 
     def _lower_write_struct_field(self, op: WriteStructField) -> list[str]:
         """Lower a WriteStructField to a mov into the struct's field offset."""
+        stype = self.struct_types.get(op.struct_name)
+        if stype is None:
+            return [f"    ; ERROR: WriteStructField '{op.struct_name}' has no known type"]
+
+        st_rec = STRUCT_DATABASE.get(stype)
+        if st_rec is None:
+            return [f"    ; ERROR: struct type '{stype}' not in database"]
+
+        field_info = None
+        for f in st_rec.fields:
+            if f.name == op.field_name:
+                field_info = f
+                break
+
+        if field_info is None:
+            return [f"    ; ERROR: field '{op.field_name}' not in '{stype}'"]
+
         lines: list[str] = []
-        struct_off = -self.layout.slot(op.struct_name).offset
-        struct_type = None
-
-        for block_op in []:
-            pass
-
-        slot = self.layout.slot(op.struct_name)
-        stype = slot.name
-        for st_name, st_rec in STRUCT_DATABASE.items():
-            if st_name == stype or any(
-                s.name == stype for s in self.layout.slots_by_category("structure")
-            ):
-                for f in st_rec.fields:
-                    if f.name == op.field_name:
-                        struct_type = st_name
-                        field_offset = f.offset
-                        field_size = f.size
-                        break
-                if struct_type:
-                    break
-
-        if struct_type is None:
-            for st_name, st_rec in STRUCT_DATABASE.items():
-                for f in st_rec.fields:
-                    if f.name == op.field_name:
-                        struct_type = st_name
-                        field_offset = f.offset
-                        field_size = f.size
-                        break
-                if struct_type:
-                    break
-
-        if struct_type is None:
-            return [f"    ; ERROR: cannot find field '{op.field_name}'"]
-
         lines.append(f"    ; {op.struct_name}.{op.field_name}")
 
         setup, reg = self._resolve_value(op.value)
         lines.extend(setup)
 
-        abs_offset = struct_off + field_offset
-        slot_obj = self.layout.slot(op.struct_name)
+        slot_obj = self.layout.slot(stype)
         struct_base_offset = -(slot_obj.offset - slot_obj.size)
-        field_abs = struct_base_offset + field_offset
+        field_abs = struct_base_offset + field_info.offset
 
-        if field_size <= 2:
+        if field_info.size <= 2:
             lines.extend(safe_word_store("ebp", field_abs, reg, self.bc))
         else:
             lines.extend(safe_dword_store("ebp", field_abs, reg, self.bc))
+
+        return lines
+
+    def _lower_zero_struct(self, op: ZeroStruct) -> list[str]:
+        """Zero-initialize a struct on the stack via dword loop."""
+        stype = self.struct_types.get(op.name)
+        if stype is None:
+            return [f"    ; ERROR: ZeroStruct '{op.name}' has no known type"]
+
+        st_rec = STRUCT_DATABASE.get(stype)
+        if st_rec is None:
+            return [f"    ; ERROR: struct type '{stype}' not in database"]
+
+        size = st_rec.size
+        slot = self.layout.slot(stype)
+        offset = -slot.offset
+
+        dwords = size // 4
+        lines: list[str] = []
+        lines.append(f"    ; zero {op.name} ({stype}, 0x{size:x} bytes)")
+        lines.append("    xor  eax, eax")
+        lines.extend(safe_lea("edi", "ebp", offset, self.bc))
+
+        if dwords <= 4:
+            for i in range(dwords):
+                lines.extend(safe_dword_store("edi", i * 4, "eax", self.bc, tmp="ecx"))
+        else:
+            lines.append("    xor  ecx, ecx")
+            lines.extend(encode_byte(dwords, self.bc, "cl"))
+            loop_label = f"wf_zero_{op.name}"
+            lines.append(f"{loop_label}:")
+            lines.append("    mov  [edi], eax")
+            lines.append("    add  edi, 4")
+            lines.append(f"    loop {loop_label}")
 
         return lines
 
@@ -312,8 +334,10 @@ class _LoweringContext:
 
     def _lower_terminate(self, op: Terminate) -> list[str]:
         if op.style == TerminateStyle.HANG:
+            label = f"wf_hang_{self._hang_counter}"
+            self._hang_counter += 1
             return [
-                "wf_hang:",
-                "    jmp  wf_hang",
+                f"{label}:",
+                f"    jmp  {label}",
             ]
         return ["    ; unknown terminate style"]

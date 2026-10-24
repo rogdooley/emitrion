@@ -351,3 +351,69 @@ class TestWarnings:
         )
         result = validate(w)
         assert any("legacy_only" in w or "no ABI" in w for w in result.warnings)
+
+    def test_mismatched_predicate_warning(self):
+        w = Workflow(
+            name="mismatch",
+            blocks=(
+                Block("entry", (
+                    CallAPI("WinExec", (AddressOf("cmd"), Immediate(0)),
+                            result="ret"),
+                    ConstructString("cmd", "calc.exe"),
+                )),
+            ),
+            entry="entry",
+        )
+        # WinExec returns NONZERO for success, use ZERO instead
+        w2 = Workflow(
+            name="mismatch",
+            blocks=(
+                Block("entry", (
+                    ConstructString("cmd", "calc.exe"),
+                    CallAPI("WinExec", (AddressOf("cmd"), Immediate(0)),
+                            result="ret"),
+                    Compare("ret", SuccessPredicate.ZERO, "ok", "fail"),
+                )),
+                Block("ok", (Terminate(),)),
+                Block("fail", (Terminate(),)),
+            ),
+            entry="entry",
+        )
+        result = validate(w2)
+        assert result.valid
+        assert any("predicate" in w and "nonzero" in w for w in result.warnings)
+
+    def test_null_ptr_warning(self):
+        w = Workflow(
+            name="bad_null",
+            blocks=(
+                Block("entry", (
+                    ConstructString("cmd", "calc.exe"),
+                    CallAPI("CreateProcessA", (
+                        Immediate(1),  # should be NULL
+                        AddressOf("cmd"),
+                        Immediate(0), Immediate(0), Immediate(0),
+                        Immediate(0), Immediate(0), Immediate(0),
+                        Immediate(0), Immediate(0),
+                    )),
+                    Terminate(),
+                )),
+            ),
+            entry="entry",
+        )
+        result = validate(w)
+        assert any("NULL" in w for w in result.warnings)
+
+    def test_string_ptr_immediate_warning(self):
+        w = Workflow(
+            name="bad_str",
+            blocks=(
+                Block("entry", (
+                    CallAPI("WinExec", (Immediate(0x41414141), Immediate(0))),
+                    Terminate(),
+                )),
+            ),
+            entry="entry",
+        )
+        result = validate(w)
+        assert any("string pointer" in w for w in result.warnings)

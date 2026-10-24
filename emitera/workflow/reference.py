@@ -96,6 +96,24 @@ class WorkflowTemplate(PayloadTemplate):
         self._slot_names = ordered
         return ordered
 
+    def probe_strings(self) -> dict[str, str]:
+        """Return {label: value} for all ConstructString operations in the IR."""
+        result: dict[str, str] = {}
+        for block in self._workflow.blocks:
+            for op in block.operations:
+                if isinstance(op, ConstructString):
+                    result[op.name] = op.value
+        return result
+
+    def probe_structs(self) -> dict[str, str]:
+        """Return {name: struct_type} for all AllocateStruct operations."""
+        result: dict[str, str] = {}
+        for block in self._workflow.blocks:
+            for op in block.operations:
+                if isinstance(op, AllocateStruct):
+                    result[op.name] = op.struct_type
+        return result
+
     @staticmethod
     def _collect_value_refs(ref: ValueRef, add_fn) -> None:
         if isinstance(ref, NameRef):

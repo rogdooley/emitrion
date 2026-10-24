@@ -2,8 +2,15 @@
 from __future__ import annotations
 
 import pathlib
+import shutil
 
 import pytest
+
+
+requires_assembler = pytest.mark.skipif(
+    not shutil.which("nasm"),
+    reason="nasm not available (assembler tests run on Windows lab VM)",
+)
 
 
 @pytest.fixture

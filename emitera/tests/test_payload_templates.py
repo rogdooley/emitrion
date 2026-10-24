@@ -7,6 +7,8 @@ import struct
 
 import pytest
 
+from emitera.tests.conftest import requires_assembler
+
 
 @pytest.fixture
 def revshell_manifest(manifest_dir):
@@ -644,6 +646,7 @@ class TestHttpExfilAutoDerive:
         )
         assert "HttpSendRequestA" in result.asm
 
+    @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
         from emitera.build import build
         from emitera.payload_templates.base import TemplateConfig
@@ -826,6 +829,7 @@ class TestProcessReplaceProbeSlots:
 
 
 class TestProcessReplaceAutoDerive:
+    @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
         from emitera.build import build
         from emitera.payload_templates.base import TemplateConfig
@@ -949,6 +953,7 @@ class TestServicePersistProbeSlots:
 
 
 class TestServicePersistAutoDerive:
+    @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
         from emitera.build import build
         from emitera.payload_templates.base import TemplateConfig
@@ -1114,6 +1119,7 @@ class TestDllInjectProbeSlots:
 
 
 class TestDllInjectAutoDerive:
+    @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
         from emitera.build import build
         from emitera.payload_templates.base import TemplateConfig
@@ -1245,6 +1251,7 @@ class TestRegistryPersistProbeSlots:
 
 
 class TestRegistryPersistAutoDerive:
+    @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
         from emitera.build import build
         from emitera.payload_templates.base import TemplateConfig
@@ -1351,6 +1358,7 @@ class TestCheckPathProbeSlots:
 
 
 class TestCheckPathAutoDerive:
+    @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
         from emitera.build import build
         from emitera.payload_templates.base import TemplateConfig

@@ -6,6 +6,7 @@ import pytest
 from emitera.workflow.ir import (
     AddressOf,
     AllocateLocal,
+    AllocateStruct,
     Block,
     CallAPI,
     Compare,
@@ -18,6 +19,8 @@ from emitera.workflow.ir import (
     Terminate,
     TerminateStyle,
     Workflow,
+    WriteStructField,
+    ZeroStruct,
 )
 from emitera.workflow.reference import (
     IRRunCommandTemplate,
@@ -104,8 +107,14 @@ class TestX86Lowering:
         assert "jnz" in lowered_asm
 
     def test_contains_hang_loop(self, lowered_asm):
-        assert "wf_hang:" in lowered_asm
-        assert "jmp  wf_hang" in lowered_asm
+        assert "wf_hang_0:" in lowered_asm
+        assert "jmp  wf_hang_0" in lowered_asm
+
+    def test_multiple_terminates_get_unique_labels(self, lowered_asm):
+        assert "wf_hang_0:" in lowered_asm
+        assert "wf_hang_1:" in lowered_asm
+        assert lowered_asm.count("wf_hang_0:") == 1
+        assert lowered_asm.count("wf_hang_1:") == 1
 
     def test_contains_result_store(self, lowered_asm):
         assert "wexec_result" in lowered_asm
@@ -191,11 +200,50 @@ class TestEndToEndBuild:
         assert "CreateProcessA" in result.asm
 
 
+class TestStructLowering:
+    """Test ZeroStruct and WriteStructField lowering."""
+
+    def test_zero_struct_emits_assembly(self):
+        from emitera.workflow.x86_backend import _LoweringContext
+        from emitera.workflow.ir import AllocateStruct, ZeroStruct, Terminate, Block, Workflow
+        from emitera.stack_alloc import StackLayout, Slot
+        from emitera.api_database import STRUCT_DATABASE
+
+        si_size = STRUCT_DATABASE["STARTUPINFOA"].size
+        layout = StackLayout([
+            Slot(name="STARTUPINFOA", offset=0x80 + si_size, size=si_size, category="structure"),
+        ])
+        ctx = _LoweringContext(layout, set(), None)
+        ctx.struct_types["si"] = "STARTUPINFOA"
+        zero_op = ZeroStruct("si")
+        lines = ctx._lower_zero_struct(zero_op)
+        asm = "\n".join(lines)
+        assert "zero si" in asm
+        assert "xor  eax, eax" in asm
+
+    def test_write_struct_field_emits_assembly(self):
+        from emitera.workflow.x86_backend import _LoweringContext
+        from emitera.stack_alloc import StackLayout, Slot
+        from emitera.api_database import STRUCT_DATABASE
+
+        si_size = STRUCT_DATABASE["STARTUPINFOA"].size
+        layout = StackLayout([
+            Slot(name="STARTUPINFOA", offset=0x80 + si_size, size=si_size, category="structure"),
+        ])
+        ctx = _LoweringContext(layout, set(), None)
+        ctx.struct_types["si"] = "STARTUPINFOA"
+        field_op = WriteStructField("si", "cb", Immediate(0x44))
+        lines = ctx._lower_write_struct_field(field_op)
+        asm = "\n".join(lines)
+        assert "si.cb" in asm
+
+
 class TestDeterminism:
     """Identical inputs must produce identical outputs."""
 
-    def test_deterministic_asm(self, manifest_dir, tmp_path):
+    def test_deterministic_asm(self, manifest_dir, tmp_path, monkeypatch):
         from emitera.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
         result1 = build(
             str(manifest_dir / "calc.yaml"),
             template_name="ir_run_command",
@@ -208,6 +256,4 @@ class TestDeterminism:
             out_dir=str(tmp_path / "b"),
             assemble=False,
         )
-        lines1 = [l for l in result1.asm.splitlines() if not l.startswith("; Generated:")]
-        lines2 = [l for l in result2.asm.splitlines() if not l.startswith("; Generated:")]
-        assert lines1 == lines2
+        assert result1.asm == result2.asm

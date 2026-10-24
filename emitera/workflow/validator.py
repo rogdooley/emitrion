@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..api_database import API_DATABASE, STRUCT_DATABASE
-from .catalog import ABI_CATALOG, get_abi
+from .catalog import ABI_CATALOG, ArgCategory, get_abi
 from .ir import (
     AddressOf,
     AllocateLocal,
@@ -69,11 +69,14 @@ def validate(workflow: Workflow) -> ValidationResult:
     defined_allocations: set[str] = set()
     all_names: set[str] = set()
     struct_allocations: dict[str, str] = {}
+    result_apis: dict[str, str] = {}
+    string_names: set[str] = set()
 
     for block in workflow.blocks:
         _validate_block(
             block, block_map, defined_values, defined_allocations,
-            all_names, struct_allocations, errors, warnings,
+            all_names, struct_allocations, result_apis, string_names,
+            errors, warnings,
         )
 
     _check_reachability(workflow, block_map, errors)
@@ -88,6 +91,8 @@ def _validate_block(
     defined_allocations: set[str],
     all_names: set[str],
     struct_allocations: dict[str, str],
+    result_apis: dict[str, str],
+    string_names: set[str],
     errors: list[str],
     warnings: list[str],
 ) -> None:
@@ -118,6 +123,7 @@ def _validate_block(
         elif isinstance(op, ConstructString):
             _check_unique_name(op.name, all_names, block.name, errors)
             defined_allocations.add(op.name)
+            string_names.add(op.name)
 
         elif isinstance(op, AllocateLocal):
             _check_unique_name(op.name, all_names, block.name, errors)
@@ -166,10 +172,12 @@ def _validate_block(
 
         elif isinstance(op, CallAPI):
             _validate_call(op, defined_values, defined_allocations,
+                           struct_allocations, string_names,
                            block.name, errors, warnings)
             if op.result is not None:
                 _check_unique_name(op.result, all_names, block.name, errors)
                 defined_values.add(op.result)
+                result_apis[op.result] = op.api_name
 
         elif isinstance(op, Compare):
             if op.value not in defined_values:
@@ -177,6 +185,16 @@ def _validate_block(
                     f"Block '{block.name}': Compare references "
                     f"undefined value '{op.value}'"
                 )
+            else:
+                api_name = result_apis.get(op.value)
+                if api_name:
+                    abi = get_abi(api_name)
+                    if abi and abi.returns and abi.returns.success != op.predicate:
+                        warnings.append(
+                            f"Block '{block.name}': Compare on '{op.value}' "
+                            f"uses predicate {op.predicate.value} but "
+                            f"{api_name} documents {abi.returns.success.value}"
+                        )
             if op.true_block not in block_map:
                 errors.append(
                     f"Block '{block.name}': Compare true_block "
@@ -233,6 +251,8 @@ def _validate_call(
     op: CallAPI,
     defined_values: set[str],
     defined_allocations: set[str],
+    struct_allocations: dict[str, str],
+    string_names: set[str],
     block_name: str,
     errors: list[str],
     warnings: list[str],
@@ -264,10 +284,59 @@ def _validate_call(
                 f"Block '{block_name}': CallAPI '{op.api_name}' expects "
                 f"{expected} arguments, got {actual}"
             )
+        else:
+            _validate_arg_categories(
+                op, abi, struct_allocations, string_names,
+                block_name, warnings,
+            )
 
     for arg in op.arguments:
         _validate_value_ref(arg, defined_values, defined_allocations,
                             block_name, errors)
+
+
+def _validate_arg_categories(
+    op: CallAPI,
+    abi,
+    struct_allocations: dict[str, str],
+    string_names: set[str],
+    block_name: str,
+    warnings: list[str],
+) -> None:
+    """Check that argument value types match declared ABI categories."""
+    for i, (arg, desc) in enumerate(zip(op.arguments, abi.arguments)):
+        cat = desc.category
+
+        if cat == ArgCategory.STRING_PTR:
+            if isinstance(arg, Immediate):
+                warnings.append(
+                    f"Block '{block_name}': {op.api_name} arg '{desc.name}' "
+                    f"expects a string pointer, got Immediate"
+                )
+            elif isinstance(arg, AddressOf) and arg.name not in string_names:
+                if arg.name not in struct_allocations:
+                    warnings.append(
+                        f"Block '{block_name}': {op.api_name} arg '{desc.name}' "
+                        f"expects AddressOf a string, but '{arg.name}' is not "
+                        f"a ConstructString"
+                    )
+
+        elif cat == ArgCategory.STRUCT_PTR:
+            if isinstance(arg, AddressOf) and desc.struct_type:
+                actual_type = struct_allocations.get(arg.name)
+                if actual_type and actual_type != desc.struct_type:
+                    warnings.append(
+                        f"Block '{block_name}': {op.api_name} arg '{desc.name}' "
+                        f"expects struct type '{desc.struct_type}', got "
+                        f"'{actual_type}'"
+                    )
+
+        elif cat == ArgCategory.NULL_PTR:
+            if not isinstance(arg, Immediate) or arg.value != 0:
+                warnings.append(
+                    f"Block '{block_name}': {op.api_name} arg '{desc.name}' "
+                    f"should be NULL (Immediate(0))"
+                )
 
 
 def _check_reachability(
