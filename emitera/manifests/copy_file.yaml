@@ -1,0 +1,23 @@
+template: copy_then_run
+# Copy a file to a writable location, then execute it.
+# dst_path is both the copy destination and the WinExec command line.
+#
+# Build:
+#   uv run emitter Tools/emitter/manifests/copy_then_run.yaml \
+#       --src "C:\\source\\payload.exe" --dst "C:\\Windows\\Temp\\payload.exe" \
+#       --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - CopyFileA
+  - ExitProcess
+
+strings:
+  - label: src_path
+    value: "C:\\OSED\\source.txt"
+    method: mov
+    dest: edi
+  - label: dst_path
+    value: "C:\\OSED\\output.txt"
+    method: mov
+    dest: edi

