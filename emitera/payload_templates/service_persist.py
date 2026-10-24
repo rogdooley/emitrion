@@ -16,12 +16,15 @@ Required strings:   service_name, dst_path
 """
 from __future__ import annotations
 
-from .base import PayloadTemplate, TemplateConfig
 from ..encode import (
-    safe_push_imm, safe_push_dword,
-    safe_lea, safe_mem_store,
-    safe_push_mem, safe_call_mem,
+    safe_call_mem,
+    safe_lea,
+    safe_mem_store,
+    safe_push_dword,
+    safe_push_imm,
+    safe_push_mem,
 )
+from .base import PayloadTemplate, TemplateConfig
 
 
 class ServicePersistTemplate(PayloadTemplate):

@@ -6,7 +6,6 @@ import shutil
 
 import pytest
 
-
 requires_assembler = pytest.mark.skipif(
     not shutil.which("nasm"),
     reason="nasm not available (assembler tests run on Windows lab VM)",
@@ -92,18 +91,18 @@ def http_exfil_layout(manifest_dir):
 
 @pytest.fixture
 def revshell_doc(revshell_layout, manifest_dir):
-    from emitera.schema import load
     from emitera.doc_gen import emit_full_contract_md
+    from emitera.schema import load
     manifest = load(str(manifest_dir / "revshell.yaml"))
     return emit_full_contract_md(manifest, revshell_layout)
 
 
 @pytest.fixture
 def revshell_doc_with_cheatsheet(revshell_layout, manifest_dir):
-    from emitera.schema import load
     from emitera.doc_gen import emit_full_contract_md
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
     from emitera.payload_templates.base import TemplateConfig
+    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitera.schema import load
     manifest = load(str(manifest_dir / "revshell.yaml"))
     template = ReverseShellTemplate()
     config = TemplateConfig(lhost="192.168.1.100", lport=9001, badchars=manifest.badchars)

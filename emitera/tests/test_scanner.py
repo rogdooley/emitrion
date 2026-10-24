@@ -1,9 +1,7 @@
 """Tests for the post-assembly bad character scanner."""
 from __future__ import annotations
 
-import pytest
-
-from emitera.scanner import Violation, ScanResult, scan
+from emitera.scanner import Violation, scan
 
 
 class TestScan:

@@ -3,31 +3,18 @@ from __future__ import annotations
 
 import pytest
 
+from emitera.payload_templates.base import TemplateConfig
 from emitera.workflow.ir import (
-    AddressOf,
-    AllocateLocal,
-    AllocateStruct,
     Block,
-    CallAPI,
-    Compare,
-    ConstructString,
-    DefineConstant,
     Immediate,
-    Jump,
-    NameRef,
-    SuccessPredicate,
-    Terminate,
-    TerminateStyle,
     Workflow,
     WriteStructField,
     ZeroStruct,
 )
 from emitera.workflow.reference import (
-    IRRunCommandTemplate,
     WorkflowTemplate,
     build_run_command_workflow,
 )
-from emitera.payload_templates.base import TemplateConfig
 
 
 class TestRunCommandWorkflow:
@@ -206,10 +193,9 @@ class TestStructLowering:
     """Test ZeroStruct and WriteStructField lowering."""
 
     def test_zero_struct_emits_assembly(self):
-        from emitera.workflow.x86_backend import _LoweringContext
-        from emitera.workflow.ir import AllocateStruct, ZeroStruct, Terminate, Block, Workflow
-        from emitera.stack_alloc import StackLayout, Slot
         from emitera.api_database import STRUCT_DATABASE
+        from emitera.stack_alloc import Slot, StackLayout
+        from emitera.workflow.x86_backend import _LoweringContext
 
         si_size = STRUCT_DATABASE["STARTUPINFOA"].size
         layout = StackLayout([
@@ -224,9 +210,9 @@ class TestStructLowering:
         assert "xor  eax, eax" in asm
 
     def test_write_struct_field_emits_assembly(self):
-        from emitera.workflow.x86_backend import _LoweringContext
-        from emitera.stack_alloc import StackLayout, Slot
         from emitera.api_database import STRUCT_DATABASE
+        from emitera.stack_alloc import Slot, StackLayout
+        from emitera.workflow.x86_backend import _LoweringContext
 
         si_size = STRUCT_DATABASE["STARTUPINFOA"].size
         layout = StackLayout([

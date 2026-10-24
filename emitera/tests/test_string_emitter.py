@@ -4,8 +4,6 @@ from __future__ import annotations
 import pathlib
 import sys
 
-import pytest
-
 _TOOLS_DIR = str(pathlib.Path(__file__).parent.parent.parent)
 if _TOOLS_DIR not in sys.path:
     sys.path.insert(0, _TOOLS_DIR)
@@ -85,9 +83,10 @@ def test_string_header_present(manifest_dir, revshell_layout):
 
 
 def test_no_null_in_immediates_push(manifest_dir, revshell_layout):
+    import re
+
     from emitera.schema import load
     from emitera.string_emitter import emit_string
-    import re
     manifest = load(str(manifest_dir / "revshell.yaml"))
     ws2_entry = next(e for e in manifest.strings if e.method == "push")
     result = emit_string(ws2_entry, revshell_layout, manifest.badchars)

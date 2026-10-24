@@ -182,7 +182,7 @@ def verify_result(result: EmitResult, expected_string: str) -> EmitResult:
 
     # Build set of all 4-byte windows in the assembled output
     raw_dwords: set[int] = set()
-    for i in range(0, len(raw) - 3):
+    for i in range(len(raw) - 3):
         raw_dwords.add(struct.unpack_from("<I", raw, i)[0])
 
     # Build expected DWORD list from the null-terminated, DWORD-padded string

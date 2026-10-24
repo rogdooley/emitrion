@@ -9,7 +9,7 @@ The first milestone annotates only the APIs used by the reference workflow.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum
 
 from .ir import SuccessPredicate
 

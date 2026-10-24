@@ -8,8 +8,8 @@ Requires string slots: src_path, dst_path
 """
 from __future__ import annotations
 
+from ..encode import safe_call_mem, safe_lea, safe_push_imm
 from .base import PayloadTemplate, TemplateConfig
-from ..encode import safe_push_imm, safe_lea, safe_call_mem
 
 
 class CopyThenRunTemplate(PayloadTemplate):

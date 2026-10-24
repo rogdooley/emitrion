@@ -20,11 +20,12 @@ Required strings:   check_path
 """
 from __future__ import annotations
 
-from .base import PayloadTemplate, TemplateConfig
 from ..encode import (
-    safe_lea, safe_mem_store,
     safe_call_mem,
+    safe_lea,
+    safe_mem_store,
 )
+from .base import PayloadTemplate, TemplateConfig
 
 
 class CheckPathTemplate(PayloadTemplate):

@@ -1,5 +1,4 @@
 """Tests for encode.py - badchar-safe immediate encoding."""
-import pytest
 
 from emitera.encode import (
     encode_dword,
@@ -239,9 +238,10 @@ class TestTmpRegisterConflict:
 class TestFrameSize:
 
     def test_frame_size_rounds_up(self):
-        from emitera.stack_alloc import build_layout
-        from emitera.schema import load
         import pathlib
+
+        from emitera.schema import load
+        from emitera.stack_alloc import build_layout
         manifest_dir = pathlib.Path(__file__).parent.parent / "manifests"
         manifest = load(str(manifest_dir / "revshell.yaml"))
         layout = build_layout(manifest)

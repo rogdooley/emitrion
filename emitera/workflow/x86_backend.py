@@ -14,17 +14,15 @@ from __future__ import annotations
 import socket
 import struct
 
-from ..api_database import API_DATABASE, STRUCT_DATABASE
+from ..api_database import STRUCT_DATABASE
 from ..encode import (
     encode_byte,
     encode_dword,
-    encode_word,
     safe_call_mem,
     safe_dword_store,
     safe_lea,
     safe_mem_load,
     safe_mem_store,
-    safe_push_imm,
     safe_word_store,
 )
 from ..stack_alloc import StackLayout
@@ -42,6 +40,7 @@ from .ir import (
     Input,
     Jump,
     NameRef,
+    Operation,
     SuccessPredicate,
     Terminate,
     TerminateStyle,
@@ -102,7 +101,7 @@ class _LoweringContext:
         lines.append("")
         return lines
 
-    def _lower_op(self, op) -> list[str]:
+    def _lower_op(self, op: Operation) -> list[str]:
         if isinstance(op, DefineConstant):
             self.constants[op.name] = op.value
             return [f"    ; const {op.name} = 0x{op.value:x}"]

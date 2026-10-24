@@ -1,8 +1,6 @@
 """Tests for structure_emitter.py."""
 from __future__ import annotations
 
-import pytest
-
 DEFAULT_BADCHARS = {0x00}
 
 
@@ -95,9 +93,9 @@ def test_emit_all_structures_no_duplicate_labels(manifest_dir, revshell_layout):
 
 
 def test_unknown_structure_fallback(revshell_layout):
-    from emitera.structure_emitter import emit_structure
     # Inject a fake slot
     from emitera.stack_alloc import Slot, StackLayout
+    from emitera.structure_emitter import emit_structure
     fake_slot = Slot(name="FakeStruct", offset=0x400, size=0x20, category="structure")
     layout = StackLayout(revshell_layout.all_slots() + [fake_slot])
     asm = emit_structure("FakeStruct", layout, DEFAULT_BADCHARS)

@@ -23,7 +23,7 @@ import json
 import os
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 from .build import BuildResult, build, write_outputs

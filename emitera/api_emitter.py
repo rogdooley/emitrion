@@ -54,7 +54,7 @@ def emit_api_resolution(manifest: Manifest, layout: StackLayout) -> str:
 
             lines.append(f"    ; {name}  {slot.ebp_ref}")
             lines.extend(encode_dword(hash_val, manifest.badchars, "eax"))
-            lines.append(f"    call resolve_export_by_hash")
+            lines.append("    call resolve_export_by_hash")
             lines.extend(safe_mem_store("ebp", offset, "eax", manifest.badchars))
             lines.append("")
 
@@ -86,7 +86,7 @@ def emit_module_resolution(manifest: Manifest, layout: StackLayout, dll: str) ->
         offset = -slot.offset
         lines.append(f"    ; {name}  {slot.ebp_ref}")
         lines.extend(encode_dword(hash_val, manifest.badchars, "eax"))
-        lines.append(f"    call resolve_export_by_hash")
+        lines.append("    call resolve_export_by_hash")
         lines.extend(safe_mem_store("ebp", offset, "eax", manifest.badchars))
         lines.append("")
 

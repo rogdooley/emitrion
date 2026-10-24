@@ -1,8 +1,6 @@
 """Tests for the XOR payload encoder."""
 from __future__ import annotations
 
-import pytest
-
 from emitera.scanner import scan
 from emitera.xor_encoder import xor_encode
 
@@ -140,7 +138,7 @@ class TestArbitraryBadchars:
     def test_large_badchar_set(self):
         """Many forbidden bytes; fewer candidate keys."""
         payload = b"\x01\x02\x03\x04\x05"
-        badchars = set(range(0, 128))
+        badchars = set(range(128))
         result = xor_encode(payload, badchars)
         if result.success:
             scan_result = scan(result.encoded, badchars)

@@ -5,7 +5,7 @@ return strings.
 """
 from __future__ import annotations
 
-from .api_database import API_DATABASE, STRUCT_DATABASE, MODULE_LOAD_ORDER
+from .api_database import API_DATABASE, MODULE_LOAD_ORDER, STRUCT_DATABASE
 from .hash_gen import ror13
 from .payload_templates.base import PayloadTemplate, TemplateConfig
 from .schema import Manifest
@@ -300,9 +300,9 @@ def emit_cheatsheet_md(
             if cmd is None:
                 continue
             lines.append(f"**{desc}:**")
-            lines.append(f"```")
+            lines.append("```")
             lines.append(cmd)
-            lines.append(f"```")
+            lines.append("```")
             lines.append("")
 
     # Common post-exploitation helpers

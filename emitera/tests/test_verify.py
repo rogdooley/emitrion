@@ -7,11 +7,8 @@ is available.
 from __future__ import annotations
 
 import json
-import shutil
 
-import pytest
-
-from emitera.build import BuildResult, build, _check_badchars
+from emitera.build import _check_badchars, build
 from emitera.payload_templates.base import TemplateConfig
 from emitera.tests.conftest import requires_assembler
 from emitera.verify import VerificationReport, verify, write_verification

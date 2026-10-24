@@ -20,15 +20,19 @@ Required strings:   src_path, exfil_host, url_path, http_post, user_agent
 """
 from __future__ import annotations
 
-from .base import PayloadTemplate, TemplateConfig
 from ..encode import (
     encode_dword,
-    safe_push_dword, safe_push_imm,
-    safe_lea, safe_mem_load, safe_mem_store,
-    safe_push_mem, safe_call_mem,
-    safe_add_to_mem, safe_sub_from_mem,
+    safe_add_to_mem,
+    safe_call_mem,
+    safe_lea,
+    safe_mem_load,
+    safe_mem_store,
+    safe_push_dword,
+    safe_push_imm,
+    safe_push_mem,
+    safe_sub_from_mem,
 )
-
+from .base import PayloadTemplate, TemplateConfig
 
 _DEFAULT_ALLOC = 0x100000
 

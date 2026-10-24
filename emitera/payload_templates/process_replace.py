@@ -17,14 +17,17 @@ Required strings:   process_name, src_path, dst_path
 """
 from __future__ import annotations
 
-from .base import PayloadTemplate, TemplateConfig
 from ..encode import (
     encode_dword,
-    safe_push_imm, safe_push_dword,
-    safe_lea, safe_mem_load, safe_mem_store,
-    safe_push_mem, safe_call_mem,
+    safe_call_mem,
     safe_dword_store,
+    safe_lea,
+    safe_mem_store,
+    safe_push_dword,
+    safe_push_imm,
+    safe_push_mem,
 )
+from .base import PayloadTemplate, TemplateConfig
 
 
 class ProcessReplaceTemplate(PayloadTemplate):

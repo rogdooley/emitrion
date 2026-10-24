@@ -6,8 +6,10 @@ on the stack frame. Only handles structures from STRUCT_DATABASE.
 from __future__ import annotations
 
 from .encode import (
-    encode_byte, safe_byte_store, safe_dword_store, safe_mem_store,
-    _disp_has_badchar, parse_ebp_offset, safe_lea,
+    encode_byte,
+    safe_byte_store,
+    safe_dword_store,
+    safe_lea,
 )
 from .schema import Manifest
 from .stack_alloc import StackLayout

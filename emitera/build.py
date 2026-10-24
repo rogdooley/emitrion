@@ -7,6 +7,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import re
 import shutil
@@ -14,19 +15,19 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
-import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
+from emitera.strings import emit_push, to_dwords
 
 from .api_database import API_DATABASE, MODULE_LOAD_ORDER, STRUCT_DATABASE
 from .api_emitter import emit_module_resolution
 from .doc_gen import emit_full_contract_md
+from .payload_templates.base import PayloadTemplate, TemplateConfig
 from .schema import Manifest, StringEntry, VariableEntry
 from .schema import load as load_manifest
 from .stack_alloc import StackLayout, build_layout
 from .string_emitter import emit_all_strings
 from .structure_emitter import emit_all_structures
-from .payload_templates.base import PayloadTemplate, TemplateConfig
-from emitera.strings import emit_push, to_dwords
 
 
 def _build_timestamp() -> str:
@@ -38,7 +39,7 @@ def _build_timestamp() -> str:
     epoch = os.environ.get("SOURCE_DATE_EPOCH", "0")
     if epoch.lower() == "now":
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    dt = datetime.fromtimestamp(int(epoch), tz=timezone.utc)
+    dt = datetime.fromtimestamp(int(epoch), tz=UTC)
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -58,7 +59,10 @@ def _emit_framework_stubs_part1a(badchars: set[int]) -> str:
     Must fit within 127 bytes of a jmp short from _start.
     """
     from .encode import (
-        _disp_has_badchar, safe_mem_load, safe_sub_imm, safe_cmp_word,
+        _disp_has_badchar,
+        safe_cmp_word,
+        safe_mem_load,
+        safe_sub_imm,
     )
     lines: list[str] = []
 
@@ -256,7 +260,7 @@ def _emit_stack_reserve(frame_size: int, badchars: set[int]) -> list[str]:
 
 def _dll_load_block(dll: str, manifest: Manifest, layout: StackLayout) -> str:
     """Generate the LoadLibraryA block for a secondary DLL."""
-    from .encode import safe_add_imm, safe_call_mem, safe_mem_store, safe_mem_load
+    from .encode import safe_add_imm, safe_call_mem, safe_mem_load, safe_mem_store
 
     module_slot = layout.slot(dll)
     loadlib_off = -layout.slot("LoadLibraryA").offset

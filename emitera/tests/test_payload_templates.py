@@ -85,8 +85,8 @@ def test_reverse_shell_no_hardcoded_offsets(revshell_layout, default_config):
 
 
 def test_run_command_winexec_slot(manifest_dir, calc_layout):
-    from emitera.payload_templates.run_command import RunCommandTemplate
     from emitera.payload_templates.base import TemplateConfig
+    from emitera.payload_templates.run_command import RunCommandTemplate
     t = RunCommandTemplate()
     config = TemplateConfig(command="calc.exe", badchars={0x00})
     asm = t.emit(calc_layout, config)
@@ -94,10 +94,10 @@ def test_run_command_winexec_slot(manifest_dir, calc_layout):
 
 
 def test_run_command_uses_cmd_slot_when_available(manifest_dir, default_config):
+    from emitera.build import _merge_template_requirements
     from emitera.payload_templates.run_command import RunCommandTemplate
     from emitera.schema import load
     from emitera.stack_alloc import build_layout
-    from emitera.build import _merge_template_requirements
     t = RunCommandTemplate()
     manifest = load(str(manifest_dir / "revshell.yaml"))
     manifest = _merge_template_requirements(manifest, t, default_config)
@@ -109,8 +109,8 @@ def test_run_command_uses_cmd_slot_when_available(manifest_dir, default_config):
 
 
 def test_run_command_inline_push_fallback():
-    from emitera.payload_templates.run_command import RunCommandTemplate
     from emitera.payload_templates.base import TemplateConfig
+    from emitera.payload_templates.run_command import RunCommandTemplate
     from emitera.schema import Manifest
     from emitera.stack_alloc import build_layout
     t = RunCommandTemplate()
@@ -195,8 +195,8 @@ class TestProbeSlots:
         assert len(slots) == len(set(slots))
 
     def test_run_command_probe_includes_optional_cmd(self):
-        from emitera.payload_templates.run_command import RunCommandTemplate
         from emitera.payload_templates.base import TemplateConfig
+        from emitera.payload_templates.run_command import RunCommandTemplate
         config = TemplateConfig(command="calc.exe")
         slots = RunCommandTemplate().probe_slots(config)
         assert "WinExec" in slots
@@ -207,10 +207,10 @@ class TestMergeTemplateRequirements:
     """_merge_template_requirements auto-adds missing APIs only."""
 
     def test_adds_missing_api(self, manifest_dir):
-        from emitera.schema import load
         from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.run_command import RunCommandTemplate
         from emitera.payload_templates.base import TemplateConfig
+        from emitera.payload_templates.run_command import RunCommandTemplate
+        from emitera.schema import load
         manifest = load(str(manifest_dir / "revshell.yaml"))
         assert "WinExec" not in manifest.functions
         config = TemplateConfig()
@@ -218,20 +218,20 @@ class TestMergeTemplateRequirements:
         assert "WinExec" in merged.functions
 
     def test_does_not_auto_add_variables(self, manifest_dir):
-        from emitera.schema import load
         from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.bind_shell import BindShellTemplate
         from emitera.payload_templates.base import TemplateConfig
+        from emitera.payload_templates.bind_shell import BindShellTemplate
+        from emitera.schema import load
         manifest = load(str(manifest_dir / "revshell.yaml"))
         config = TemplateConfig()
         merged = _merge_template_requirements(manifest, BindShellTemplate(), config)
         assert merged.variables == manifest.variables
 
     def test_does_not_duplicate_existing(self, manifest_dir):
-        from emitera.schema import load
         from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.reverse_shell import ReverseShellTemplate
         from emitera.payload_templates.base import TemplateConfig
+        from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+        from emitera.schema import load
         manifest = load(str(manifest_dir / "revshell.yaml"))
         config = TemplateConfig()
         merged = _merge_template_requirements(manifest, ReverseShellTemplate(), config)
@@ -239,10 +239,10 @@ class TestMergeTemplateRequirements:
         assert merged.functions.count("connect") == 1
 
     def test_auto_adds_loadlibrarya_for_ws2(self):
-        from emitera.schema import Manifest, StringEntry
         from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.tcp_stager import TcpStagerTemplate
         from emitera.payload_templates.base import TemplateConfig
+        from emitera.payload_templates.tcp_stager import TcpStagerTemplate
+        from emitera.schema import Manifest, StringEntry
         bare = Manifest(badchars={0x00}, functions=[], strings=[
             StringEntry(label="ws2_dll", value="ws2_32.dll", method="push"),
         ])
@@ -251,10 +251,10 @@ class TestMergeTemplateRequirements:
         assert "LoadLibraryA" in merged.functions
 
     def test_noop_when_manifest_complete(self, manifest_dir):
-        from emitera.schema import load
         from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.reverse_shell import ReverseShellTemplate
         from emitera.payload_templates.base import TemplateConfig
+        from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+        from emitera.schema import load
         manifest = load(str(manifest_dir / "revshell.yaml"))
         config = TemplateConfig()
         merged = _merge_template_requirements(manifest, ReverseShellTemplate(), config)
@@ -435,10 +435,10 @@ class TestHttpDownloadProbeSlots:
 class TestHttpDownloadAutoDerive:
 
     def test_auto_adds_loadlibrarya_for_wininet(self):
-        from emitera.schema import Manifest, StringEntry
         from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.http_download import HttpDownloadTemplate
         from emitera.payload_templates.base import TemplateConfig
+        from emitera.payload_templates.http_download import HttpDownloadTemplate
+        from emitera.schema import Manifest, StringEntry
         bare = Manifest(badchars={0x00}, functions=[], strings=[
             StringEntry(label="wininet_dll", value="wininet.dll", method="push"),
             StringEntry(label="user_agent", value="Mozilla/5.0", method="mov"),
@@ -568,8 +568,9 @@ def test_http_exfil_string_slots(http_exfil_layout, exfil_config):
 
 
 def test_http_exfil_no_hardcoded_offsets(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
     import re
+
+    from emitera.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     known_refs = {s.ebp_ref for s in http_exfil_layout.all_slots()}
@@ -739,8 +740,9 @@ def test_process_replace_string_slots(process_replace_layout, pr_config):
 
 
 def test_process_replace_no_hardcoded_offsets(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
     import re
+
+    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     known_refs = {s.ebp_ref for s in process_replace_layout.all_slots()}
@@ -905,8 +907,9 @@ def test_service_persist_string_slots(service_persist_layout, svc_config):
 
 
 def test_service_persist_no_hardcoded_offsets(service_persist_layout, svc_config):
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
     import re
+
+    from emitera.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     asm = t.emit(service_persist_layout, svc_config)
     known_refs = {s.ebp_ref for s in service_persist_layout.all_slots()}
@@ -929,8 +932,8 @@ def test_service_persist_auto_start(service_persist_layout, svc_config):
 
 
 def test_service_persist_rejects_unquoted_spaces(service_persist_layout):
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
     from emitera.payload_templates.base import TemplateConfig
+    from emitera.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     config = TemplateConfig(
         service_name="TestSvc",
@@ -1050,8 +1053,9 @@ def test_dll_inject_string_slots(dll_inject_layout, di_config):
 
 
 def test_dll_inject_no_hardcoded_offsets(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
     import re
+
+    from emitera.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     known_refs = {s.ebp_ref for s in dll_inject_layout.all_slots()}
@@ -1186,8 +1190,9 @@ def test_registry_persist_string_slots(registry_persist_layout, rp_config):
 
 
 def test_registry_persist_no_hardcoded_offsets(registry_persist_layout, rp_config):
-    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
     import re
+
+    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
     t = RegistryPersistTemplate()
     asm = t.emit(registry_persist_layout, rp_config)
     known_refs = {s.ebp_ref for s in registry_persist_layout.all_slots()}
@@ -1302,8 +1307,9 @@ def test_check_path_string_slot(check_path_layout, cp_config):
 
 
 def test_check_path_no_hardcoded_offsets(check_path_layout, cp_config):
-    from emitera.payload_templates.check_path import CheckPathTemplate
     import re
+
+    from emitera.payload_templates.check_path import CheckPathTemplate
     t = CheckPathTemplate()
     asm = t.emit(check_path_layout, cp_config)
     known_refs = {s.ebp_ref for s in check_path_layout.all_slots()}

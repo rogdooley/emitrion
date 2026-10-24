@@ -17,4 +17,49 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pytest",
+    "ruff",
+    "mypy",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "SIM", "PIE", "PLE", "PLW", "RUF", "BLE", "PERF", "C4"]
+ignore = [
+    "E501",     # line length handled by formatter
+    "E741",     # ambiguous variable name: short vars in comprehensions are fine
+    "SIM102",   # collapsible-if: sometimes clearer expanded
+    "SIM108",   # ternary operator: if/else blocks sometimes clearer
+    "SIM114",   # collapsible-elif: same
+    "PLW1510",  # subprocess.run without check: not relevant
+    "PLW2901",  # loop variable overwritten: intentional in asm line transforms
+    "BLE001",   # blind exception: assembler backends catch broadly by design
+    "RUF005",   # list concat vs spread: concat is often clearer
+    "RUF012",   # mutable class var: test-only, not a real issue
+    "PERF401",  # extend vs append: marginal, prefer readability
+    "PERF102",  # dict.values: sometimes name is used in error paths
+    "E402",     # late import: encode.py groups re import with its section
+    "F402",     # shadowed import by loop var: test-only naming
+    "C408",     # dict() vs literal: dict() reads better with keyword args
+    "SIM115",   # context manager: read-and-close pattern is fine for small reads
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["emitera"]
+
+[tool.mypy]
+python_version = "3.12"
+
+[[tool.mypy.overrides]]
+module = "emitera.workflow.*"
+strict = true
+warn_return_any = true
+
+[[tool.mypy.overrides]]
+module = "keystone.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["emitera/tests"]

@@ -10,8 +10,8 @@ Required strings:   advapi_dll, path_prefix, path_suffix
 """
 from __future__ import annotations
 
+from ..encode import safe_call_mem, safe_lea, safe_mem_load, safe_mem_store
 from .base import PayloadTemplate, TemplateConfig
-from ..encode import safe_lea, safe_mem_store, safe_mem_load, safe_call_mem
 
 
 class GetUsernameTemplate(PayloadTemplate):

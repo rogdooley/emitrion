@@ -50,7 +50,7 @@ class Manifest:
 
 def load(path: str) -> Manifest:
     """Parse and validate a manifest YAML file. Raises ValueError listing all errors found."""
-    with open(path, "r") as fh:
+    with open(path) as fh:
         data = yaml.safe_load(fh)
 
     errors: list[str] = []

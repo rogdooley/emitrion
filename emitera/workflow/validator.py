@@ -18,8 +18,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..api_database import API_DATABASE, STRUCT_DATABASE
-from .catalog import ABI_CATALOG, ArgCategory, get_abi
+from .catalog import ABIRecord, ArgCategory, get_abi
 from .ir import (
+    TERMINATOR_TYPES,
     AddressOf,
     AllocateLocal,
     AllocateStruct,
@@ -28,12 +29,10 @@ from .ir import (
     Compare,
     ConstructString,
     DefineConstant,
+    Immediate,
     Input,
     Jump,
-    Immediate,
     NameRef,
-    TERMINATOR_TYPES,
-    Terminate,
     ValueRef,
     Workflow,
     WriteStructField,
@@ -440,7 +439,7 @@ def _validate_call(
 
 def _validate_arg_categories(
     op: CallAPI,
-    abi,
+    abi: ABIRecord,
     struct_allocations: dict[str, str],
     string_names: set[str],
     block_name: str,

@@ -1,8 +1,6 @@
 """Tests for Workflow IR validation."""
 from __future__ import annotations
 
-import pytest
-
 from emitera.workflow.ir import (
     AddressOf,
     AllocateLocal,
@@ -17,7 +15,6 @@ from emitera.workflow.ir import (
     NameRef,
     SuccessPredicate,
     Terminate,
-    TerminateStyle,
     Workflow,
     WriteStructField,
     ZeroStruct,

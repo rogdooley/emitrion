@@ -8,12 +8,15 @@ NOTE: This is a scaffold. bind/listen/accept calls are placeholders.
 """
 from __future__ import annotations
 
-from .base import PayloadTemplate, TemplateConfig
 from ..encode import (
-    safe_push_word_as_dword, safe_dword_store,
-    safe_lea, safe_mem_load, safe_mem_store,
     safe_call_mem,
+    safe_dword_store,
+    safe_lea,
+    safe_mem_load,
+    safe_mem_store,
+    safe_push_word_as_dword,
 )
+from .base import PayloadTemplate, TemplateConfig
 
 
 class BindShellTemplate(PayloadTemplate):

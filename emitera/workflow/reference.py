@@ -10,7 +10,8 @@ a branch on the WinExec result.
 """
 from __future__ import annotations
 
-from ..api_database import API_DATABASE, STRUCT_DATABASE
+from collections.abc import Callable
+
 from ..payload_templates.base import PayloadTemplate, TemplateConfig
 from ..stack_alloc import StackLayout
 from .ir import (
@@ -23,8 +24,6 @@ from .ir import (
     ConstructString,
     DefineConstant,
     Immediate,
-    Input,
-    Jump,
     NameRef,
     SuccessPredicate,
     Terminate,
@@ -115,7 +114,7 @@ class WorkflowTemplate(PayloadTemplate):
         return result
 
     @staticmethod
-    def _collect_value_refs(ref: ValueRef, add_fn) -> None:
+    def _collect_value_refs(ref: ValueRef, add_fn: Callable[[str], None]) -> None:
         if isinstance(ref, NameRef):
             add_fn(ref.name)
         elif isinstance(ref, AddressOf):

@@ -6,8 +6,8 @@ import pytest
 
 @pytest.fixture
 def revshell_asm(manifest_dir, revshell_layout):
-    from emitera.schema import load
     from emitera.api_emitter import emit_api_resolution
+    from emitera.schema import load
     manifest = load(str(manifest_dir / "revshell.yaml"))
     return emit_api_resolution(manifest, revshell_layout)
 
@@ -50,8 +50,9 @@ def test_all_functions_present(revshell_asm, manifest_dir):
 def test_all_hashes_correct(revshell_asm, manifest_dir):
     """Verify every hash is present - either as a plain mov or XOR-encoded pair."""
     import re
-    from emitera.schema import load
+
     from emitera.hash_gen import ror13
+    from emitera.schema import load
     manifest = load(str(manifest_dir / "revshell.yaml"))
     for name in manifest.functions:
         expected = ror13(name)
@@ -111,9 +112,9 @@ def test_no_payload_instructions(revshell_asm):
 
 
 def test_calc_manifest_minimal(manifest_dir):
+    from emitera.api_emitter import emit_api_resolution
     from emitera.schema import load
     from emitera.stack_alloc import build_layout
-    from emitera.api_emitter import emit_api_resolution
     manifest = load(str(manifest_dir / "calc.yaml"))
     layout = build_layout(manifest)
     asm = emit_api_resolution(manifest, layout)

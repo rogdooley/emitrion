@@ -1,8 +1,6 @@
 """Tests for schema.py manifest loading and validation."""
 from __future__ import annotations
 
-import pathlib
-
 import pytest
 
 from ..schema import load

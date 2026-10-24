@@ -44,9 +44,10 @@ def test_build_generates_contract_md(manifest_dir, tmp_path):
 
 def test_build_all_hashes_match_ror13(manifest_dir, tmp_path):
     import re
+
     from emitera.build import build
-    from emitera.schema import load
     from emitera.hash_gen import ror13
+    from emitera.schema import load
     manifest = load(str(manifest_dir / "revshell.yaml"))
     result = build(
         str(manifest_dir / "revshell.yaml"),
@@ -184,7 +185,6 @@ def test_build_no_assemble_skips_keystone(manifest_dir, tmp_path):
 
 
 def test_existing_modules_still_import():
-    from emitera import schema, hash_gen, api_database, stack_alloc, doc_gen, api_emitter
     assert True
 
 
@@ -315,8 +315,9 @@ def test_harness_none_when_no_assemble(manifest_dir, tmp_path):
 
 
 def test_harness_is_valid_python(manifest_dir, tmp_path):
-    from emitera.build import _generate_test_harness
     import ast
+
+    from emitera.build import _generate_test_harness
     harness = _generate_test_harness(256)
     ast.parse(harness)
 
@@ -438,8 +439,9 @@ def test_cli_prints_assembler_errors(monkeypatch, capsys, tmp_path):
 
 
 def test_debug_runner_is_valid_python():
-    from emitera.build import _generate_debug_runner
     import ast
+
+    from emitera.build import _generate_debug_runner
     runner = _generate_debug_runner("xor eax, eax\nret")
     ast.parse(runner)
 
@@ -541,6 +543,7 @@ def test_write_outputs_removes_stale_bin_artifacts(tmp_path):
 
 def test_write_text_uses_utf8_encoding(tmp_path, monkeypatch):
     import pathlib
+
     from emitera.build import _write_text
 
     captured: dict[str, object] = {}
@@ -617,10 +620,10 @@ class TestConfigOverrides:
 
     def test_changed_string_length_affects_layout(self, manifest_dir):
         """Override with a different-length string produces a different slot size."""
-        from emitera.schema import load
-        from emitera.stack_alloc import build_layout
         from emitera.build import _apply_config_overrides
         from emitera.payload_templates.base import TemplateConfig
+        from emitera.schema import load
+        from emitera.stack_alloc import build_layout
 
         manifest = load(str(manifest_dir / "tcp_download.yaml"))
         original_layout = build_layout(manifest)
@@ -649,9 +652,9 @@ class TestConfigOverrides:
 
     def test_backfill_populates_config_from_manifest(self, manifest_dir):
         """Config fields left None are backfilled from manifest strings."""
-        from emitera.schema import load
         from emitera.build import _apply_config_overrides
         from emitera.payload_templates.base import TemplateConfig
+        from emitera.schema import load
         manifest = load(str(manifest_dir / "copy_then_run.yaml"))
         config = TemplateConfig()
         _apply_config_overrides(manifest, config)
@@ -660,9 +663,9 @@ class TestConfigOverrides:
 
     def test_fallback_when_no_manifest_string(self, manifest_dir):
         """Config fields with no matching manifest string get hardcoded fallbacks."""
-        from emitera.schema import load
         from emitera.build import _apply_config_overrides
         from emitera.payload_templates.base import TemplateConfig
+        from emitera.schema import load
         manifest = load(str(manifest_dir / "revshell.yaml"))
         config = TemplateConfig()
         _apply_config_overrides(manifest, config)

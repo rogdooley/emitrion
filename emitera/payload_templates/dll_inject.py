@@ -23,14 +23,17 @@ Required strings:   process_name, dll_path, kernel32_str, loadlib_str
 """
 from __future__ import annotations
 
-from .base import PayloadTemplate, TemplateConfig
 from ..encode import (
     encode_dword,
-    safe_push_imm, safe_push_dword,
-    safe_lea, safe_mem_load, safe_mem_store,
-    safe_push_mem, safe_call_mem,
+    safe_call_mem,
     safe_dword_store,
+    safe_lea,
+    safe_mem_store,
+    safe_push_dword,
+    safe_push_imm,
+    safe_push_mem,
 )
+from .base import PayloadTemplate, TemplateConfig
 
 
 class DllInjectTemplate(PayloadTemplate):
@@ -71,7 +74,7 @@ class DllInjectTemplate(PayloadTemplate):
         return "\n".join([
             "; -- DLL Injection Payload --",
             f"; Target process: {config.process_name}",
-            f"; DLL path: (from manifest dll_path string slot)",
+            "; DLL path: (from manifest dll_path string slot)",
             "",
 
             # --- Phase 1: Enumerate processes ---

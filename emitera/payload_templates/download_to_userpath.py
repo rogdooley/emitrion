@@ -13,10 +13,14 @@ Required strings:   advapi_dll, urlmon_dll, path_prefix, path_suffix, url
 """
 from __future__ import annotations
 
-from .base import PayloadTemplate, TemplateConfig
 from ..encode import (
-    safe_lea, safe_mem_store, safe_mem_load, safe_call_mem, safe_push_imm,
+    safe_call_mem,
+    safe_lea,
+    safe_mem_load,
+    safe_mem_store,
+    safe_push_imm,
 )
+from .base import PayloadTemplate, TemplateConfig
 
 
 class DownloadToUserpathTemplate(PayloadTemplate):
@@ -104,7 +108,7 @@ class DownloadToUserpathTemplate(PayloadTemplate):
 
     def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
         return [
-            ("Host the payload file", f"python3 -m http.server 80  (serve payload.exe)"),
+            ("Host the payload file", "python3 -m http.server 80  (serve payload.exe)"),
             ("Path built on target", "C:\\Users\\<username>\\Desktop\\payload.exe"),
             ("URL fetched", "configured in manifest 'url' string"),
         ]

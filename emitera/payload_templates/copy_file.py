@@ -5,8 +5,8 @@ Strings: src_path, dst_path (mov method, pre-built at slots)
 """
 from __future__ import annotations
 
+from ..encode import safe_call_mem, safe_lea
 from .base import PayloadTemplate, TemplateConfig
-from ..encode import safe_lea, safe_call_mem
 
 
 class CopyFileTemplate(PayloadTemplate):
