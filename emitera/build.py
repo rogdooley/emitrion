@@ -30,12 +30,16 @@ from emitera.strings import emit_push, to_dwords
 
 
 def _build_timestamp() -> str:
-    """Return a build timestamp, honoring SOURCE_DATE_EPOCH for reproducibility."""
-    epoch = os.environ.get("SOURCE_DATE_EPOCH")
-    if epoch is not None:
-        dt = datetime.fromtimestamp(int(epoch), tz=timezone.utc)
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """Return a build timestamp. Reproducible by default (epoch 0).
+
+    Set SOURCE_DATE_EPOCH to a Unix timestamp for a specific date,
+    or SOURCE_DATE_EPOCH=now for a wall-clock timestamp.
+    """
+    epoch = os.environ.get("SOURCE_DATE_EPOCH", "0")
+    if epoch.lower() == "now":
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    dt = datetime.fromtimestamp(int(epoch), tz=timezone.utc)
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
 # ---------------------------------------------------------------------------
@@ -1107,9 +1111,13 @@ def build(
 
     effective_template = template_name or manifest.template
     template = _load_template(effective_template) if effective_template else None
+    extra_structs: list[str] | None = None
     if template is not None:
         manifest = _merge_template_requirements(manifest, template, config)
-    layout = build_layout(manifest)
+        from emitera.workflow.reference import WorkflowTemplate
+        if isinstance(template, WorkflowTemplate):
+            extra_structs = list(template.probe_structs().values())
+    layout = build_layout(manifest, extra_structs=extra_structs)
     asm = compose_asm(manifest, layout, manifest_path, template, config)
 
     raw: bytes | None = None

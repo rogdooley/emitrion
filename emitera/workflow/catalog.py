@@ -115,7 +115,7 @@ ABI_CATALOG: dict[str, ABIRecord] = {
             ArgDescriptor("g", ArgDirection.IN, ArgCategory.IMMEDIATE),
             ArgDescriptor("dwFlags", ArgDirection.IN, ArgCategory.IMMEDIATE),
         ),
-        returns=ReturnDescriptor("SOCKET", SuccessPredicate.NONZERO),
+        returns=ReturnDescriptor("SOCKET", SuccessPredicate.INVALID_HANDLE),
         workflow_supported=True,
     ),
     "connect": ABIRecord(

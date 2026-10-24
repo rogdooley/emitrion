@@ -102,7 +102,7 @@ class RecordingLayout:
         return list(self._accessed)
 
 
-def build_layout(manifest: Manifest) -> StackLayout:
+def build_layout(manifest: Manifest, extra_structs: list[str] | None = None) -> StackLayout:
     """Given a Manifest, produce a fully-populated StackLayout.
 
     Allocation zones:
@@ -176,6 +176,11 @@ def build_layout(manifest: Manifest) -> StackLayout:
             if struct_name not in seen_struct_names:
                 seen_struct_names.add(struct_name)
                 ordered_structs.append(struct_name)
+
+    for struct_name in (extra_structs or []):
+        if struct_name not in seen_struct_names:
+            seen_struct_names.add(struct_name)
+            ordered_structs.append(struct_name)
 
     struct_cursor = STRUCT_ZONE_START
     for struct_name in ordered_structs:

@@ -132,7 +132,9 @@ class TestX86Lowering:
             hex_val = match.group(1)
             for i in range(0, 8, 2):
                 byte_str = hex_val[i:i+2]
-                pass
+                assert byte_str != "00", (
+                    f"Null byte in immediate: 0x{hex_val} at position {i}"
+                )
 
 
 class TestEndToEndBuild:

@@ -53,7 +53,8 @@ class TestValidWorkflows:
             name="branch",
             blocks=(
                 Block("entry", (
-                    CallAPI("WinExec", (Immediate(0), Immediate(0)), result="ret"),
+                    ConstructString("cmd", "calc.exe"),
+                    CallAPI("WinExec", (AddressOf("cmd"), Immediate(0)), result="ret"),
                     Compare("ret", SuccessPredicate.NONZERO, "ok", "fail"),
                 )),
                 Block("ok", (Terminate(),)),
@@ -352,20 +353,8 @@ class TestWarnings:
         result = validate(w)
         assert any("legacy_only" in w or "no ABI" in w for w in result.warnings)
 
-    def test_mismatched_predicate_warning(self):
+    def test_mismatched_predicate_is_error(self):
         w = Workflow(
-            name="mismatch",
-            blocks=(
-                Block("entry", (
-                    CallAPI("WinExec", (AddressOf("cmd"), Immediate(0)),
-                            result="ret"),
-                    ConstructString("cmd", "calc.exe"),
-                )),
-            ),
-            entry="entry",
-        )
-        # WinExec returns NONZERO for success, use ZERO instead
-        w2 = Workflow(
             name="mismatch",
             blocks=(
                 Block("entry", (
@@ -379,11 +368,11 @@ class TestWarnings:
             ),
             entry="entry",
         )
-        result = validate(w2)
-        assert result.valid
-        assert any("predicate" in w and "nonzero" in w for w in result.warnings)
+        result = validate(w)
+        assert not result.valid
+        assert any("predicate" in e and "nonzero" in e for e in result.errors)
 
-    def test_null_ptr_warning(self):
+    def test_null_ptr_is_error(self):
         w = Workflow(
             name="bad_null",
             blocks=(
@@ -402,9 +391,10 @@ class TestWarnings:
             entry="entry",
         )
         result = validate(w)
-        assert any("NULL" in w for w in result.warnings)
+        assert not result.valid
+        assert any("NULL" in e for e in result.errors)
 
-    def test_string_ptr_immediate_warning(self):
+    def test_string_ptr_immediate_is_error(self):
         w = Workflow(
             name="bad_str",
             blocks=(
@@ -416,4 +406,37 @@ class TestWarnings:
             entry="entry",
         )
         result = validate(w)
-        assert any("string pointer" in w for w in result.warnings)
+        assert not result.valid
+        assert any("string pointer" in e for e in result.errors)
+
+    def test_unknown_input_is_error(self):
+        from emitera.workflow.ir import Input
+        w = Workflow(
+            name="bad_input",
+            blocks=(
+                Block("entry", (
+                    CallAPI("WinExec", (Input("nonexistent_field"), Immediate(0))),
+                    Terminate(),
+                )),
+            ),
+            entry="entry",
+        )
+        result = validate(w)
+        assert not result.valid
+        assert any("nonexistent_field" in e and "not a known" in e for e in result.errors)
+
+    def test_valid_input_accepted(self):
+        from emitera.workflow.ir import Input
+        w = Workflow(
+            name="ok_input",
+            blocks=(
+                Block("entry", (
+                    ConstructString("cmd", "calc.exe"),
+                    CallAPI("WinExec", (AddressOf("cmd"), Input("lport"))),
+                    Terminate(),
+                )),
+            ),
+            entry="entry",
+        )
+        result = validate(w)
+        assert result.valid, result.errors
