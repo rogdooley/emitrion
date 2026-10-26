@@ -382,8 +382,11 @@ Copy this file to the Windows lab VM, then:
 The assembly source is embedded below - edit it directly to experiment.
 Requires: pip install keystone-engine
 
-Attach WinDbg before pressing Enter. The shellcode address is printed
-so you can set a breakpoint:
+This runner assembles 32-bit x86 shellcode. Run it under 32-bit Python.
+It allocates and copies the bytes before pausing for the debugger.
+Attach WinDbg to this exact python.exe process before pressing Enter.
+The allocation remains valid while this Python process is alive.
+Use the printed address to set a breakpoint:
   bp <address>
 """
 import ctypes
@@ -397,6 +400,7 @@ CODE = r"""
 
 
 def main():
+    # Assemble the embedded text only. No shellcode has executed yet.
     ks = Ks(KS_ARCH_X86, KS_MODE_32)
     cleaned = CODE.replace("jmp short ", "jmp ")
     try:
@@ -428,11 +432,13 @@ def main():
     ]
     kernel32.CreateThread.restype = ctypes.c_void_p
 
+    # Reserve and commit executable memory in this Python process.
     ptr = kernel32.VirtualAlloc(None, len(shellcode), 0x3000, 0x40)
     if not ptr:
         print("[-] VirtualAlloc failed", file=sys.stderr)
         sys.exit(1)
 
+    # Copy the assembled bytes before the debugger attach window opens.
     buf = (ctypes.c_char * len(shellcode)).from_buffer(shellcode)
     kernel32.RtlMoveMemory(ptr, ctypes.addressof(buf), len(shellcode))
 
@@ -443,8 +449,10 @@ def main():
     print()
     print(f'shellcode = b"' + "".join(f"\\\\x{{b:02x}}" for b in shellcode) + '"')
     print()
+    # Do not continue until WinDbg is attached to this python.exe instance.
     input("... attach WinDbg, then press Enter to execute ...")
 
+    # Start a new thread at the first byte of the copied shellcode.
     ht = kernel32.CreateThread(None, 0, ptr, None, 0, None)
     if not ht:
         print("[-] CreateThread failed", file=sys.stderr)

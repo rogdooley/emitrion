@@ -486,6 +486,16 @@ def test_debug_runner_contains_breakpoint_hint():
     assert "WinDbg" in runner
 
 
+def test_debug_runner_explains_debugger_lifecycle():
+    from emitrion.build import _generate_debug_runner
+
+    runner = _generate_debug_runner("nop")
+
+    assert "Attach WinDbg to this exact python.exe process" in runner
+    assert "The allocation remains valid while this Python process is alive." in runner
+    assert "Start a new thread at the first byte of the copied shellcode." in runner
+
+
 def test_debug_runner_always_generated(manifest_dir, tmp_path):
     from emitrion.build import build
     result = build(
