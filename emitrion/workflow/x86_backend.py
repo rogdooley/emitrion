@@ -199,7 +199,12 @@ class _LoweringContext:
             return (lines, "eax")
 
         if isinstance(ref, AddressOf):
-            offset = -self.layout.slot(ref.name).offset
+            name = ref.name
+            stype = self.struct_types.get(name)
+            if stype is not None:
+                offset = -self.layout.slot(stype).offset
+            else:
+                offset = -self.layout.slot(name).offset
             lines = list(safe_lea("eax", "ebp", offset, self.bc))
             return (lines, "eax")
 
@@ -294,7 +299,7 @@ class _LoweringContext:
         lines.extend(setup)
 
         slot_obj = self.layout.slot(stype)
-        struct_base_offset = -(slot_obj.offset - slot_obj.size)
+        struct_base_offset = -slot_obj.offset
         field_abs = struct_base_offset + field_info.offset
 
         if field_info.size <= 2:

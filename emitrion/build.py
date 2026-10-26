@@ -937,10 +937,16 @@ def _merge_template_requirements(
                 ))
                 string_labels.add(label)
 
+    ir_struct_names: set[str] = set()
+    if auto_add_vars:
+        ir_struct_names = set(template.probe_structs().keys())
+
     for name in probed:
         if name in existing_funcs or name in existing_vars or name in string_labels:
             continue
         if name in STRUCT_DATABASE or name in dll_names:
+            continue
+        if name in ir_struct_names:
             continue
         if name in API_DATABASE:
             new_funcs.append(name)
