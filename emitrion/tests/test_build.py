@@ -7,7 +7,7 @@ import pytest
 
 
 def test_build_generates_asm(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(
         str(manifest_dir / "revshell.yaml"),
         template_name="reverse_shell",
@@ -19,7 +19,7 @@ def test_build_generates_asm(manifest_dir, tmp_path):
 
 
 def test_build_contains_framework_bootstrap(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(
         str(manifest_dir / "revshell.yaml"),
         out_dir=str(tmp_path),
@@ -31,7 +31,7 @@ def test_build_contains_framework_bootstrap(manifest_dir, tmp_path):
 
 
 def test_build_generates_contract_md(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(
         str(manifest_dir / "revshell.yaml"),
         out_dir=str(tmp_path),
@@ -45,9 +45,9 @@ def test_build_generates_contract_md(manifest_dir, tmp_path):
 def test_build_all_hashes_match_ror13(manifest_dir, tmp_path):
     import re
 
-    from emitera.build import build
-    from emitera.hash_gen import ror13
-    from emitera.schema import load
+    from emitrion.build import build
+    from emitrion.hash_gen import ror13
+    from emitrion.schema import load
     manifest = load(str(manifest_dir / "revshell.yaml"))
     result = build(
         str(manifest_dir / "revshell.yaml"),
@@ -73,7 +73,7 @@ def test_build_all_hashes_match_ror13(manifest_dir, tmp_path):
 
 
 def test_build_no_duplicate_api_slot_assignments(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(
         str(manifest_dir / "revshell.yaml"),
         out_dir=str(tmp_path),
@@ -90,7 +90,7 @@ def test_build_no_duplicate_api_slot_assignments(manifest_dir, tmp_path):
 
 
 def test_build_write_outputs(manifest_dir, tmp_path):
-    from emitera.build import build, write_outputs
+    from emitrion.build import build, write_outputs
     result = build(
         str(manifest_dir / "revshell.yaml"),
         out_dir=str(tmp_path),
@@ -103,7 +103,7 @@ def test_build_write_outputs(manifest_dir, tmp_path):
 
 
 def test_calc_build_no_network(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(
         str(manifest_dir / "calc.yaml"),
         template_name="run_command",
@@ -116,8 +116,8 @@ def test_calc_build_no_network(manifest_dir, tmp_path):
 
 
 def test_calc_build_winexec_hash(manifest_dir, tmp_path):
-    from emitera.build import build
-    from emitera.hash_gen import ror13
+    from emitrion.build import build
+    from emitrion.hash_gen import ror13
     result = build(
         str(manifest_dir / "calc.yaml"),
         out_dir=str(tmp_path),
@@ -128,7 +128,7 @@ def test_calc_build_winexec_hash(manifest_dir, tmp_path):
 
 
 def test_build_contains_dll_load_block(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(
         str(manifest_dir / "revshell.yaml"),
         out_dir=str(tmp_path),
@@ -140,7 +140,7 @@ def test_build_contains_dll_load_block(manifest_dir, tmp_path):
 
 
 def test_build_string_section_present(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(
         str(manifest_dir / "revshell.yaml"),
         out_dir=str(tmp_path),
@@ -150,7 +150,7 @@ def test_build_string_section_present(manifest_dir, tmp_path):
 
 
 def test_build_structure_section_present(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(
         str(manifest_dir / "revshell.yaml"),
         out_dir=str(tmp_path),
@@ -161,7 +161,7 @@ def test_build_structure_section_present(manifest_dir, tmp_path):
 
 
 def test_build_layout_returned(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(
         str(manifest_dir / "revshell.yaml"),
         out_dir=str(tmp_path),
@@ -174,7 +174,7 @@ def test_build_layout_returned(manifest_dir, tmp_path):
 
 
 def test_build_no_assemble_skips_keystone(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(
         str(manifest_dir / "revshell.yaml"),
         assemble=False,
@@ -193,27 +193,27 @@ def test_existing_modules_still_import():
 # ---------------------------------------------------------------------------
 
 def test_to_nasm_adds_bits32():
-    from emitera.build import _to_nasm
+    from emitrion.build import _to_nasm
     out = _to_nasm("xor eax, eax")
     assert out.startswith("BITS 32")
 
 
 def test_to_nasm_strips_hash_comments():
-    from emitera.build import _to_nasm
+    from emitrion.build import _to_nasm
     out = _to_nasm("mov eax, 1  # set eax")
     assert "#" not in out
     assert "mov eax, 1" in out
 
 
 def test_to_nasm_strips_semicolon_comments():
-    from emitera.build import _to_nasm
+    from emitrion.build import _to_nasm
     out = _to_nasm("; -- Framework Stubs ----------------\n    xor eax, eax")
     assert "-" not in out
     assert "xor eax, eax" in out
 
 
 def test_strip_comments_removes_unicode_box_drawing():
-    from emitera.build import _strip_comments
+    from emitrion.build import _strip_comments
     asm = "; -- Payload ---------------------\n    push eax  # note"
     out = _strip_comments(asm)
     assert "-" not in out
@@ -222,7 +222,7 @@ def test_strip_comments_removes_unicode_box_drawing():
 
 
 def test_debug_runner_converts_semicolons_to_hash():
-    from emitera.build import _generate_debug_runner
+    from emitrion.build import _generate_debug_runner
     runner = _generate_debug_runner("; comment line\n    xor eax, eax ; note")
     assert "; comment line" not in runner
     assert "# comment line" in runner
@@ -230,35 +230,35 @@ def test_debug_runner_converts_semicolons_to_hash():
 
 
 def test_to_nasm_removes_dword_ptr():
-    from emitera.build import _to_nasm
+    from emitrion.build import _to_nasm
     out = _to_nasm("call dword ptr [ebp-0x28]")
     assert "ptr" not in out
     assert "call dword [ebp-0x28]" in out
 
 
 def test_to_nasm_removes_word_ptr():
-    from emitera.build import _to_nasm
+    from emitrion.build import _to_nasm
     out = _to_nasm("cmp word ptr [esi], 0x004b")
     assert "ptr" not in out
     assert "cmp word [esi], 0x004b" in out
 
 
 def test_to_nasm_removes_byte_ptr():
-    from emitera.build import _to_nasm
+    from emitrion.build import _to_nasm
     out = _to_nasm("movzx eax, byte ptr [esi]")
     assert "ptr" not in out
     assert "movzx eax, byte [esi]" in out
 
 
 def test_to_nasm_fixes_fs_segment():
-    from emitera.build import _to_nasm
+    from emitrion.build import _to_nasm
     out = _to_nasm("mov eax, fs:[ecx + 0x30]")
     assert "fs:[" not in out
     assert "[fs:ecx + 0x30]" in out
 
 
 def test_to_nasm_no_change_to_normal_instructions():
-    from emitera.build import _to_nasm
+    from emitrion.build import _to_nasm
     src = "xor ecx, ecx\npush eax\npop ebx"
     out = _to_nasm(src)
     for instr in src.splitlines():
@@ -270,7 +270,7 @@ def test_to_nasm_no_change_to_normal_instructions():
 # ---------------------------------------------------------------------------
 
 def test_build_assembler_none_when_no_assemble(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(str(manifest_dir / "calc.yaml"), assemble=False, out_dir=str(tmp_path))
     assert result.assembler is None
 
@@ -279,7 +279,7 @@ def test_build_assembler_set_when_assembled(manifest_dir, tmp_path):
     import shutil
     if not shutil.which("nasm"):
         pytest.skip("nasm not available")
-    from emitera.build import build
+    from emitrion.build import build
     result = build(str(manifest_dir / "calc.yaml"), assemble=True, out_dir=str(tmp_path))
     if result.assembler is not None:
         assert result.assembler in ("keystone", "nasm")
@@ -294,7 +294,7 @@ def test_harness_generated_when_assembled(manifest_dir, tmp_path):
     import shutil
     if not shutil.which("nasm"):
         pytest.skip("nasm not available")
-    from emitera.build import build, write_outputs
+    from emitrion.build import build, write_outputs
     result = build(str(manifest_dir / "calc.yaml"), assemble=True, out_dir=str(tmp_path))
     if result.shellcode_bytes is None:
         pytest.skip("no assembler produced output")
@@ -309,7 +309,7 @@ def test_harness_generated_when_assembled(manifest_dir, tmp_path):
 
 
 def test_harness_none_when_no_assemble(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(str(manifest_dir / "calc.yaml"), assemble=False, out_dir=str(tmp_path))
     assert result.test_harness is None
 
@@ -317,13 +317,13 @@ def test_harness_none_when_no_assemble(manifest_dir, tmp_path):
 def test_harness_is_valid_python(manifest_dir, tmp_path):
     import ast
 
-    from emitera.build import _generate_test_harness
+    from emitrion.build import _generate_test_harness
     harness = _generate_test_harness(256)
     ast.parse(harness)
 
 
 def test_harness_contains_breakpoint_hint():
-    from emitera.build import _generate_test_harness
+    from emitrion.build import _generate_test_harness
     harness = _generate_test_harness(100)
     assert "bp" in harness.lower()
     assert "WinDbg" in harness
@@ -335,7 +335,7 @@ def test_harness_contains_breakpoint_hint():
 
 
 def test_try_assemble_collects_backend_errors(monkeypatch):
-    import emitera.build as build_module
+    import emitrion.build as build_module
 
     monkeypatch.setattr(
         build_module,
@@ -359,7 +359,7 @@ def test_try_assemble_collects_backend_errors(monkeypatch):
 
 
 def test_build_exposes_assembler_errors(monkeypatch, manifest_dir, tmp_path):
-    import emitera.build as build_module
+    import emitrion.build as build_module
 
     expected = ["keystone: invalid operand"]
     monkeypatch.setattr(
@@ -380,7 +380,7 @@ def test_build_exposes_assembler_errors(monkeypatch, manifest_dir, tmp_path):
 
 
 def test_build_rejects_assembled_badchars(monkeypatch, manifest_dir, tmp_path):
-    import emitera.build as build_module
+    import emitrion.build as build_module
 
     monkeypatch.setattr(
         build_module,
@@ -409,7 +409,7 @@ def test_build_rejects_assembled_badchars(monkeypatch, manifest_dir, tmp_path):
 
 
 def test_cli_prints_assembler_errors(monkeypatch, capsys, tmp_path):
-    import emitera.build as build_module
+    import emitrion.build as build_module
 
     result = build_module.BuildResult(
         manifest_path="manifest.yaml",
@@ -441,25 +441,25 @@ def test_cli_prints_assembler_errors(monkeypatch, capsys, tmp_path):
 def test_debug_runner_is_valid_python():
     import ast
 
-    from emitera.build import _generate_debug_runner
+    from emitrion.build import _generate_debug_runner
     runner = _generate_debug_runner("xor eax, eax\nret")
     ast.parse(runner)
 
 
 def test_debug_runner_contains_keystone_import():
-    from emitera.build import _generate_debug_runner
+    from emitrion.build import _generate_debug_runner
     runner = _generate_debug_runner("nop")
     assert "from keystone" in runner
 
 
 def test_debug_runner_contains_virtualalloc():
-    from emitera.build import _generate_debug_runner
+    from emitrion.build import _generate_debug_runner
     runner = _generate_debug_runner("nop")
     assert "VirtualAlloc" in runner
 
 
 def test_debug_runner_embeds_assembly():
-    from emitera.build import _generate_debug_runner
+    from emitrion.build import _generate_debug_runner
     asm = "mov eax, 0x42\npush eax\nret"
     runner = _generate_debug_runner(asm)
     assert "mov eax, 0x42" in runner
@@ -467,27 +467,27 @@ def test_debug_runner_embeds_assembly():
 
 
 def test_debug_runner_preserves_short_jumps_in_source():
-    from emitera.build import _generate_debug_runner
+    from emitrion.build import _generate_debug_runner
     runner = _generate_debug_runner("start:\n    jmp short done\ndone:\n    ret")
     assert "jmp short" in runner
 
 
 def test_debug_runner_strips_short_qualifier_at_runtime():
     """main() replaces 'jmp short' with 'jmp' for Keystone compatibility."""
-    from emitera.build import _generate_debug_runner
+    from emitrion.build import _generate_debug_runner
     runner = _generate_debug_runner("start:\n    jmp short done\ndone:\n    ret")
     assert 'CODE.replace("jmp short ", "jmp ")' in runner
 
 
 def test_debug_runner_contains_breakpoint_hint():
-    from emitera.build import _generate_debug_runner
+    from emitrion.build import _generate_debug_runner
     runner = _generate_debug_runner("nop")
     assert "bp" in runner.lower()
     assert "WinDbg" in runner
 
 
 def test_debug_runner_always_generated(manifest_dir, tmp_path):
-    from emitera.build import build
+    from emitrion.build import build
     result = build(
         str(manifest_dir / "calc.yaml"),
         assemble=False,
@@ -497,7 +497,7 @@ def test_debug_runner_always_generated(manifest_dir, tmp_path):
 
 
 def test_debug_runner_written_to_disk(manifest_dir, tmp_path):
-    from emitera.build import build, write_outputs
+    from emitrion.build import build, write_outputs
     result = build(
         str(manifest_dir / "calc.yaml"),
         assemble=False,
@@ -510,7 +510,7 @@ def test_debug_runner_written_to_disk(manifest_dir, tmp_path):
 
 
 def test_write_outputs_removes_stale_bin_artifacts(tmp_path):
-    from emitera.build import BuildResult, write_outputs
+    from emitrion.build import BuildResult, write_outputs
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True)
@@ -544,7 +544,7 @@ def test_write_outputs_removes_stale_bin_artifacts(tmp_path):
 def test_write_text_uses_utf8_encoding(tmp_path, monkeypatch):
     import pathlib
 
-    from emitera.build import _write_text
+    from emitrion.build import _write_text
 
     captured: dict[str, object] = {}
     original = pathlib.Path.write_text
@@ -575,8 +575,8 @@ class TestConfigOverrides:
 
     def test_omitted_preserves_manifest_value(self, manifest_dir, tmp_path):
         """When config field is None, manifest string value is preserved."""
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig()  # all overridable fields are None
         result = build(
             str(manifest_dir / "tcp_download.yaml"),
@@ -590,8 +590,8 @@ class TestConfigOverrides:
 
     def test_explicit_override_replaces_manifest(self, manifest_dir, tmp_path):
         """Non-None config value overrides the manifest string."""
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(dst_path="C:\\evil.exe")
         result = build(
             str(manifest_dir / "tcp_download.yaml"),
@@ -605,8 +605,8 @@ class TestConfigOverrides:
 
     def test_explicit_value_matching_default_still_overrides(self, manifest_dir, tmp_path):
         """Passing a value that equals the old TemplateConfig default still overrides."""
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(dst_path="C:\\dest.txt")
         result = build(
             str(manifest_dir / "tcp_download.yaml"),
@@ -620,10 +620,10 @@ class TestConfigOverrides:
 
     def test_changed_string_length_affects_layout(self, manifest_dir):
         """Override with a different-length string produces a different slot size."""
-        from emitera.build import _apply_config_overrides
-        from emitera.payload_templates.base import TemplateConfig
-        from emitera.schema import load
-        from emitera.stack_alloc import build_layout
+        from emitrion.build import _apply_config_overrides
+        from emitrion.payload_templates.base import TemplateConfig
+        from emitrion.schema import load
+        from emitrion.stack_alloc import build_layout
 
         manifest = load(str(manifest_dir / "tcp_download.yaml"))
         original_layout = build_layout(manifest)
@@ -638,8 +638,8 @@ class TestConfigOverrides:
 
     def test_contract_consistent_with_override(self, manifest_dir, tmp_path):
         """Contract doc reflects the overridden value, not the manifest original."""
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(dst_path="C:\\pwned.exe")
         result = build(
             str(manifest_dir / "tcp_download.yaml"),
@@ -652,9 +652,9 @@ class TestConfigOverrides:
 
     def test_backfill_populates_config_from_manifest(self, manifest_dir):
         """Config fields left None are backfilled from manifest strings."""
-        from emitera.build import _apply_config_overrides
-        from emitera.payload_templates.base import TemplateConfig
-        from emitera.schema import load
+        from emitrion.build import _apply_config_overrides
+        from emitrion.payload_templates.base import TemplateConfig
+        from emitrion.schema import load
         manifest = load(str(manifest_dir / "copy_then_run.yaml"))
         config = TemplateConfig()
         _apply_config_overrides(manifest, config)
@@ -663,9 +663,9 @@ class TestConfigOverrides:
 
     def test_fallback_when_no_manifest_string(self, manifest_dir):
         """Config fields with no matching manifest string get hardcoded fallbacks."""
-        from emitera.build import _apply_config_overrides
-        from emitera.payload_templates.base import TemplateConfig
-        from emitera.schema import load
+        from emitrion.build import _apply_config_overrides
+        from emitrion.payload_templates.base import TemplateConfig
+        from emitrion.schema import load
         manifest = load(str(manifest_dir / "revshell.yaml"))
         config = TemplateConfig()
         _apply_config_overrides(manifest, config)

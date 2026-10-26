@@ -9,16 +9,16 @@ import pytest
 
 @pytest.fixture
 def revshell_layout(manifest_dir):
-    from emitera.schema import load
-    from emitera.stack_alloc import build_layout
+    from emitrion.schema import load
+    from emitrion.stack_alloc import build_layout
     manifest = load(str(manifest_dir / "revshell.yaml"))
     return build_layout(manifest)
 
 
 @pytest.fixture
 def calc_layout(manifest_dir):
-    from emitera.schema import load
-    from emitera.stack_alloc import build_layout
+    from emitrion.schema import load
+    from emitrion.stack_alloc import build_layout
     manifest = load(str(manifest_dir / "calc.yaml"))
     return build_layout(manifest)
 
@@ -27,8 +27,8 @@ def calc_layout(manifest_dir):
                          "tcp_download.yaml", "copy_then_run.yaml"])
 def any_layout(request, manifest_dir):
     """Parameterised fixture: runs the test once per manifest."""
-    from emitera.schema import load
-    from emitera.stack_alloc import build_layout
+    from emitrion.schema import load
+    from emitrion.stack_alloc import build_layout
     manifest = load(str(manifest_dir / request.param))
     return build_layout(manifest)
 
@@ -254,7 +254,7 @@ def test_invariant_positive_offset_writes_stay_in_bounds(any_layout):
 
 def test_invariant_api_slots_below_struct_zone(any_layout):
     """API/variable/module_base slots must not intersect structure or string slots."""
-    from emitera.stack_alloc import STRUCT_ZONE_START
+    from emitrion.stack_alloc import STRUCT_ZONE_START
     small_cats = {"module_base", "api", "variable"}
     for s in any_layout.all_slots():
         if s.category in small_cats:

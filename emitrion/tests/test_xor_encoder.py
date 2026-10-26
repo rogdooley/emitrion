@@ -1,8 +1,8 @@
 """Tests for the XOR payload encoder."""
 from __future__ import annotations
 
-from emitera.scanner import scan
-from emitera.xor_encoder import xor_encode
+from emitrion.scanner import scan
+from emitrion.xor_encoder import xor_encode
 
 
 class TestCleanPayload:

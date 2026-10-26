@@ -130,7 +130,7 @@ def test_variable_slot_after_api_slots(revshell_layout):
 
 
 def test_variable_slot_before_struct_zone(revshell_layout):
-    from emitera.stack_alloc import STRUCT_ZONE_START
+    from emitrion.stack_alloc import STRUCT_ZONE_START
     socket_slot = revshell_layout.slot("socket_handle")
     assert socket_slot.offset + socket_slot.size <= STRUCT_ZONE_START
 

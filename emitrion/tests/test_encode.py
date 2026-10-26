@@ -1,6 +1,6 @@
 """Tests for encode.py - badchar-safe immediate encoding."""
 
-from emitera.encode import (
+from emitrion.encode import (
     encode_dword,
     encode_word,
     safe_push_dword,
@@ -190,40 +190,40 @@ class TestTmpRegisterConflict:
                 assert tmp_used != base, f"scratch {tmp_used} clobbers base {base}"
 
     def test_safe_sub_from_mem_ecx_dst(self):
-        from emitera.encode import safe_sub_from_mem
+        from emitrion.encode import safe_sub_from_mem
         lines = safe_sub_from_mem("ecx", "ebp", -0x45, self.DIRTY_BC)
         assert len(lines) > 1, "should use dirty-displacement path"
         self._assert_no_clobber(lines, "ecx", "ebp")
         assert any("sub  ecx" in l for l in lines)
 
     def test_safe_sub_from_mem_base_conflict(self):
-        from emitera.encode import safe_sub_from_mem
+        from emitrion.encode import safe_sub_from_mem
         lines = safe_sub_from_mem("ecx", "edx", -0x45, self.DIRTY_BC)
         assert len(lines) > 1, "should use dirty-displacement path"
         self._assert_no_clobber(lines, "ecx", "edx")
 
     def test_safe_add_from_mem_ecx_dst(self):
-        from emitera.encode import safe_add_from_mem
+        from emitrion.encode import safe_add_from_mem
         lines = safe_add_from_mem("ecx", "ebp", -0x45, self.DIRTY_BC)
         assert len(lines) > 1, "should use dirty-displacement path"
         self._assert_no_clobber(lines, "ecx", "ebp")
         assert any("add  ecx" in l for l in lines)
 
     def test_safe_add_to_mem_ecx_src(self):
-        from emitera.encode import safe_add_to_mem
+        from emitrion.encode import safe_add_to_mem
         lines = safe_add_to_mem("ebp", -0x45, "ecx", self.DIRTY_BC)
         assert len(lines) > 1, "should use dirty-displacement path"
         self._assert_no_clobber(lines, "ecx", "ebp")
 
     def test_safe_cmp_with_mem_ecx_reg(self):
-        from emitera.encode import safe_cmp_with_mem
+        from emitrion.encode import safe_cmp_with_mem
         lines = safe_cmp_with_mem("ecx", "ebp", -0x45, self.DIRTY_BC)
         assert len(lines) > 1, "should use dirty-displacement path"
         self._assert_no_clobber(lines, "ecx", "ebp")
         assert any("cmp  ecx" in l for l in lines)
 
     def test_pick_tmp_avoids_dst_and_base(self):
-        from emitera.encode import _pick_tmp
+        from emitrion.encode import _pick_tmp
         assert _pick_tmp("ecx", "ecx", "ebp") != "ecx"
         assert _pick_tmp("edx", "edx", "ebp") != "edx"
         assert _pick_tmp("ecx", "eax", "ebp") == "ecx"
@@ -240,8 +240,8 @@ class TestFrameSize:
     def test_frame_size_rounds_up(self):
         import pathlib
 
-        from emitera.schema import load
-        from emitera.stack_alloc import build_layout
+        from emitrion.schema import load
+        from emitrion.stack_alloc import build_layout
         manifest_dir = pathlib.Path(__file__).parent.parent / "manifests"
         manifest = load(str(manifest_dir / "revshell.yaml"))
         layout = build_layout(manifest)

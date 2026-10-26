@@ -5,7 +5,7 @@ strings.py emitters. For push method, emits the push sequence only (ESP = pointe
 """
 from __future__ import annotations
 
-from emitera.strings import emit_mov, emit_push, emit_shiftor, emit_xor
+from emitrion.strings import emit_mov, emit_push, emit_shiftor, emit_xor
 
 from .encode import safe_lea
 from .schema import Manifest, StringEntry

@@ -10,8 +10,8 @@ if _TOOLS_DIR not in sys.path:
 
 
 def test_push_string_no_slot_lea(manifest_dir, revshell_layout):
-    from emitera.schema import load
-    from emitera.string_emitter import emit_string
+    from emitrion.schema import load
+    from emitrion.string_emitter import emit_string
     manifest = load(str(manifest_dir / "revshell.yaml"))
     ws2_entry = next(e for e in manifest.strings if e.method == "push")
     result = emit_string(ws2_entry, revshell_layout, manifest.badchars)
@@ -22,8 +22,8 @@ def test_push_string_no_slot_lea(manifest_dir, revshell_layout):
 
 
 def test_push_string_contains_pushes(manifest_dir, revshell_layout):
-    from emitera.schema import load
-    from emitera.string_emitter import emit_string
+    from emitrion.schema import load
+    from emitrion.string_emitter import emit_string
     manifest = load(str(manifest_dir / "revshell.yaml"))
     ws2_entry = next(e for e in manifest.strings if e.method == "push")
     result = emit_string(ws2_entry, revshell_layout, manifest.badchars)
@@ -32,8 +32,8 @@ def test_push_string_contains_pushes(manifest_dir, revshell_layout):
 
 
 def test_mov_string_uses_lea_slot(manifest_dir, revshell_layout):
-    from emitera.schema import load
-    from emitera.string_emitter import emit_string
+    from emitrion.schema import load
+    from emitrion.string_emitter import emit_string
     manifest = load(str(manifest_dir / "revshell.yaml"))
     cmd_entry = next(e for e in manifest.strings if e.method == "mov")
     result = emit_string(cmd_entry, revshell_layout, manifest.badchars)
@@ -42,9 +42,9 @@ def test_mov_string_uses_lea_slot(manifest_dir, revshell_layout):
 
 
 def test_mov_string_delegates_to_strings_py(manifest_dir, revshell_layout):
-    from emitera.schema import load
-    from emitera.string_emitter import emit_string
-    from emitera.strings import emit_mov
+    from emitrion.schema import load
+    from emitrion.string_emitter import emit_string
+    from emitrion.strings import emit_mov
     manifest = load(str(manifest_dir / "revshell.yaml"))
     cmd_entry = next(e for e in manifest.strings if e.method == "mov")
     expected = emit_mov(cmd_entry.value, dest="edi", badchars=manifest.badchars)
@@ -57,16 +57,16 @@ def test_mov_string_delegates_to_strings_py(manifest_dir, revshell_layout):
 
 
 def test_emit_all_strings_contains_cmd(manifest_dir, revshell_layout):
-    from emitera.schema import load
-    from emitera.string_emitter import emit_all_strings
+    from emitrion.schema import load
+    from emitrion.string_emitter import emit_all_strings
     manifest = load(str(manifest_dir / "revshell.yaml"))
     result = emit_all_strings(manifest, revshell_layout)
     assert "cmd" in result
 
 
 def test_emit_all_strings_skip_labels(manifest_dir, revshell_layout):
-    from emitera.schema import load
-    from emitera.string_emitter import emit_all_strings
+    from emitrion.schema import load
+    from emitrion.string_emitter import emit_all_strings
     manifest = load(str(manifest_dir / "revshell.yaml"))
     # Skip ws2_dll label
     result = emit_all_strings(manifest, revshell_layout, skip_labels={"ws2_dll"})
@@ -74,8 +74,8 @@ def test_emit_all_strings_skip_labels(manifest_dir, revshell_layout):
 
 
 def test_string_header_present(manifest_dir, revshell_layout):
-    from emitera.schema import load
-    from emitera.string_emitter import emit_string
+    from emitrion.schema import load
+    from emitrion.string_emitter import emit_string
     manifest = load(str(manifest_dir / "revshell.yaml"))
     cmd_entry = next(e for e in manifest.strings if e.method == "mov")
     result = emit_string(cmd_entry, revshell_layout, manifest.badchars)
@@ -85,8 +85,8 @@ def test_string_header_present(manifest_dir, revshell_layout):
 def test_no_null_in_immediates_push(manifest_dir, revshell_layout):
     import re
 
-    from emitera.schema import load
-    from emitera.string_emitter import emit_string
+    from emitrion.schema import load
+    from emitrion.string_emitter import emit_string
     manifest = load(str(manifest_dir / "revshell.yaml"))
     ws2_entry = next(e for e in manifest.strings if e.method == "push")
     result = emit_string(ws2_entry, revshell_layout, manifest.badchars)

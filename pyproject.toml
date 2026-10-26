@@ -1,5 +1,5 @@
 [project]
-name = "emitera"
+name = "emitrion"
 version = "0.1.0"
 description = "Multi-architecture shellcode emitter for educational security research"
 requires-python = ">=3.12"
@@ -8,7 +8,7 @@ dependencies = [
 ]
 
 [project.scripts]
-emitera = "emitera.build:main"
+emitrion = "emitrion.build:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -47,13 +47,13 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["emitera"]
+known-first-party = ["emitrion"]
 
 [tool.mypy]
 python_version = "3.12"
 
 [[tool.mypy.overrides]]
-module = "emitera.workflow.*"
+module = "emitrion.workflow.*"
 strict = true
 warn_return_any = true
 
@@ -62,4 +62,4 @@ module = "keystone.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["emitera/tests"]
+testpaths = ["emitrion/tests"]

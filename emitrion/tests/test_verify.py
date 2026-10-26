@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import json
 
-from emitera.build import _check_badchars, build
-from emitera.payload_templates.base import TemplateConfig
-from emitera.tests.conftest import requires_assembler
-from emitera.verify import VerificationReport, verify, write_verification
+from emitrion.build import _check_badchars, build
+from emitrion.payload_templates.base import TemplateConfig
+from emitrion.tests.conftest import requires_assembler
+from emitrion.verify import VerificationReport, verify, write_verification
 
 
 class TestBadcharScanning:

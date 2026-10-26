@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Emitera is an educational Windows API workflow emitter.  The project must be
+Emitrion is an educational Windows API workflow emitter.  The project must be
 easy to read, explicit about its platform guarantees, and difficult to extend
 incorrectly.  This document defines the engineering standard for code,
 documentation, and tests.

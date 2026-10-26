@@ -1,7 +1,7 @@
 """Tests for Workflow IR validation."""
 from __future__ import annotations
 
-from emitera.workflow.ir import (
+from emitrion.workflow.ir import (
     AddressOf,
     AllocateLocal,
     AllocateStruct,
@@ -19,7 +19,7 @@ from emitera.workflow.ir import (
     WriteStructField,
     ZeroStruct,
 )
-from emitera.workflow.validator import validate
+from emitrion.workflow.validator import validate
 
 
 def _minimal_workflow(**kwargs) -> Workflow:
@@ -40,7 +40,7 @@ class TestValidWorkflows:
         assert result.valid, result.errors
 
     def test_run_command_workflow_valid(self):
-        from emitera.workflow.reference import build_run_command_workflow
+        from emitrion.workflow.reference import build_run_command_workflow
         w = build_run_command_workflow()
         result = validate(w)
         assert result.valid, result.errors
@@ -425,7 +425,7 @@ class TestWarnings:
         assert any("string pointer" in e for e in result.errors)
 
     def test_unknown_input_is_error(self):
-        from emitera.workflow.ir import Input
+        from emitrion.workflow.ir import Input
         w = Workflow(
             name="bad_input",
             blocks=(
@@ -441,7 +441,7 @@ class TestWarnings:
         assert any("nonexistent_field" in e and "not a known" in e for e in result.errors)
 
     def test_string_ptr_input_is_error(self):
-        from emitera.workflow.ir import Input
+        from emitrion.workflow.ir import Input
         # A string Input has no backing stack string, so it cannot satisfy a
         # STRING_PTR argument; the user must use ConstructString + AddressOf.
         w = Workflow(
@@ -459,7 +459,7 @@ class TestWarnings:
         assert any("backing stack string" in e for e in result.errors)
 
     def test_valid_input_accepted(self):
-        from emitera.workflow.ir import Input
+        from emitrion.workflow.ir import Input
         w = Workflow(
             name="ok_input",
             blocks=(

@@ -8,7 +8,7 @@ through to the now-clean payload.
 
 Usage::
 
-    from emitera.xor_encoder import xor_encode
+    from emitrion.xor_encoder import xor_encode
 
     result = xor_encode(raw_shellcode, badchars={0x00, 0x0a, 0x0d})
     if result.success:

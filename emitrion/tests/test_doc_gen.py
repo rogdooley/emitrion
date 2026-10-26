@@ -64,10 +64,10 @@ def test_kernel32_base_in_module_bases_section(revshell_doc):
 
 def test_hash_from_ror13_not_hardcoded():
     # Verify the doc generation uses ror13 dynamically
-    from emitera.doc_gen import emit_api_contracts_md
-    from emitera.hash_gen import ror13
-    from emitera.schema import load
-    from emitera.stack_alloc import build_layout
+    from emitrion.doc_gen import emit_api_contracts_md
+    from emitrion.hash_gen import ror13
+    from emitrion.schema import load
+    from emitrion.stack_alloc import build_layout
     manifest_dir = pathlib.Path(__file__).parent.parent / "manifests"
     manifest = load(str(manifest_dir / "revshell.yaml"))
     layout = build_layout(manifest)
@@ -78,9 +78,9 @@ def test_hash_from_ror13_not_hardcoded():
 
 
 def test_calc_manifest_no_network_structs(manifest_dir):
-    from emitera.doc_gen import emit_full_contract_md
-    from emitera.schema import load
-    from emitera.stack_alloc import build_layout
+    from emitrion.doc_gen import emit_full_contract_md
+    from emitrion.schema import load
+    from emitrion.stack_alloc import build_layout
     manifest = load(str(manifest_dir / "calc.yaml"))
     layout = build_layout(manifest)
     doc = emit_full_contract_md(manifest, layout)
@@ -145,9 +145,9 @@ def test_cheatsheet_no_trailing_whitespace(revshell_doc_with_cheatsheet):
 
 
 def test_cheatsheet_standalone_emitter():
-    from emitera.doc_gen import emit_cheatsheet_md
-    from emitera.payload_templates.base import TemplateConfig
-    from emitera.payload_templates.tcp_stager import TcpStagerTemplate
+    from emitrion.doc_gen import emit_cheatsheet_md
+    from emitrion.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.tcp_stager import TcpStagerTemplate
     template = TcpStagerTemplate()
     config = TemplateConfig(lhost="10.0.0.1", lport=8080)
     result = emit_cheatsheet_md(template, config, shellcode_size=256)

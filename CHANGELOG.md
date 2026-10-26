@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to emitera are documented in this file.
+All notable changes to emitrion are documented in this file.
 
 ## [Unreleased]
 
@@ -9,10 +9,10 @@ All notable changes to emitera are documented in this file.
   WSASocketA, connect, CreateProcessA) as typed IR with pre-computed network
   byte order, struct initialization, and error branching at each stage.
   Registered as `ir_reverse_shell` template.
-- **Verification lane** (`emitera.verify`): three-tier validation pipeline
+- **Verification lane** (`emitrion.verify`): three-tier validation pipeline
   (cross-platform generation, assembly + bad-char scan, manual Windows lab).
   Produces JSON reports, supports determinism checks and XOR encoding.
-  Runnable via `python -m emitera.verify`.
+  Runnable via `python -m emitrion.verify`.
 - **Quality gates**: ruff linting across the codebase, mypy strict on the
   workflow module.
 - **Workflow IR hardening**: control-flow-aware validation with

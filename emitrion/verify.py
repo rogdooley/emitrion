@@ -12,8 +12,8 @@ Assembly requires Keystone or NASM.
 Execution is manual, in the isolated Windows lab environment only.
 
 Usage:
-  uv run python -m emitera.verify emitera/manifests/calc.yaml --template ir_run_command
-  uv run python -m emitera.verify emitera/manifests/revshell.yaml --lhost 10.0.0.1 --lport 9001
+  uv run python -m emitrion.verify emitrion/manifests/calc.yaml --template ir_run_command
+  uv run python -m emitrion.verify emitrion/manifests/revshell.yaml --lhost 10.0.0.1 --lport 9001
 """
 from __future__ import annotations
 
@@ -189,7 +189,7 @@ def write_verification(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="emitera.verify",
+        prog="emitrion.verify",
         description="Verification lane: generate, assemble, scan, report.",
     )
     parser.add_argument("manifest", help="Path to manifest YAML file")
