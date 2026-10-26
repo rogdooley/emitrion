@@ -225,6 +225,31 @@ class TestStructLowering:
         lines = ctx._lower_write_struct_field(field_op)
         asm = "\n".join(lines)
         assert "si.cb" in asm
+        # cb starts at the allocated structure base: [ebp-0xc4].
+        # This would have been [ebp-0x80] with the former base calculation.
+        assert "mov  [ebp-0xc4], eax" in asm
+
+    def test_write_struct_field_uses_base_plus_field_displacement(self):
+        """Field offsets are relative to the allocated structure base."""
+        from emitrion.api_database import STRUCT_DATABASE
+        from emitrion.stack_alloc import Slot, StackLayout
+        from emitrion.workflow.x86_backend import _LoweringContext
+
+        si_size = STRUCT_DATABASE["STARTUPINFOA"].size
+        layout = StackLayout([
+            Slot(name="STARTUPINFOA", offset=0x80 + si_size, size=si_size, category="structure"),
+        ])
+        ctx = _LoweringContext(layout, set(), None)
+        ctx.struct_types["si"] = "STARTUPINFOA"
+
+        asm = "\n".join(
+            ctx._lower_write_struct_field(
+                WriteStructField("si", "dwFlags", Immediate(0x100))
+            )
+        )
+
+        # STARTUPINFOA begins at [ebp-0xc4]; dwFlags is 0x2c bytes into it.
+        assert "mov  [ebp-0x98], eax" in asm
 
 
 class TestDeterminism:
