@@ -257,7 +257,8 @@ class _LoweringContext:
         field_abs = struct_base_offset + field_info.offset
 
         if field_info.size <= 2:
-            lines.extend(safe_word_store("ebp", field_abs, reg, self.bc))
+            reg16 = {"eax": "ax", "ebx": "bx", "ecx": "cx", "edx": "dx"}.get(reg, reg)
+            lines.extend(safe_word_store("ebp", field_abs, reg16, self.bc))
         else:
             lines.extend(safe_dword_store("ebp", field_abs, reg, self.bc))
 
