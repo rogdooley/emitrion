@@ -243,7 +243,9 @@ class TestAssemblyPhase:
         data = json.loads(report_path.read_text())
         assert data["passed"] is True
         assert data["assembled"] is True
-        assert "sha256" in data["shellcode_sha256"]
+        digest = data["shellcode_sha256"]
+        assert len(digest) == 64
+        assert all(c in "0123456789abcdef" for c in digest)
         assert isinstance(data["badchar_violations"], list)
 
     def test_all_manifests_assemble(self, manifest_dir, tmp_path, monkeypatch):

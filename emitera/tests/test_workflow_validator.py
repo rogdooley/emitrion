@@ -260,6 +260,24 @@ class TestStructErrors:
         result = validate(w)
         assert any("nonexistent_field" in e and "not found" in e for e in result.errors)
 
+    def test_duplicate_struct_type_is_error(self):
+        # Two allocations of one struct type would alias the same stack slot,
+        # since layout dedups struct slots by type.
+        w = Workflow(
+            name="alias",
+            blocks=(
+                Block("entry", (
+                    AllocateStruct("a", "sockaddr_in"),
+                    AllocateStruct("b", "sockaddr_in"),
+                    Terminate(),
+                )),
+            ),
+            entry="entry",
+        )
+        result = validate(w)
+        assert not result.valid
+        assert any("alias one stack slot" in e for e in result.errors)
+
 
 class TestCompareAndBranchErrors:
     def test_compare_undefined_value(self):
@@ -421,6 +439,24 @@ class TestWarnings:
         result = validate(w)
         assert not result.valid
         assert any("nonexistent_field" in e and "not a known" in e for e in result.errors)
+
+    def test_string_ptr_input_is_error(self):
+        from emitera.workflow.ir import Input
+        # A string Input has no backing stack string, so it cannot satisfy a
+        # STRING_PTR argument; the user must use ConstructString + AddressOf.
+        w = Workflow(
+            name="bad_str_input",
+            blocks=(
+                Block("entry", (
+                    CallAPI("WinExec", (Input("command"), Immediate(0))),
+                    Terminate(),
+                )),
+            ),
+            entry="entry",
+        )
+        result = validate(w)
+        assert not result.valid
+        assert any("backing stack string" in e for e in result.errors)
 
     def test_valid_input_accepted(self):
         from emitera.workflow.ir import Input

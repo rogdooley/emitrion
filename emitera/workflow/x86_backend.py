@@ -50,6 +50,20 @@ from .ir import (
     ZeroStruct,
 )
 
+_WORD_REG = {
+    "eax": "ax", "ebx": "bx", "ecx": "cx", "edx": "dx",
+    "esi": "si", "edi": "di", "ebp": "bp", "esp": "sp",
+}
+
+
+def _word_reg(reg: str) -> str:
+    """Return the 16-bit sub-register for a 32-bit register name.
+
+    Word-sized struct fields are stored with a `mov word ptr [...], ax`,
+    so the 32-bit value register must be narrowed to its 16-bit form.
+    """
+    return _WORD_REG.get(reg, reg)
+
 
 def lower_workflow(
     workflow: Workflow,
@@ -69,10 +83,37 @@ def lower_workflow(
     lines.append(f"; -- Workflow: {workflow.name} --")
     lines.append("")
 
-    for block in workflow.blocks:
-        lines.extend(ctx.lower_block(block))
+    # Lower each block in original order so that DefineConstant and
+    # AllocateStruct ops (declared in the entry block) are recorded before
+    # later blocks reference them.
+    lowered = {block.name: ctx.lower_block(block) for block in workflow.blocks}
+
+    # Emit terminal blocks (those ending in Terminate, e.g. success/fail)
+    # first, behind a short trampoline to the entry block.  This makes every
+    # jump to a terminal block run backwards, so its relative displacement has
+    # high bytes 0xFF rather than 0x00 and stays clear of a null badchar.  A
+    # far forward jump to a trailing fail block would otherwise encode as
+    # `e9 xx 00 00 00`, injecting null bytes into the shellcode.
+    terminal = [b.name for b in workflow.blocks if _is_terminal(b)]
+    normal = [b.name for b in workflow.blocks if not _is_terminal(b)]
+
+    if terminal and workflow.entry in normal:
+        lines.append(f"    jmp  wf_{workflow.entry}")
+        lines.append("")
+        for name in terminal:
+            lines.extend(lowered[name])
+        for name in normal:
+            lines.extend(lowered[name])
+    else:
+        for block in workflow.blocks:
+            lines.extend(lowered[block.name])
 
     return "\n".join(lines)
+
+
+def _is_terminal(block: Block) -> bool:
+    """True if the block ends control flow with a Terminate op."""
+    return any(isinstance(op, Terminate) for op in block.operations)
 
 
 class _LoweringContext:
@@ -257,8 +298,7 @@ class _LoweringContext:
         field_abs = struct_base_offset + field_info.offset
 
         if field_info.size <= 2:
-            reg16 = {"eax": "ax", "ebx": "bx", "ecx": "cx", "edx": "dx"}.get(reg, reg)
-            lines.extend(safe_word_store("ebp", field_abs, reg16, self.bc))
+            lines.extend(safe_word_store("ebp", field_abs, _word_reg(reg), self.bc))
         else:
             lines.extend(safe_dword_store("ebp", field_abs, reg, self.bc))
 

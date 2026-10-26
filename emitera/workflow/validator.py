@@ -137,6 +137,25 @@ def validate(workflow: Workflow) -> ValidationResult:
 
     all_names: set[str] = set()
 
+    # Reject two allocations of the same struct type.  Stack layout
+    # deduplicates struct slots by type and the backend resolves fields by
+    # type (not by allocation name), so a second AllocateStruct of a type
+    # already allocated would silently alias the first one's memory.
+    struct_type_owner: dict[str, str] = {}
+    for block in workflow.blocks:
+        for op in block.operations:
+            if isinstance(op, AllocateStruct):
+                prior = struct_type_owner.get(op.struct_type)
+                if prior is not None and prior != op.name:
+                    errors.append(
+                        f"Block '{block.name}': AllocateStruct '{op.name}' "
+                        f"reuses struct type '{op.struct_type}' already "
+                        f"allocated as '{prior}'; same-type structs would "
+                        f"alias one stack slot"
+                    )
+                else:
+                    struct_type_owner.setdefault(op.struct_type, op.name)
+
     predecessors: dict[str, list[str]] = {name: [] for name in block_map}
     for block in workflow.blocks:
         if block.operations:
@@ -454,6 +473,12 @@ def _validate_arg_categories(
                 errors.append(
                     f"Block '{block_name}': {op.api_name} arg '{desc.name}' "
                     f"expects a string pointer, got Immediate"
+                )
+            elif isinstance(arg, Input):
+                errors.append(
+                    f"Block '{block_name}': {op.api_name} arg '{desc.name}' "
+                    f"expects a string pointer, but Input '{arg.name}' has no "
+                    f"backing stack string; use ConstructString with AddressOf"
                 )
             elif isinstance(arg, AddressOf) and arg.name not in string_names:
                 if arg.name not in struct_allocations:
