@@ -33,9 +33,16 @@ All notable changes to emitera are documented in this file.
 - Word-size struct field writes in the IR x86 backend: `sin_family` and
   `sin_port` (16-bit fields) were emitting `mov word ptr [...], eax`
   instead of `mov word ptr [...], ax`, causing NASM assembly errors.
+- Null bytes in IR workflow control flow: terminal blocks (`success`,
+  `fail`) are now emitted first, behind a short trampoline to the entry
+  block, so jumps to them run backwards and avoid the `e9 xx 00 00 00`
+  forward-jump encoding that injected null bad characters.
 - Workflow validator now rejects mismatched predicates, null pointer
   dereferences, and string pointer immediates as errors (previously
   warnings).
+- Workflow validator now rejects two `AllocateStruct` ops of the same
+  struct type (which would alias one stack slot) and `Input` used as a
+  string pointer (which has no backing stack string).
 
 ## [0.1.0] - 2026-10-20
 
