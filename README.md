@@ -1,5 +1,15 @@
 # Emitera
 
+> **Status: alpha.** Emitera is under active development and not yet stable;
+> interfaces, output, and behavior may change without notice. It grew out of
+> earlier work on the osed-toolkit emitter. As functionality stabilizes, the
+> status above and the notes below will be updated to reflect what is
+> considered reliable.
+>
+> **Stable:** (nothing yet)
+> **In progress:** x86 Windows backend, IR reverse shell and run-command
+> workflows, bad-character encoding, verification lane.
+
 Shellcode emitter with a typed intermediate representation, automatic
 bad-character encoding, and debugger-ready harnesses. The x86 Windows backend
 ships first; the IR is architecture-neutral by design.
