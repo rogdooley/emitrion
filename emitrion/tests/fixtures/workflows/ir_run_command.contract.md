@@ -125,3 +125,62 @@ Remove bad chars with msfvenom (requires `shellcode.bin`):
 ```
 cat shellcode.bin | msfvenom --platform windows -a x86 -e x86/shikata_ga_nai -b "\x00\x0a\x0d" -f python -v shellcode
 ```
+
+---
+
+# WinDbg Cheatsheet
+
+Run `debug_runner.py` under 32-bit Python. Attach WinDbg to the
+python.exe process. Set `bp <address>` using the printed shellcode
+address, then press Enter in the script to start execution.
+
+## Quick Reference
+
+| Command | Description |
+|---------|-------------|
+| `bp <addr>` | Set breakpoint |
+| `bl` | List breakpoints |
+| `g` | Go (continue) |
+| `t` | Step into |
+| `p` | Step over |
+| `pt` | Step to next return |
+| `r` | Show all registers |
+| `r eax` | Show one register |
+| `u eip L10` | Disassemble next 16 instructions |
+| `db <addr> L<n>` | Dump bytes |
+| `dd <addr> L<n>` | Dump dwords |
+| `da <addr>` | Dump ASCII string |
+| `!address <addr>` | Show memory region info |
+
+## Inspect API Pointers After Resolution
+
+After the PEB walk and hash resolution, each resolved function
+pointer is stored at its stack slot. Verify with:
+
+```
+dd ebp-0x24 L1    ; WinExec
+dd ebp-0x28 L1    ; ExitProcess
+```
+
+## Inspect Structures Before API Calls
+
+## Inspect Stack Strings
+
+```
+da ebp-0x8c    ; cmd
+```
+
+## Breakpoint Strategy
+
+Set breakpoints at each `call [ebp-0xNN]` in the generated
+assembly to pause before each API call. After each call, check
+`eax` for the return value:
+
+```
+bp <sc_base>+<offset_of_call_WinExec>  ; eax>31 on success
+bp <sc_base>+<offset_of_call_ExitProcess>  ; does not return
+```
+
+Find the call offsets by searching `generated.asm` for
+`call [ebp-` instructions. Add the instruction's line offset
+from the start of the shellcode to the base address.

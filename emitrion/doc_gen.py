@@ -321,6 +321,129 @@ def emit_cheatsheet_md(
     return result
 
 
+def emit_windbg_cheatsheet_md(
+    manifest: Manifest,
+    layout: StackLayout,
+) -> str:
+    """Render a WinDbg debugging guide with concrete offsets from the layout."""
+    lines: list[str] = []
+
+    lines.append("# WinDbg Cheatsheet")
+    lines.append("")
+    lines.append("Run `debug_runner.py` under 32-bit Python. Attach WinDbg to the")
+    lines.append("python.exe process. Set `bp <address>` using the printed shellcode")
+    lines.append("address, then press Enter in the script to start execution.")
+    lines.append("")
+
+    lines.append("## Quick Reference")
+    lines.append("")
+    lines.append("| Command | Description |")
+    lines.append("|---------|-------------|")
+    lines.append("| `bp <addr>` | Set breakpoint |")
+    lines.append("| `bl` | List breakpoints |")
+    lines.append("| `g` | Go (continue) |")
+    lines.append("| `t` | Step into |")
+    lines.append("| `p` | Step over |")
+    lines.append("| `pt` | Step to next return |")
+    lines.append("| `r` | Show all registers |")
+    lines.append("| `r eax` | Show one register |")
+    lines.append("| `u eip L10` | Disassemble next 16 instructions |")
+    lines.append("| `db <addr> L<n>` | Dump bytes |")
+    lines.append("| `dd <addr> L<n>` | Dump dwords |")
+    lines.append("| `da <addr>` | Dump ASCII string |")
+    lines.append("| `!address <addr>` | Show memory region info |")
+    lines.append("")
+
+    lines.append("## Inspect API Pointers After Resolution")
+    lines.append("")
+    lines.append("After the PEB walk and hash resolution, each resolved function")
+    lines.append("pointer is stored at its stack slot. Verify with:")
+    lines.append("")
+    lines.append("```")
+    api_slots = layout.slots_by_category("api")
+    for s in api_slots:
+        lines.append(f"dd ebp-{s.offset:#x} L1    ; {s.name}")
+    lines.append("```")
+    lines.append("")
+
+    lines.append("## Inspect Structures Before API Calls")
+    lines.append("")
+    struct_slots = layout.slots_by_category("structure")
+    for s in struct_slots:
+        struct_rec = STRUCT_DATABASE.get(s.name)
+        if struct_rec is None:
+            continue
+        base_off = s.offset
+        lines.append(f"### {s.name} (0x{struct_rec.size:x} bytes)")
+        lines.append("")
+        lines.append(f"Base address: `ebp-{base_off:#x}`")
+        lines.append("")
+        dwords = min(struct_rec.size // 4, 8)
+        lines.append(f"```")
+        lines.append(f"dd ebp-{base_off:#x} L{dwords:x}    ; first {dwords} dwords")
+        lines.append(f"db ebp-{base_off:#x} L{min(struct_rec.size, 0x20):x}    ; raw bytes")
+        lines.append("```")
+        lines.append("")
+        if struct_rec.fields:
+            lines.append("Key fields:")
+            lines.append("")
+            for f in struct_rec.fields:
+                field_addr = base_off - f.offset
+                if f.size <= 2:
+                    lines.append(
+                        f"- `db ebp-{field_addr:#x} L{f.size}`"
+                        f"  {f.name} (+0x{f.offset:02x})"
+                    )
+                else:
+                    lines.append(
+                        f"- `dd ebp-{field_addr:#x} L1`"
+                        f"  {f.name} (+0x{f.offset:02x})"
+                    )
+            lines.append("")
+
+    string_slots = layout.slots_by_category("string")
+    if string_slots:
+        lines.append("## Inspect Stack Strings")
+        lines.append("")
+        for s in string_slots:
+            lines.append(f"```")
+            lines.append(f"da ebp-{s.offset:#x}    ; {s.name}")
+            lines.append("```")
+            lines.append("")
+
+    lines.append("## Breakpoint Strategy")
+    lines.append("")
+    lines.append("Set breakpoints at each `call [ebp-0xNN]` in the generated")
+    lines.append("assembly to pause before each API call. After each call, check")
+    lines.append("`eax` for the return value:")
+    lines.append("")
+    lines.append("```")
+    for s in api_slots:
+        rec = API_DATABASE.get(s.name)
+        note = ""
+        if s.name == "WSAStartup":
+            note = "  ; eax=0 on success"
+        elif s.name == "WSASocketA":
+            note = "  ; eax=socket handle (not INVALID_SOCKET)"
+        elif s.name == "connect":
+            note = "  ; eax=0 on success"
+        elif s.name == "CreateProcessA":
+            note = "  ; eax!=0 on success"
+        elif s.name == "WinExec":
+            note = "  ; eax>31 on success"
+        elif s.name == "ExitProcess":
+            note = "  ; does not return"
+        lines.append(f"bp <sc_base>+<offset_of_call_{s.name}>{note}")
+    lines.append("```")
+    lines.append("")
+    lines.append("Find the call offsets by searching `generated.asm` for")
+    lines.append("`call [ebp-` instructions. Add the instruction's line offset")
+    lines.append("from the start of the shellcode to the base address.")
+
+    result = "\n".join(line.rstrip() for line in lines)
+    return result
+
+
 def emit_full_contract_md(
     manifest: Manifest,
     layout: StackLayout,
@@ -335,6 +458,7 @@ def emit_full_contract_md(
     cheatsheet_section = emit_cheatsheet_md(
         template, config, shellcode_size, manifest.badchars
     )
+    windbg_section = emit_windbg_cheatsheet_md(manifest, layout)
 
     parts = [
         "# Shellcode Contract",
@@ -361,6 +485,13 @@ def emit_full_contract_md(
             "",
             cheatsheet_section,
         ]
+
+    parts += [
+        "",
+        "---",
+        "",
+        windbg_section,
+    ]
 
     result = "\n".join(line.rstrip() for line in parts)
     return result

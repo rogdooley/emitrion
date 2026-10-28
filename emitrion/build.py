@@ -1091,6 +1091,19 @@ def compose_asm(
     else:
         parts += ["; (no template - insert payload assembly here)", ""]
 
+    from .workflow.reference import WorkflowTemplate
+    is_legacy = template is not None and not isinstance(template, WorkflowTemplate)
+    if is_legacy and "ExitProcess" in manifest.functions:
+        from .encode import safe_call_mem
+        ep_off = -layout.slot("ExitProcess").offset
+        parts += [
+            "; -- Clean Exit --",
+            "    xor  eax, eax",
+            "    push eax                    ; uExitCode = 0",
+            *safe_call_mem("ebp", ep_off, config.badchars),
+            "",
+        ]
+
     parts += [
         "hang:",
         "    jmp hang",

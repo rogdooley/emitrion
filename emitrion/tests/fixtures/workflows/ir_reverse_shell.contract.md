@@ -295,3 +295,132 @@ Remove bad chars with msfvenom (requires `shellcode.bin`):
 ```
 cat shellcode.bin | msfvenom --platform windows -a x86 -e x86/shikata_ga_nai -b "\x00\x0a\x0d" -f python -v shellcode
 ```
+
+---
+
+# WinDbg Cheatsheet
+
+Run `debug_runner.py` under 32-bit Python. Attach WinDbg to the
+python.exe process. Set `bp <address>` using the printed shellcode
+address, then press Enter in the script to start execution.
+
+## Quick Reference
+
+| Command | Description |
+|---------|-------------|
+| `bp <addr>` | Set breakpoint |
+| `bl` | List breakpoints |
+| `g` | Go (continue) |
+| `t` | Step into |
+| `p` | Step over |
+| `pt` | Step to next return |
+| `r` | Show all registers |
+| `r eax` | Show one register |
+| `u eip L10` | Disassemble next 16 instructions |
+| `db <addr> L<n>` | Dump bytes |
+| `dd <addr> L<n>` | Dump dwords |
+| `da <addr>` | Dump ASCII string |
+| `!address <addr>` | Show memory region info |
+
+## Inspect API Pointers After Resolution
+
+After the PEB walk and hash resolution, each resolved function
+pointer is stored at its stack slot. Verify with:
+
+```
+dd ebp-0x28 L1    ; CreateProcessA
+dd ebp-0x2c L1    ; LoadLibraryA
+dd ebp-0x30 L1    ; WSAStartup
+dd ebp-0x34 L1    ; WSASocketA
+dd ebp-0x38 L1    ; connect
+dd ebp-0x3c L1    ; ExitProcess
+```
+
+## Inspect Structures Before API Calls
+
+### STARTUPINFOA (0x44 bytes)
+
+Base address: `ebp-0xc4`
+
+```
+dd ebp-0xc4 L8    ; first 8 dwords
+db ebp-0xc4 L20    ; raw bytes
+```
+
+Key fields:
+
+- `dd ebp-0xc4 L1`  cb (+0x00)
+- `dd ebp-0x98 L1`  dwFlags (+0x2c)
+- `dd ebp-0x8c L1`  hStdInput (+0x38)
+- `dd ebp-0x88 L1`  hStdOutput (+0x3c)
+- `dd ebp-0x84 L1`  hStdError (+0x40)
+
+### PROCESS_INFORMATION (0x10 bytes)
+
+Base address: `ebp-0xd4`
+
+```
+dd ebp-0xd4 L4    ; first 4 dwords
+db ebp-0xd4 L10    ; raw bytes
+```
+
+Key fields:
+
+- `dd ebp-0xd4 L1`  hProcess (+0x00)
+- `dd ebp-0xd0 L1`  hThread (+0x04)
+- `dd ebp-0xcc L1`  dwProcessId (+0x08)
+- `dd ebp-0xc8 L1`  dwThreadId (+0x0c)
+
+### WSADATA (0x190 bytes)
+
+Base address: `ebp-0x264`
+
+```
+dd ebp-0x264 L8    ; first 8 dwords
+db ebp-0x264 L20    ; raw bytes
+```
+
+### sockaddr_in (0x10 bytes)
+
+Base address: `ebp-0x274`
+
+```
+dd ebp-0x274 L4    ; first 4 dwords
+db ebp-0x274 L10    ; raw bytes
+```
+
+Key fields:
+
+- `db ebp-0x274 L2`  sin_family (+0x00)
+- `db ebp-0x272 L2`  sin_port (+0x02)
+- `dd ebp-0x270 L1`  sin_addr (+0x04)
+- `dd ebp-0x26c L1`  sin_zero (+0x08)
+
+## Inspect Stack Strings
+
+```
+da ebp-0x27c    ; cmd
+```
+
+```
+da ebp-0x288    ; ws2_dll
+```
+
+## Breakpoint Strategy
+
+Set breakpoints at each `call [ebp-0xNN]` in the generated
+assembly to pause before each API call. After each call, check
+`eax` for the return value:
+
+```
+bp <sc_base>+<offset_of_call_CreateProcessA>  ; eax!=0 on success
+bp <sc_base>+<offset_of_call_LoadLibraryA>
+bp <sc_base>+<offset_of_call_WSAStartup>  ; eax=0 on success
+bp <sc_base>+<offset_of_call_WSASocketA>  ; eax=socket handle (not INVALID_SOCKET)
+bp <sc_base>+<offset_of_call_connect>  ; eax=0 on success
+bp <sc_base>+<offset_of_call_ExitProcess>  ; does not return
+```
+
+Find the call offsets by searching `generated.asm` for
+`call [ebp-` instructions. Add the instruction's line offset
+from the start of the shellcode to the base address.
