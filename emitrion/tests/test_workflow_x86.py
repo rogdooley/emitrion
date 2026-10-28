@@ -13,6 +13,7 @@ from emitrion.workflow.ir import (
 )
 from emitrion.workflow.reference import (
     WorkflowTemplate,
+    build_bind_shell_workflow,
     build_reverse_shell_workflow,
     build_run_command_workflow,
 )
@@ -267,6 +268,292 @@ class TestDeterminism:
         result2 = build(
             str(manifest_dir / "calc.yaml"),
             template_name="ir_run_command",
+            out_dir=str(tmp_path / "b"),
+            assemble=False,
+        )
+        assert result1.asm == result2.asm
+
+
+# ---------------------------------------------------------------------------
+# IR Bind Shell Workflow
+# ---------------------------------------------------------------------------
+
+
+class TestBindShellWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_bind_shell_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_eight_blocks(self):
+        w = build_bind_shell_workflow()
+        assert len(w.blocks) == 8
+        names = {b.name for b in w.blocks}
+        assert names == {
+            "entry", "create_socket", "bind_socket",
+            "listen_socket_block", "accept_conn",
+            "setup_process", "success", "fail",
+        }
+
+    def test_workflow_with_custom_params(self):
+        from emitrion.workflow.validator import validate
+        w = build_bind_shell_workflow(lport=8080, command="powershell.exe")
+        result = validate(w)
+        assert result.valid, result.errors
+
+
+class TestBindShellTemplate:
+    def test_probe_slots_finds_apis(self):
+        w = build_bind_shell_workflow()
+        tmpl = WorkflowTemplate(w)
+        config = TemplateConfig(lport=4444)
+        slots = tmpl.probe_slots(config)
+        assert "WSAStartup" in slots
+        assert "WSASocketA" in slots
+        assert "bind" in slots
+        assert "listen" in slots
+        assert "accept" in slots
+        assert "CreateProcessA" in slots
+        assert "ExitProcess" in slots
+
+    def test_probe_slots_finds_structs(self):
+        w = build_bind_shell_workflow()
+        tmpl = WorkflowTemplate(w)
+        config = TemplateConfig(lport=4444)
+        slots = tmpl.probe_slots(config)
+        assert "WSADATA" in slots
+        assert "sockaddr_in" in slots
+        assert "STARTUPINFOA" in slots
+        assert "PROCESS_INFORMATION" in slots
+
+    def test_probe_structs(self):
+        w = build_bind_shell_workflow()
+        tmpl = WorkflowTemplate(w)
+        structs = tmpl.probe_structs()
+        assert structs == {
+            "wsadata": "WSADATA",
+            "sa": "sockaddr_in",
+            "si": "STARTUPINFOA",
+            "pi": "PROCESS_INFORMATION",
+        }
+
+    def test_probe_slots_finds_variables(self):
+        w = build_bind_shell_workflow()
+        tmpl = WorkflowTemplate(w)
+        config = TemplateConfig(lport=4444)
+        slots = tmpl.probe_slots(config)
+        assert "listen_socket" in slots
+        assert "client_socket" in slots
+        assert "bind_ret" in slots
+        assert "listen_ret" in slots
+        assert "cpa_ret" in slots
+
+
+class TestBindShellLowering:
+    """Test that the IR bind shell lowers to valid assembly."""
+
+    @pytest.fixture
+    def bindshell_asm(self, manifest_dir):
+        from emitrion.build import build
+        config = TemplateConfig(lport=4444)
+        result = build(
+            str(manifest_dir / "bindshell.yaml"),
+            template_name="ir_bind_shell",
+            config=config,
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_all_block_labels(self, bindshell_asm):
+        for label in ("wf_entry:", "wf_create_socket:", "wf_bind_socket:",
+                       "wf_listen_socket_block:", "wf_accept_conn:",
+                       "wf_setup_process:", "wf_success:", "wf_fail:"):
+            assert label in bindshell_asm, f"Missing label: {label}"
+
+    def test_contains_api_calls(self, bindshell_asm):
+        for api in ("WSAStartup", "WSASocketA", "bind", "listen",
+                     "accept", "CreateProcessA", "ExitProcess"):
+            assert api in bindshell_asm, f"Missing API: {api}"
+
+    def test_contains_struct_operations(self, bindshell_asm):
+        assert "si.cb" in bindshell_asm
+        assert "si.dwFlags" in bindshell_asm
+        assert "si.hStdInput" in bindshell_asm
+        assert "si.hStdOutput" in bindshell_asm
+        assert "si.hStdError" in bindshell_asm
+
+    def test_contains_branching(self, bindshell_asm):
+        assert "test eax, eax" in bindshell_asm or "cmp  eax" in bindshell_asm
+
+    def test_no_null_bytes_in_immediates(self, bindshell_asm):
+        import re
+        for match in re.finditer(r'mov\s+\w+,\s+0x([0-9a-f]{8})', bindshell_asm):
+            hex_val = match.group(1)
+            for i in range(0, 8, 2):
+                byte_str = hex_val[i:i+2]
+                assert byte_str != "00", (
+                    f"Null byte in immediate: 0x{hex_val}"
+                )
+
+
+class TestBindShellClobberLiveness:
+    """Prove that stored results survive subsequent argument lowering.
+
+    _resolve_value always clobbers eax. When a NameRef("listen_socket")
+    appears as an argument to listen/accept, the backend must reload it
+    from its stack slot, not rely on a stale eax from the previous push.
+    Same for client_socket in the setup_process block.
+    """
+
+    @pytest.fixture
+    def bindshell_asm(self, manifest_dir):
+        from emitrion.build import build
+        config = TemplateConfig(lport=4444)
+        result = build(
+            str(manifest_dir / "bindshell.yaml"),
+            template_name="ir_bind_shell",
+            config=config,
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def _extract_block(self, asm: str, label: str) -> str:
+        """Extract assembly between wf_<label>: and the next top-level block label.
+
+        Internal labels like wf_zero_si: appear mid-block and must not
+        act as block boundaries.
+        """
+        import re
+        block_labels = {
+            "entry", "create_socket", "bind_socket",
+            "listen_socket_block", "accept_conn",
+            "setup_process", "success", "fail",
+        }
+        boundary = "|".join(rf"wf_{b}:" for b in block_labels if b != label)
+        pattern = rf'wf_{label}:.*?(?=\n(?:{boundary})|hang:|$)'
+        match = re.search(pattern, asm, re.DOTALL)
+        assert match, f"Block wf_{label} not found"
+        return match.group(0)
+
+    def test_listen_socket_loaded_from_stack_for_bind(self, bindshell_asm):
+        """bind(listen_socket, ...) must load listen_socket from [ebp-0xNN]."""
+        block = self._extract_block(bindshell_asm, "bind_socket")
+        import re
+        loads = re.findall(r'mov\s+eax,\s*\[ebp[+-]0x[0-9a-f]+\]', block)
+        assert len(loads) >= 1, (
+            "bind block must load listen_socket from a stack slot"
+        )
+
+    def test_listen_socket_loaded_from_stack_for_listen(self, bindshell_asm):
+        """listen(listen_socket, 1) must load listen_socket from its slot."""
+        block = self._extract_block(bindshell_asm, "listen_socket_block")
+        import re
+        loads = re.findall(r'mov\s+eax,\s*\[ebp[+-]0x[0-9a-f]+\]', block)
+        assert len(loads) >= 1, (
+            "listen block must load listen_socket from a stack slot"
+        )
+
+    def test_listen_socket_loaded_from_stack_for_accept(self, bindshell_asm):
+        """accept(listen_socket, NULL, NULL) must reload from the slot."""
+        block = self._extract_block(bindshell_asm, "accept_conn")
+        import re
+        loads = re.findall(r'mov\s+eax,\s*\[ebp[+-]0x[0-9a-f]+\]', block)
+        assert len(loads) >= 1, (
+            "accept block must load listen_socket from a stack slot"
+        )
+
+    def test_client_socket_loaded_from_stack_for_stdio(self, bindshell_asm):
+        """hStdInput/Output/Error must load client_socket from its slot.
+
+        client_socket is stored by accept's result. setup_process uses it
+        three times for WriteStructField. Each use must reload from the
+        stack because _resolve_value clobbers eax on every call.
+        """
+        block = self._extract_block(bindshell_asm, "setup_process")
+        import re
+        loads = re.findall(r'mov\s+eax,\s*\[ebp[+-]0x[0-9a-f]+\]', block)
+        assert len(loads) >= 3, (
+            f"setup_process must load client_socket at least 3 times "
+            f"(hStdInput/Output/Error), found {len(loads)}"
+        )
+
+    def test_client_socket_slot_consistent(self, bindshell_asm):
+        """The slot used for client_socket in accept and setup_process must match."""
+        import re
+        accept_block = self._extract_block(bindshell_asm, "accept_conn")
+        setup_block = self._extract_block(bindshell_asm, "setup_process")
+
+        accept_stores = re.findall(
+            r'mov\s+\[ebp-(0x[0-9a-f]+)\],\s*eax\s*\n\s*;\s*->\s*client_socket',
+            accept_block,
+        )
+        assert len(accept_stores) == 1, "accept must store client_socket once"
+        cs_offset = accept_stores[0]
+
+        stdio_loads = re.findall(
+            rf'mov\s+eax,\s*\[ebp-{cs_offset}\]',
+            setup_block,
+        )
+        assert len(stdio_loads) >= 3, (
+            f"setup_process must load client_socket (ebp-{cs_offset}) "
+            f"at least 3 times for hStdInput/Output/Error, found {len(stdio_loads)}"
+        )
+
+
+class TestBindShellEndToEnd:
+    """Test that the IR bind shell builds through the full pipeline."""
+
+    def test_build_no_assemble(self, manifest_dir, tmp_path):
+        from emitrion.build import build
+        config = TemplateConfig(lport=4444)
+        result = build(
+            str(manifest_dir / "bindshell.yaml"),
+            template_name="ir_bind_shell",
+            config=config,
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert "main:" in result.asm
+        assert result.contract_md
+        assert "WSAStartup" in result.contract_md
+        assert "bind" in result.contract_md
+        assert "listen" in result.contract_md
+        assert "accept" in result.contract_md
+        assert "CreateProcessA" in result.contract_md
+
+    def test_build_write_outputs(self, manifest_dir, tmp_path):
+        from emitrion.build import build, write_outputs
+        config = TemplateConfig(lport=4444)
+        result = build(
+            str(manifest_dir / "bindshell.yaml"),
+            template_name="ir_bind_shell",
+            config=config,
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        write_outputs(result, str(tmp_path))
+        assert (tmp_path / "asm" / "generated.asm").exists()
+        assert (tmp_path / "Documentation" / "contract.md").exists()
+
+    def test_deterministic_asm(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        config = TemplateConfig(lport=4444)
+        result1 = build(
+            str(manifest_dir / "bindshell.yaml"),
+            template_name="ir_bind_shell",
+            config=config,
+            out_dir=str(tmp_path / "a"),
+            assemble=False,
+        )
+        result2 = build(
+            str(manifest_dir / "bindshell.yaml"),
+            template_name="ir_bind_shell",
+            config=config,
             out_dir=str(tmp_path / "b"),
             assemble=False,
         )

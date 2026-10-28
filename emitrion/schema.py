@@ -24,6 +24,7 @@ _VALID_TEMPLATES = {
     "tcp_download_to_userpath",
     "ir_run_command",
     "ir_reverse_shell",
+    "ir_bind_shell",
 }
 
 

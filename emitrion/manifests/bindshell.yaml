@@ -1,0 +1,22 @@
+# Bind shell -- listens on a port, accepts one connection, spawns cmd.exe
+template: bind_shell
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - WSAStartup
+  - WSASocketA
+  - bind
+  - listen
+  - accept
+  - CreateProcessA
+  - ExitProcess
+  - LoadLibraryA
+
+variables:
+  - socket_handle
+  - bind_socket
+
+strings:
+  - label: cmd
+    value: cmd.exe
+    method: mov

@@ -33,6 +33,7 @@ def _normalise_assembly(assembly: str) -> str:
     [
         ("calc.yaml", "ir_run_command"),
         ("revshell.yaml", "ir_reverse_shell"),
+        ("bindshell.yaml", "ir_bind_shell"),
     ],
 )
 def test_ir_workflow_matches_reviewed_assembly_and_contract(
@@ -64,6 +65,7 @@ def test_ir_workflow_matches_reviewed_assembly_and_contract(
     [
         ("calc.yaml", "ir_run_command"),
         ("revshell.yaml", "ir_reverse_shell"),
+        ("bindshell.yaml", "ir_bind_shell"),
     ],
 )
 def test_ir_workflow_binary_matches_reviewed_digest(

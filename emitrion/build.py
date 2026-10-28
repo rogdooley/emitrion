@@ -793,6 +793,7 @@ def _load_template(name: str) -> PayloadTemplate:
         "tcp_download_to_userpath": "emitrion.payload_templates.tcp_download_to_userpath.TcpDownloadToUserpathTemplate",
         "ir_run_command":  "emitrion.workflow.reference.IRRunCommandTemplate",
         "ir_reverse_shell": "emitrion.workflow.reference.IRReverseShellTemplate",
+        "ir_bind_shell":    "emitrion.workflow.reference.IRBindShellTemplate",
     }
     if name not in registry:
         raise ValueError(
@@ -1300,7 +1301,7 @@ def main() -> None:
     parser.add_argument("manifest", help="Path to manifest YAML file")
     parser.add_argument(
         "--template",
-        choices=["reverse_shell", "run_command", "copy_file", "copy_then_run", "move_then_run", "tcp_download", "tcp_stager", "bind_shell", "http_download", "http_exfil", "process_replace", "service_persist", "dll_inject", "registry_persist", "check_path", "ir_run_command", "ir_reverse_shell"],
+        choices=["reverse_shell", "run_command", "copy_file", "copy_then_run", "move_then_run", "tcp_download", "tcp_stager", "bind_shell", "http_download", "http_exfil", "process_replace", "service_persist", "dll_inject", "registry_persist", "check_path", "ir_run_command", "ir_reverse_shell", "ir_bind_shell"],
     )
     parser.add_argument("--out", default="emitter_out", help="Output directory")
     parser.add_argument("--lhost", default=None, metavar="IP|IFACE",

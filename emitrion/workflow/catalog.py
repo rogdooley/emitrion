@@ -129,6 +129,36 @@ ABI_CATALOG: dict[str, ABIRecord] = {
         returns=ReturnDescriptor("int", SuccessPredicate.ZERO),
         workflow_supported=True,
     ),
+    "bind": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("s", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("addr", ArgDirection.IN, ArgCategory.STRUCT_PTR,
+                          struct_type="sockaddr_in"),
+            ArgDescriptor("namelen", ArgDirection.IN, ArgCategory.IMMEDIATE),
+        ),
+        returns=ReturnDescriptor("int", SuccessPredicate.ZERO),
+        workflow_supported=True,
+    ),
+    "listen": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("s", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("backlog", ArgDirection.IN, ArgCategory.IMMEDIATE),
+        ),
+        returns=ReturnDescriptor("int", SuccessPredicate.ZERO),
+        workflow_supported=True,
+    ),
+    "accept": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("s", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("addr", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("addrlen", ArgDirection.IN, ArgCategory.NULL_PTR),
+        ),
+        returns=ReturnDescriptor("SOCKET", SuccessPredicate.INVALID_HANDLE),
+        workflow_supported=True,
+    ),
     "CopyFileA": ABIRecord(
         calling_convention="stdcall",
         arguments=(
