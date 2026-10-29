@@ -25,6 +25,10 @@ _VALID_TEMPLATES = {
     "ir_run_command",
     "ir_reverse_shell",
     "ir_bind_shell",
+    "ir_copy_file",
+    "ir_copy_then_run",
+    "ir_move_then_run",
+    "ir_check_path",
 }
 
 

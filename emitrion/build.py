@@ -794,6 +794,10 @@ def _load_template(name: str) -> PayloadTemplate:
         "ir_run_command":  "emitrion.workflow.reference.IRRunCommandTemplate",
         "ir_reverse_shell": "emitrion.workflow.reference.IRReverseShellTemplate",
         "ir_bind_shell":    "emitrion.workflow.reference.IRBindShellTemplate",
+        "ir_copy_file":     "emitrion.workflow.reference.IRCopyFileTemplate",
+        "ir_copy_then_run": "emitrion.workflow.reference.IRCopyThenRunTemplate",
+        "ir_move_then_run": "emitrion.workflow.reference.IRMoveThenRunTemplate",
+        "ir_check_path":    "emitrion.workflow.reference.IRCheckPathTemplate",
     }
     if name not in registry:
         raise ValueError(
@@ -938,7 +942,7 @@ def _merge_template_requirements(
 
     # Auto-add strings from IR ConstructString declarations
     if auto_add_vars:
-        ir_strings = template.probe_strings()
+        ir_strings = template.probe_strings(config)
         for label, value in ir_strings.items():
             if label not in string_labels:
                 new_strings.append(StringEntry(
@@ -948,7 +952,7 @@ def _merge_template_requirements(
 
     ir_struct_names: set[str] = set()
     if auto_add_vars:
-        ir_struct_names = set(template.probe_structs().keys())
+        ir_struct_names = set(template.probe_structs(config).keys())
 
     for name in probed:
         if name in existing_funcs or name in existing_vars or name in string_labels:
@@ -1149,7 +1153,7 @@ def build(
         manifest = _merge_template_requirements(manifest, template, config)
         from emitrion.workflow.reference import WorkflowTemplate
         if isinstance(template, WorkflowTemplate):
-            extra_structs = list(template.probe_structs().values())
+            extra_structs = list(template.probe_structs(config).values())
     layout = build_layout(manifest, extra_structs=extra_structs)
     asm = compose_asm(manifest, layout, manifest_path, template, config)
 

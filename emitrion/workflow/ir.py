@@ -74,6 +74,13 @@ class TerminateStyle(Enum):
     HANG = "hang"
 
 
+class ExitStrategy(Enum):
+    """How a workflow exits after its payload completes (or fails)."""
+    EXIT_PROCESS = "exit_process"
+    TERMINATE_PROCESS = "terminate_process"
+    THREAD_ONLY = "thread_only"
+
+
 # ---------------------------------------------------------------------------
 # Operations
 # ---------------------------------------------------------------------------

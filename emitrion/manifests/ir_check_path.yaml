@@ -1,0 +1,20 @@
+template: ir_check_path
+# IR workflow: GetFileAttributesA to test file existence.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_check_path.yaml \
+#       --dst "C:\\Windows\\System32\\cmd.exe" --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - GetFileAttributesA
+  - ExitProcess
+
+variables:
+  - path_attrs
+
+strings:
+  - label: check_path
+    value: "C:\\Windows\\System32\\cmd.exe"
+    method: mov
+    dest: edi

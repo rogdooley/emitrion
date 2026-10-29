@@ -11,11 +11,20 @@ from emitrion.workflow.ir import (
     WriteStructField,
     ZeroStruct,
 )
+from emitrion.workflow.ir import ExitStrategy
 from emitrion.workflow.reference import (
     WorkflowTemplate,
     build_bind_shell_workflow,
+    build_check_path_workflow,
+    build_copy_file_workflow,
+    build_copy_then_run_workflow,
+    build_move_then_run_workflow,
     build_reverse_shell_workflow,
     build_run_command_workflow,
+    IRCheckPathTemplate,
+    IRCopyFileTemplate,
+    IRCopyThenRunTemplate,
+    IRMoveThenRunTemplate,
 )
 
 
@@ -754,3 +763,374 @@ class TestReverseShellEndToEnd:
             assemble=False,
         )
         assert result1.asm == result2.asm
+
+
+# ---------------------------------------------------------------------------
+# Copy file workflow
+# ---------------------------------------------------------------------------
+
+
+class TestCopyFileWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_copy_file_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_three_blocks(self):
+        w = build_copy_file_workflow()
+        assert len(w.blocks) == 3
+        names = {b.name for b in w.blocks}
+        assert names == {"entry", "success", "fail"}
+
+
+class TestCopyFileTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRCopyFileTemplate()
+        config = TemplateConfig(src_path=r"C:\a.txt", dst_path=r"C:\b.txt")
+        slots = tmpl.probe_slots(config)
+        assert "CopyFileA" in slots
+        assert "ExitProcess" in slots
+
+    def test_probe_slots_finds_strings(self):
+        tmpl = IRCopyFileTemplate()
+        config = TemplateConfig(src_path=r"C:\a.txt", dst_path=r"C:\b.txt")
+        slots = tmpl.probe_slots(config)
+        assert "src_path" in slots
+        assert "dst_path" in slots
+
+
+class TestCopyFileLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "ir_copy_file.yaml"),
+            template_name="ir_copy_file",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_success:" in lowered_asm
+        assert "wf_fail:" in lowered_asm
+
+    def test_contains_copy_file_call(self, lowered_asm):
+        assert "CopyFileA" in lowered_asm
+
+    def test_contains_exit_process(self, lowered_asm):
+        assert "ExitProcess" in lowered_asm
+
+    def test_bfailif_exists_is_zero(self, lowered_asm):
+        assert "push 0x00000000" in lowered_asm or "xor" in lowered_asm
+
+
+class TestCopyFileEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_copy_file.yaml"),
+            template_name="ir_copy_file",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+
+# ---------------------------------------------------------------------------
+# Copy then run workflow
+# ---------------------------------------------------------------------------
+
+
+class TestCopyThenRunWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_copy_then_run_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_four_blocks(self):
+        w = build_copy_then_run_workflow()
+        assert len(w.blocks) == 4
+        names = {b.name for b in w.blocks}
+        assert names == {"entry", "run_payload", "success", "fail"}
+
+
+class TestCopyThenRunTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRCopyThenRunTemplate()
+        config = TemplateConfig(
+            src_path=r"C:\src.exe", dst_path=r"C:\dst.exe",
+        )
+        slots = tmpl.probe_slots(config)
+        assert "CopyFileA" in slots
+        assert "WinExec" in slots
+        assert "ExitProcess" in slots
+
+
+class TestCopyThenRunLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "ir_copy_then_run.yaml"),
+            template_name="ir_copy_then_run",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_run_payload_label(self, lowered_asm):
+        assert "wf_run_payload:" in lowered_asm
+
+    def test_contains_winexec(self, lowered_asm):
+        assert "WinExec" in lowered_asm
+
+    def test_copy_before_exec(self, lowered_asm):
+        copy_pos = lowered_asm.index("CopyFileA")
+        exec_pos = lowered_asm.index("WinExec")
+        assert copy_pos < exec_pos
+
+
+class TestCopyThenRunEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_copy_then_run.yaml"),
+            template_name="ir_copy_then_run",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+
+# ---------------------------------------------------------------------------
+# Move then run workflow
+# ---------------------------------------------------------------------------
+
+
+class TestMoveThenRunWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_move_then_run_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_four_blocks(self):
+        w = build_move_then_run_workflow()
+        assert len(w.blocks) == 4
+        names = {b.name for b in w.blocks}
+        assert names == {"entry", "run_payload", "success", "fail"}
+
+
+class TestMoveThenRunTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRMoveThenRunTemplate()
+        config = TemplateConfig(
+            src_path=r"\\share\p.exe", dst_path=r"C:\dst.exe",
+        )
+        slots = tmpl.probe_slots(config)
+        assert "MoveFileA" in slots
+        assert "WinExec" in slots
+        assert "ExitProcess" in slots
+
+
+class TestMoveThenRunLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "ir_move_then_run.yaml"),
+            template_name="ir_move_then_run",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_movefile(self, lowered_asm):
+        assert "MoveFileA" in lowered_asm
+
+    def test_move_before_exec(self, lowered_asm):
+        move_pos = lowered_asm.index("MoveFileA")
+        exec_pos = lowered_asm.index("WinExec")
+        assert move_pos < exec_pos
+
+
+class TestMoveThenRunEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_move_then_run.yaml"),
+            template_name="ir_move_then_run",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+
+# ---------------------------------------------------------------------------
+# Check path workflow
+# ---------------------------------------------------------------------------
+
+
+class TestCheckPathWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_check_path_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_three_blocks(self):
+        w = build_check_path_workflow()
+        assert len(w.blocks) == 3
+        names = {b.name for b in w.blocks}
+        assert names == {"entry", "success", "fail"}
+
+
+class TestCheckPathTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRCheckPathTemplate()
+        config = TemplateConfig(dst_path=r"C:\test.exe")
+        slots = tmpl.probe_slots(config)
+        assert "GetFileAttributesA" in slots
+        assert "ExitProcess" in slots
+
+    def test_probe_slots_finds_path_attrs(self):
+        tmpl = IRCheckPathTemplate()
+        config = TemplateConfig(dst_path=r"C:\test.exe")
+        slots = tmpl.probe_slots(config)
+        assert "path_attrs" in slots
+
+
+class TestCheckPathLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "ir_check_path.yaml"),
+            template_name="ir_check_path",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_get_file_attributes(self, lowered_asm):
+        assert "GetFileAttributesA" in lowered_asm
+
+    def test_invalid_handle_check(self, lowered_asm):
+        assert "0xffffffff" in lowered_asm.lower() or "INVALID" in lowered_asm
+
+
+class TestCheckPathEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_check_path.yaml"),
+            template_name="ir_check_path",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+
+# ---------------------------------------------------------------------------
+# Exit strategy tests (cross-workflow)
+# ---------------------------------------------------------------------------
+
+
+class TestExitStrategy:
+    """Verify that all three exit strategies produce correct IR blocks."""
+
+    @pytest.fixture(params=[
+        ("ir_copy_file", build_copy_file_workflow),
+        ("ir_run_command", build_run_command_workflow),
+        ("ir_check_path", build_check_path_workflow),
+    ])
+    def builder(self, request):
+        return request.param
+
+    def test_exit_process_calls_exit(self, builder):
+        _, build_fn = builder
+        w = build_fn(exit_strategy=ExitStrategy.EXIT_PROCESS)
+        success_block = next(b for b in w.blocks if b.name == "success")
+        ops = [type(op).__name__ for op in success_block.operations]
+        assert "CallAPI" in ops
+        call = next(op for op in success_block.operations if hasattr(op, "api_name"))
+        assert call.api_name == "ExitProcess"
+
+    def test_terminate_process_uses_pseudo_handle(self, builder):
+        _, build_fn = builder
+        w = build_fn(exit_strategy=ExitStrategy.TERMINATE_PROCESS)
+        success_block = next(b for b in w.blocks if b.name == "success")
+        call = next(op for op in success_block.operations if hasattr(op, "api_name"))
+        assert call.api_name == "TerminateProcess"
+        assert call.arguments[0].value == 0xFFFFFFFF
+
+    def test_thread_only_has_no_api_call(self, builder):
+        _, build_fn = builder
+        w = build_fn(exit_strategy=ExitStrategy.THREAD_ONLY)
+        success_block = next(b for b in w.blocks if b.name == "success")
+        ops = [type(op).__name__ for op in success_block.operations]
+        assert "CallAPI" not in ops
+        assert "Terminate" in ops
+
+    def test_terminate_process_fail_uses_exit_code_1(self, builder):
+        _, build_fn = builder
+        w = build_fn(exit_strategy=ExitStrategy.TERMINATE_PROCESS)
+        fail_block = next(b for b in w.blocks if b.name == "fail")
+        call = next(op for op in fail_block.operations if hasattr(op, "api_name"))
+        assert call.arguments[1].value == 1
+
+
+class TestExitStrategyAssembly:
+    """Verify exit strategies produce correct lowered assembly."""
+
+    def test_terminate_process_in_assembly(self, manifest_dir, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        config = TemplateConfig(
+            src_path=r"C:\a.txt",
+            dst_path=r"C:\b.txt",
+            exit_strategy="terminate_process",
+        )
+        result = build(
+            str(manifest_dir / "ir_copy_file.yaml"),
+            template_name="ir_copy_file",
+            config=config,
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        assert "TerminateProcess" in result.asm
+        assert "0xffffffff" in result.asm.lower()
+
+    def test_thread_only_hangs_without_exit_call(self, manifest_dir, monkeypatch):
+        from emitrion.build import build
+        import re
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        config = TemplateConfig(
+            src_path=r"C:\a.txt",
+            dst_path=r"C:\b.txt",
+            exit_strategy="thread_only",
+        )
+        result = build(
+            str(manifest_dir / "ir_copy_file.yaml"),
+            template_name="ir_copy_file",
+            config=config,
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        success_start = result.asm.index("wf_success:")
+        fail_start = result.asm.index("wf_fail:", success_start)
+        success_body = result.asm[success_start:fail_start]
+        assert "jmp" in success_body
+        assert "call" not in success_body

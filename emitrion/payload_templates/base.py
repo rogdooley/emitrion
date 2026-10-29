@@ -24,6 +24,7 @@ class TemplateConfig:
     process_name: str | None = None
     service_name: str | None = None
     badchars: set[int] = field(default_factory=lambda: {0x00})
+    exit_strategy: str = "exit_process"
 
 
 class PayloadTemplate(ABC):

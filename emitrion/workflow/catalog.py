@@ -68,6 +68,15 @@ ABI_CATALOG: dict[str, ABIRecord] = {
         returns=ReturnDescriptor("UINT", SuccessPredicate.NONZERO),
         workflow_supported=True,
     ),
+    "TerminateProcess": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hProcess", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("uExitCode", ArgDirection.IN, ArgCategory.IMMEDIATE),
+        ),
+        returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
     "ExitProcess": ABIRecord(
         calling_convention="stdcall",
         arguments=(
@@ -167,6 +176,23 @@ ABI_CATALOG: dict[str, ABIRecord] = {
             ArgDescriptor("bFailIfExists", ArgDirection.IN, ArgCategory.IMMEDIATE),
         ),
         returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "MoveFileA": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("lpExistingFileName", ArgDirection.IN, ArgCategory.STRING_PTR),
+            ArgDescriptor("lpNewFileName", ArgDirection.IN, ArgCategory.STRING_PTR),
+        ),
+        returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "GetFileAttributesA": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("lpFileName", ArgDirection.IN, ArgCategory.STRING_PTR),
+        ),
+        returns=ReturnDescriptor("DWORD", SuccessPredicate.INVALID_HANDLE),
         workflow_supported=True,
     ),
     "LoadLibraryA": ABIRecord(
