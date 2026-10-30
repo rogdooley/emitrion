@@ -203,6 +203,87 @@ ABI_CATALOG: dict[str, ABIRecord] = {
         returns=ReturnDescriptor("HMODULE", SuccessPredicate.NONZERO),
         workflow_supported=True,
     ),
+    "RegOpenKeyExA": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hKey", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lpSubKey", ArgDirection.IN, ArgCategory.STRING_PTR),
+            ArgDescriptor("ulOptions", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("samDesired", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("phkResult", ArgDirection.OUT, ArgCategory.HANDLE),
+        ),
+        returns=ReturnDescriptor("LSTATUS", SuccessPredicate.ZERO),
+        workflow_supported=True,
+    ),
+    "RegSetValueExA": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hKey", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lpValueName", ArgDirection.IN, ArgCategory.STRING_PTR),
+            ArgDescriptor("Reserved", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("dwType", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("lpData", ArgDirection.IN, ArgCategory.BUFFER_PTR),
+            ArgDescriptor("cbData", ArgDirection.IN, ArgCategory.IMMEDIATE),
+        ),
+        returns=ReturnDescriptor("LSTATUS", SuccessPredicate.ZERO),
+        workflow_supported=True,
+    ),
+    "RegCloseKey": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hKey", ArgDirection.IN, ArgCategory.HANDLE),
+        ),
+        returns=ReturnDescriptor("LSTATUS", SuccessPredicate.ZERO),
+        workflow_supported=True,
+    ),
+    "OpenSCManagerA": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("lpMachineName", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("lpDatabaseName", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("dwDesiredAccess", ArgDirection.IN, ArgCategory.IMMEDIATE),
+        ),
+        returns=ReturnDescriptor("SC_HANDLE", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "CreateServiceA": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hSCManager", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lpServiceName", ArgDirection.IN, ArgCategory.STRING_PTR),
+            ArgDescriptor("lpDisplayName", ArgDirection.IN, ArgCategory.STRING_PTR),
+            ArgDescriptor("dwDesiredAccess", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("dwServiceType", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("dwStartType", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("dwErrorControl", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("lpBinaryPathName", ArgDirection.IN, ArgCategory.STRING_PTR),
+            ArgDescriptor("lpLoadOrderGroup", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("lpdwTagId", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("lpDependencies", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("lpServiceStartName", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("lpPassword", ArgDirection.IN, ArgCategory.NULL_PTR),
+        ),
+        returns=ReturnDescriptor("SC_HANDLE", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "StartServiceA": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hService", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("dwNumServiceArgs", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("lpServiceArgVectors", ArgDirection.IN, ArgCategory.NULL_PTR),
+        ),
+        returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "CloseServiceHandle": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hSCObject", ArgDirection.IN, ArgCategory.HANDLE),
+        ),
+        returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
 }
 
 

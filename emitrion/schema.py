@@ -29,6 +29,8 @@ _VALID_TEMPLATES = {
     "ir_copy_then_run",
     "ir_move_then_run",
     "ir_check_path",
+    "ir_registry_persist",
+    "ir_service_persist",
 }
 
 

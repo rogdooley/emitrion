@@ -19,12 +19,16 @@ from emitrion.workflow.reference import (
     build_copy_file_workflow,
     build_copy_then_run_workflow,
     build_move_then_run_workflow,
+    build_registry_persist_workflow,
     build_reverse_shell_workflow,
     build_run_command_workflow,
+    build_service_persist_workflow,
     IRCheckPathTemplate,
     IRCopyFileTemplate,
     IRCopyThenRunTemplate,
     IRMoveThenRunTemplate,
+    IRRegistryPersistTemplate,
+    IRServicePersistTemplate,
 )
 
 
@@ -1134,3 +1138,202 @@ class TestExitStrategyAssembly:
         success_body = result.asm[success_start:fail_start]
         assert "jmp" in success_body
         assert "call" not in success_body
+
+
+# ---------------------------------------------------------------------------
+# Registry persist workflow
+# ---------------------------------------------------------------------------
+
+
+class TestRegistryPersistWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_registry_persist_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_four_blocks(self):
+        w = build_registry_persist_workflow()
+        assert len(w.blocks) == 4
+        names = {b.name for b in w.blocks}
+        assert names == {"entry", "set_value", "success", "fail"}
+
+
+class TestRegistryPersistTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRRegistryPersistTemplate()
+        config = TemplateConfig(
+            service_name="TestSvc",
+            dst_path=r"C:\test.exe",
+        )
+        slots = tmpl.probe_slots(config)
+        assert "RegOpenKeyExA" in slots
+        assert "RegSetValueExA" in slots
+        assert "RegCloseKey" in slots
+        assert "ExitProcess" in slots
+
+    def test_probe_slots_finds_strings(self):
+        tmpl = IRRegistryPersistTemplate()
+        config = TemplateConfig(
+            service_name="TestSvc",
+            dst_path=r"C:\test.exe",
+        )
+        slots = tmpl.probe_slots(config)
+        assert "reg_subkey" in slots
+        assert "reg_value_name" in slots
+        assert "dst_path" in slots
+
+    def test_probe_slots_finds_local(self):
+        tmpl = IRRegistryPersistTemplate()
+        config = TemplateConfig()
+        slots = tmpl.probe_slots(config)
+        assert "reg_handle" in slots
+
+
+class TestRegistryPersistLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "ir_registry_persist.yaml"),
+            template_name="ir_registry_persist",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_set_value:" in lowered_asm
+        assert "wf_success:" in lowered_asm
+        assert "wf_fail:" in lowered_asm
+
+    def test_contains_registry_api_calls(self, lowered_asm):
+        assert "RegOpenKeyExA" in lowered_asm
+        assert "RegSetValueExA" in lowered_asm
+        assert "RegCloseKey" in lowered_asm
+
+    def test_hkcu_handle_encoded(self, lowered_asm):
+        assert "hKey" in lowered_asm or "hkey" in lowered_asm.lower()
+
+
+class TestRegistryPersistEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_registry_persist.yaml"),
+            template_name="ir_registry_persist",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+    def test_cheatsheet_content(self):
+        tmpl = IRRegistryPersistTemplate()
+        config = TemplateConfig(service_name="TestVal", dst_path=r"C:\test.exe")
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "Value name" in labels
+        assert "Binary path on target" in labels
+
+
+# ---------------------------------------------------------------------------
+# Service persist workflow
+# ---------------------------------------------------------------------------
+
+
+class TestServicePersistWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_service_persist_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_seven_blocks(self):
+        w = build_service_persist_workflow()
+        assert len(w.blocks) == 7
+        names = {b.name for b in w.blocks}
+        assert names == {
+            "entry", "create_service", "start_service",
+            "close_scm_ok", "close_scm_fail", "success", "fail",
+        }
+
+
+class TestServicePersistTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRServicePersistTemplate()
+        config = TemplateConfig(
+            service_name="TestSvc",
+            dst_path=r"C:\test.exe",
+        )
+        slots = tmpl.probe_slots(config)
+        assert "OpenSCManagerA" in slots
+        assert "CreateServiceA" in slots
+        assert "StartServiceA" in slots
+        assert "CloseServiceHandle" in slots
+        assert "ExitProcess" in slots
+
+    def test_probe_slots_finds_strings(self):
+        tmpl = IRServicePersistTemplate()
+        config = TemplateConfig(
+            service_name="TestSvc",
+            dst_path=r"C:\test.exe",
+        )
+        slots = tmpl.probe_slots(config)
+        assert "service_name" in slots
+        assert "dst_path" in slots
+
+
+class TestServicePersistLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "ir_service_persist.yaml"),
+            template_name="ir_service_persist",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_create_service:" in lowered_asm
+        assert "wf_start_service:" in lowered_asm
+        assert "wf_close_scm_ok:" in lowered_asm
+        assert "wf_close_scm_fail:" in lowered_asm
+        assert "wf_success:" in lowered_asm
+        assert "wf_fail:" in lowered_asm
+
+    def test_contains_service_api_calls(self, lowered_asm):
+        assert "OpenSCManagerA" in lowered_asm
+        assert "CreateServiceA" in lowered_asm
+        assert "StartServiceA" in lowered_asm
+        assert "CloseServiceHandle" in lowered_asm
+
+    def test_service_all_access_encoded(self, lowered_asm):
+        assert "dwDesiredAccess" in lowered_asm
+
+
+class TestServicePersistEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_service_persist.yaml"),
+            template_name="ir_service_persist",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+    def test_cheatsheet_content(self):
+        tmpl = IRServicePersistTemplate()
+        config = TemplateConfig(service_name="TestSvc", dst_path=r"C:\test.exe")
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "Service name" in labels
+        assert "Binary path on target" in labels

