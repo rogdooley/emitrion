@@ -56,16 +56,16 @@ Frame: `mov ebp, esp` / `sub esp, 0x300` (0x300 bytes reserved)
 
 | Offset | Structure | Size |
 |--------|-----------|------|
-| `[ebp-0x210]` | WSADATA | 0x190 |
-| `[ebp-0x220]` | sockaddr_in | 0x10 |
-| `[ebp-0x264]` | STARTUPINFOA | 0x44 |
-| `[ebp-0x274]` | PROCESS_INFORMATION | 0x10 |
+| `[ebp-0x290]` | WSADATA | 0x190 |
+| `[ebp-0x2a0]` | sockaddr_in | 0x10 |
+| `[ebp-0x2e4]` | STARTUPINFOA | 0x44 |
+| `[ebp-0x2f4]` | PROCESS_INFORMATION | 0x10 |
 
 ## Strings
 
 | Offset | Label | Value | Size |
 |--------|-------|-------|------|
-| `[ebp-0x27c]` | cmd | cmd.exe | 8 |
+| `[ebp-0x2fc]` | cmd | cmd.exe | 8 |
 
 ---
 
@@ -386,66 +386,66 @@ dd ebp-0x44 L1    ; LoadLibraryA
 
 ### WSADATA (0x190 bytes)
 
-Base address: `ebp-0x210`
+Base address: `ebp-0x290`
 
 ```
-dd ebp-0x210 L8    ; first 8 dwords
-db ebp-0x210 L20    ; raw bytes
+dd ebp-0x290 L8    ; first 8 dwords
+db ebp-0x290 L20    ; raw bytes
 ```
 
 ### sockaddr_in (0x10 bytes)
 
-Base address: `ebp-0x220`
+Base address: `ebp-0x2a0`
 
 ```
-dd ebp-0x220 L4    ; first 4 dwords
-db ebp-0x220 L10    ; raw bytes
+dd ebp-0x2a0 L4    ; first 4 dwords
+db ebp-0x2a0 L10    ; raw bytes
 ```
 
 Key fields:
 
-- `db ebp-0x220 L2`  sin_family (+0x00)
-- `db ebp-0x21e L2`  sin_port (+0x02)
-- `dd ebp-0x21c L1`  sin_addr (+0x04)
-- `dd ebp-0x218 L1`  sin_zero (+0x08)
+- `db ebp-0x2a0 L2`  sin_family (+0x00)
+- `db ebp-0x29e L2`  sin_port (+0x02)
+- `dd ebp-0x29c L1`  sin_addr (+0x04)
+- `dd ebp-0x298 L1`  sin_zero (+0x08)
 
 ### STARTUPINFOA (0x44 bytes)
 
-Base address: `ebp-0x264`
+Base address: `ebp-0x2e4`
 
 ```
-dd ebp-0x264 L8    ; first 8 dwords
-db ebp-0x264 L20    ; raw bytes
+dd ebp-0x2e4 L8    ; first 8 dwords
+db ebp-0x2e4 L20    ; raw bytes
 ```
 
 Key fields:
 
-- `dd ebp-0x264 L1`  cb (+0x00)
-- `dd ebp-0x238 L1`  dwFlags (+0x2c)
-- `dd ebp-0x22c L1`  hStdInput (+0x38)
-- `dd ebp-0x228 L1`  hStdOutput (+0x3c)
-- `dd ebp-0x224 L1`  hStdError (+0x40)
+- `dd ebp-0x2e4 L1`  cb (+0x00)
+- `dd ebp-0x2b8 L1`  dwFlags (+0x2c)
+- `dd ebp-0x2ac L1`  hStdInput (+0x38)
+- `dd ebp-0x2a8 L1`  hStdOutput (+0x3c)
+- `dd ebp-0x2a4 L1`  hStdError (+0x40)
 
 ### PROCESS_INFORMATION (0x10 bytes)
 
-Base address: `ebp-0x274`
+Base address: `ebp-0x2f4`
 
 ```
-dd ebp-0x274 L4    ; first 4 dwords
-db ebp-0x274 L10    ; raw bytes
+dd ebp-0x2f4 L4    ; first 4 dwords
+db ebp-0x2f4 L10    ; raw bytes
 ```
 
 Key fields:
 
-- `dd ebp-0x274 L1`  hProcess (+0x00)
-- `dd ebp-0x270 L1`  hThread (+0x04)
-- `dd ebp-0x26c L1`  dwProcessId (+0x08)
-- `dd ebp-0x268 L1`  dwThreadId (+0x0c)
+- `dd ebp-0x2f4 L1`  hProcess (+0x00)
+- `dd ebp-0x2f0 L1`  hThread (+0x04)
+- `dd ebp-0x2ec L1`  dwProcessId (+0x08)
+- `dd ebp-0x2e8 L1`  dwThreadId (+0x0c)
 
 ## Inspect Stack Strings
 
 ```
-da ebp-0x27c    ; cmd
+da ebp-0x2fc    ; cmd
 ```
 
 ## Breakpoint Strategy

@@ -23,12 +23,16 @@ from emitrion.workflow.reference import (
     build_reverse_shell_workflow,
     build_run_command_workflow,
     build_service_persist_workflow,
+    build_tcp_stager_workflow,
+    build_tcp_download_workflow,
     IRCheckPathTemplate,
     IRCopyFileTemplate,
     IRCopyThenRunTemplate,
     IRMoveThenRunTemplate,
     IRRegistryPersistTemplate,
     IRServicePersistTemplate,
+    IRTcpStagerTemplate,
+    IRTcpDownloadTemplate,
 )
 
 
@@ -1337,3 +1341,189 @@ class TestServicePersistEndToEnd:
         labels = [pair[0] for pair in cs]
         assert "Service name" in labels
         assert "Binary path on target" in labels
+
+
+# ---------------------------------------------------------------------------
+# TCP stager workflow
+# ---------------------------------------------------------------------------
+
+
+class TestTcpStagerWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_tcp_stager_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_expected_blocks(self):
+        w = build_tcp_stager_workflow()
+        names = {b.name for b in w.blocks}
+        assert names == {
+            "entry", "create_socket", "connect_socket", "recv_size",
+            "alloc_buffer", "init_recv", "recv_loop", "accumulate",
+            "recv_done", "fail",
+        }
+
+
+class TestTcpStagerTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRTcpStagerTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=4444)
+        slots = tmpl.probe_slots(config)
+        assert "recv" in slots
+        assert "VirtualAlloc" in slots
+        assert "closesocket" in slots
+
+    def test_probe_slots_finds_locals(self):
+        tmpl = IRTcpStagerTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=4444)
+        slots = tmpl.probe_slots(config)
+        assert "bytes_total" in slots
+        assert "bytes_recvd" in slots
+        assert "remaining" in slots
+        assert "recv_buf_ptr" in slots
+        assert "virt_buf" in slots
+
+
+class TestTcpStagerLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "ir_tcp_stager.yaml"),
+            template_name="ir_tcp_stager",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_recv_loop_label(self, lowered_asm):
+        assert "wf_recv_loop:" in lowered_asm
+
+    def test_contains_accumulate_label(self, lowered_asm):
+        assert "wf_accumulate:" in lowered_asm
+
+    def test_contains_recv_done_label(self, lowered_asm):
+        assert "wf_recv_done:" in lowered_asm
+
+    def test_contains_signed_positive_branch(self, lowered_asm):
+        assert "jg " in lowered_asm.lower()
+
+    def test_contains_call_slot(self, lowered_asm):
+        assert "call dword ptr" in lowered_asm
+
+    def test_contains_arith_add(self, lowered_asm):
+        assert "add  ecx, eax" in lowered_asm
+
+    def test_contains_arith_sub(self, lowered_asm):
+        assert "sub  ecx, eax" in lowered_asm
+
+
+class TestTcpStagerEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_tcp_stager.yaml"),
+            template_name="ir_tcp_stager",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+    def test_cheatsheet_content(self):
+        tmpl = IRTcpStagerTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=9001)
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "Protocol" in labels
+
+
+# ---------------------------------------------------------------------------
+# TCP download workflow
+# ---------------------------------------------------------------------------
+
+
+class TestTcpDownloadWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_tcp_download_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_expected_blocks(self):
+        w = build_tcp_download_workflow()
+        names = {b.name for b in w.blocks}
+        assert names == {
+            "entry", "create_socket", "connect_socket", "recv_size",
+            "alloc_buffer", "init_recv", "recv_loop", "accumulate",
+            "recv_done", "write_file", "do_write", "exec_payload",
+            "success", "fail",
+        }
+
+
+class TestTcpDownloadTemplate:
+    def test_probe_slots_finds_file_apis(self):
+        tmpl = IRTcpDownloadTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=4444)
+        slots = tmpl.probe_slots(config)
+        assert "CreateFileA" in slots
+        assert "WriteFile" in slots
+        assert "CloseHandle" in slots
+        assert "WinExec" in slots
+
+    def test_probe_slots_finds_network_apis(self):
+        tmpl = IRTcpDownloadTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=4444)
+        slots = tmpl.probe_slots(config)
+        assert "recv" in slots
+        assert "VirtualAlloc" in slots
+
+
+class TestTcpDownloadLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "ir_tcp_download.yaml"),
+            template_name="ir_tcp_download",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_write_file_label(self, lowered_asm):
+        assert "wf_write_file:" in lowered_asm
+
+    def test_contains_exec_payload_label(self, lowered_asm):
+        assert "wf_exec_payload:" in lowered_asm
+
+    def test_contains_recv_loop(self, lowered_asm):
+        assert "wf_recv_loop:" in lowered_asm
+
+    def test_contains_create_file_call(self, lowered_asm):
+        assert "CreateFileA" in lowered_asm
+
+
+class TestTcpDownloadEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_tcp_download.yaml"),
+            template_name="ir_tcp_download",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+    def test_cheatsheet_content(self):
+        tmpl = IRTcpDownloadTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=9001,
+                                dst_path=r"C:\test.exe")
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "Protocol" in labels
+        assert "Written to" in labels

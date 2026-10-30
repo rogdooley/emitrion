@@ -40,6 +40,8 @@ def _normalise_assembly(assembly: str) -> str:
         ("ir_check_path.yaml", "ir_check_path"),
         ("ir_registry_persist.yaml", "ir_registry_persist"),
         ("ir_service_persist.yaml", "ir_service_persist"),
+        ("ir_tcp_stager.yaml", "ir_tcp_stager"),
+        ("ir_tcp_download.yaml", "ir_tcp_download"),
     ],
 )
 def test_ir_workflow_matches_reviewed_assembly_and_contract(
@@ -78,6 +80,8 @@ def test_ir_workflow_matches_reviewed_assembly_and_contract(
         ("ir_check_path.yaml", "ir_check_path"),
         ("ir_registry_persist.yaml", "ir_registry_persist"),
         ("ir_service_persist.yaml", "ir_service_persist"),
+        ("ir_tcp_stager.yaml", "ir_tcp_stager"),
+        ("ir_tcp_download.yaml", "ir_tcp_download"),
     ],
 )
 def test_ir_workflow_binary_matches_reviewed_digest(

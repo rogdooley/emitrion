@@ -120,7 +120,7 @@ main:
     mov  ebp, esp
     xor  ecx, ecx
     mov  ecx, 0x01010301
-    xor  ecx, 0x01010201
+    xor  ecx, 0x01010101
     sub  esp, ecx
 
     ; Bootstrap: find kernel32 via PEB walk
@@ -145,7 +145,7 @@ main:
 ; -- String Construction --
 
 ; --- check_path: "C:\Windows\System32\cmd.exe" (mov) ---
-    lea  edi, [ebp-0x9c]
+    lea  edi, [ebp-0x11c]
 ; emit_mov: "C:\Windows\System32\cmd.exe" (null-safe)
 ; 28 bytes written to [edi]
 
@@ -197,7 +197,7 @@ wf_hang_1:
 wf_entry:
 
     ; GetFileAttributesA(lpFileName)
-    lea  eax, [ebp-0x9c]
+    lea  eax, [ebp-0x11c]
     push eax                      ; lpFileName
     call dword ptr [ebp-0x24]
     mov  [ebp-0x2c], eax

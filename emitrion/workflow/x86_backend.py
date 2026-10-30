@@ -31,8 +31,10 @@ from .ir import (
     AddressOf,
     AllocateLocal,
     AllocateStruct,
+    ArithOp,
     Block,
     CallAPI,
+    CallSlot,
     Compare,
     ConstructString,
     DefineConstant,
@@ -46,6 +48,7 @@ from .ir import (
     TerminateStyle,
     ValueRef,
     Workflow,
+    WriteSlot,
     WriteStructField,
     ZeroStruct,
 )
@@ -112,8 +115,8 @@ def lower_workflow(
 
 
 def _is_terminal(block: Block) -> bool:
-    """True if the block ends control flow with a Terminate op."""
-    return any(isinstance(op, Terminate) for op in block.operations)
+    """True if the block ends control flow with a Terminate or CallSlot op."""
+    return any(isinstance(op, (Terminate, CallSlot)) for op in block.operations)
 
 
 class _LoweringContext:
@@ -163,11 +166,20 @@ class _LoweringContext:
         if isinstance(op, CallAPI):
             return self._lower_call(op)
 
+        if isinstance(op, WriteSlot):
+            return self._lower_write_slot(op)
+
+        if isinstance(op, ArithOp):
+            return self._lower_arith(op)
+
         if isinstance(op, Compare):
             return self._lower_compare(op)
 
         if isinstance(op, Jump):
             return [f"    jmp  wf_{op.target}"]
+
+        if isinstance(op, CallSlot):
+            return self._lower_call_slot(op)
 
         if isinstance(op, Terminate):
             return self._lower_terminate(op)
@@ -374,7 +386,51 @@ class _LoweringContext:
             lines.append("    test eax, eax")
             lines.append(f"    jns  wf_{op.true_block}")
             lines.append(f"    jmp  wf_{op.false_block}")
+        elif op.predicate == SuccessPredicate.SIGNED_POSITIVE:
+            lines.append("    test eax, eax")
+            lines.append(f"    jg   wf_{op.true_block}")
+            lines.append(f"    jmp  wf_{op.false_block}")
 
+        return lines
+
+    def _lower_write_slot(self, op: WriteSlot) -> list[str]:
+        """Lower a WriteSlot to resolve value then store to stack slot."""
+        lines: list[str] = []
+        lines.append(f"    ; {op.name} = ...")
+        setup, reg = self._resolve_value(op.value)
+        lines.extend(setup)
+        offset = -self.layout.slot(op.name).offset
+        lines.extend(safe_mem_store("ebp", offset, reg, self.bc))
+        return lines
+
+    def _lower_arith(self, op: ArithOp) -> list[str]:
+        """Lower ArithOp to load left, load right, add/sub, store result."""
+        lines: list[str] = []
+        op_word = op.operator
+        lines.append(f"    ; {op.result} = ... {op_word} ...")
+
+        left_setup, left_reg = self._resolve_value(op.left)
+        lines.extend(left_setup)
+        lines.append("    mov  ecx, eax")
+
+        right_setup, right_reg = self._resolve_value(op.right)
+        lines.extend(right_setup)
+
+        if op_word == "add":
+            lines.append("    add  ecx, eax")
+        else:
+            lines.append("    sub  ecx, eax")
+
+        result_offset = -self.layout.slot(op.result).offset
+        lines.extend(safe_mem_store("ebp", result_offset, "ecx", self.bc))
+        return lines
+
+    def _lower_call_slot(self, op: CallSlot) -> list[str]:
+        """Lower a CallSlot to call [ebp-offset] (transfer to shellcode)."""
+        lines: list[str] = []
+        offset = -self.layout.slot(op.target).offset
+        lines.append(f"    ; call [{op.target}]")
+        lines.extend(safe_call_mem("ebp", offset, self.bc))
         return lines
 
     def _lower_terminate(self, op: Terminate) -> list[str]:

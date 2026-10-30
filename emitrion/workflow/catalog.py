@@ -284,6 +284,70 @@ ABI_CATALOG: dict[str, ABIRecord] = {
         returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
         workflow_supported=True,
     ),
+    "recv": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("s", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("buf", ArgDirection.IN, ArgCategory.BUFFER_PTR),
+            ArgDescriptor("len", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("flags", ArgDirection.IN, ArgCategory.IMMEDIATE),
+        ),
+        returns=ReturnDescriptor("int", SuccessPredicate.SIGNED_POSITIVE),
+        workflow_supported=True,
+    ),
+    "closesocket": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("s", ArgDirection.IN, ArgCategory.HANDLE),
+        ),
+        returns=ReturnDescriptor("int", SuccessPredicate.ZERO),
+        workflow_supported=True,
+    ),
+    "VirtualAlloc": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("lpAddress", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("dwSize", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("flAllocationType", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("flProtect", ArgDirection.IN, ArgCategory.IMMEDIATE),
+        ),
+        returns=ReturnDescriptor("LPVOID", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "CreateFileA": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("lpFileName", ArgDirection.IN, ArgCategory.STRING_PTR),
+            ArgDescriptor("dwDesiredAccess", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("dwShareMode", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("lpSecurityAttributes", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("dwCreationDisposition", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("dwFlagsAndAttributes", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("hTemplateFile", ArgDirection.IN, ArgCategory.NULL_PTR),
+        ),
+        returns=ReturnDescriptor("HANDLE", SuccessPredicate.INVALID_HANDLE),
+        workflow_supported=True,
+    ),
+    "WriteFile": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hFile", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lpBuffer", ArgDirection.IN, ArgCategory.BUFFER_PTR),
+            ArgDescriptor("nNumberOfBytesToWrite", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("lpNumberOfBytesWritten", ArgDirection.OUT, ArgCategory.BUFFER_PTR),
+            ArgDescriptor("lpOverlapped", ArgDirection.IN, ArgCategory.NULL_PTR),
+        ),
+        returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "CloseHandle": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hObject", ArgDirection.IN, ArgCategory.HANDLE),
+        ),
+        returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
 }
 
 

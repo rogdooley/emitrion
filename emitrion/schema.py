@@ -31,6 +31,8 @@ _VALID_TEMPLATES = {
     "ir_check_path",
     "ir_registry_persist",
     "ir_service_persist",
+    "ir_tcp_stager",
+    "ir_tcp_download",
 }
 
 

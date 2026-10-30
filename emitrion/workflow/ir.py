@@ -63,6 +63,7 @@ class SuccessPredicate(Enum):
     NULL = "null"
     INVALID_HANDLE = "invalid_handle"
     SIGNED_NEGATIVE = "signed_negative"
+    SIGNED_POSITIVE = "signed_positive"
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +141,26 @@ class CallAPI:
 
 
 @dataclass(frozen=True)
+class WriteSlot:
+    """Write a value to a previously allocated local slot."""
+    name: str
+    value: ValueRef
+
+
+@dataclass(frozen=True)
+class ArithOp:
+    """Compute left op right and store in a slot.
+
+    The result slot must already be defined (AllocateLocal, CallAPI result,
+    or a prior ArithOp target).  The operator is "add" or "sub".
+    """
+    result: str
+    left: ValueRef
+    right: ValueRef
+    operator: str
+
+
+@dataclass(frozen=True)
 class Compare:
     """Branch on a named value using a success predicate."""
     value: str
@@ -155,6 +176,16 @@ class Jump:
 
 
 @dataclass(frozen=True)
+class CallSlot:
+    """Transfer control to the address stored in a named slot.
+
+    Used for jumping to dynamically allocated shellcode (e.g. stage2).
+    This is a terminator: control never returns.
+    """
+    target: str
+
+
+@dataclass(frozen=True)
 class Terminate:
     """End the workflow with a specified termination style."""
     style: TerminateStyle = TerminateStyle.HANG
@@ -162,10 +193,11 @@ class Terminate:
 
 Operation = (
     DefineConstant | ConstructString | AllocateLocal | AllocateStruct
-    | ZeroStruct | WriteStructField | CallAPI | Compare | Jump | Terminate
+    | ZeroStruct | WriteStructField | CallAPI | WriteSlot | ArithOp
+    | Compare | Jump | CallSlot | Terminate
 )
 
-TERMINATOR_TYPES = (Compare, Jump, Terminate)
+TERMINATOR_TYPES = (Compare, Jump, CallSlot, Terminate)
 
 
 # ---------------------------------------------------------------------------

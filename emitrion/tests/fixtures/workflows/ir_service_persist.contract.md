@@ -6,7 +6,7 @@ Generated from manifest.
 
 # Stack Layout
 
-Frame: `mov ebp, esp` / `sub esp, 0x100` (0x100 bytes reserved)
+Frame: `mov ebp, esp` / `sub esp, 0x200` (0x200 bytes reserved)
 
 ## Export Context (reserved - do not allocate)
 
@@ -52,8 +52,8 @@ _No structures._
 
 | Offset | Label | Value | Size |
 |--------|-------|-------|------|
-| `[ebp-0x8c]` | service_name | UpdateSvc | 12 |
-| `[ebp-0x98]` | dst_path | C:\dest.txt | 12 |
+| `[ebp-0x10c]` | service_name | UpdateSvc | 12 |
+| `[ebp-0x118]` | dst_path | C:\dest.txt | 12 |
 
 ---
 
@@ -291,11 +291,11 @@ dd ebp-0x3c L1    ; ExitProcess
 ## Inspect Stack Strings
 
 ```
-da ebp-0x8c    ; service_name
+da ebp-0x10c    ; service_name
 ```
 
 ```
-da ebp-0x98    ; dst_path
+da ebp-0x118    ; dst_path
 ```
 
 ## Breakpoint Strategy

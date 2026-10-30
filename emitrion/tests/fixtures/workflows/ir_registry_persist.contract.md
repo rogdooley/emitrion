@@ -6,7 +6,7 @@ Generated from manifest.
 
 # Stack Layout
 
-Frame: `mov ebp, esp` / `sub esp, 0x100` (0x100 bytes reserved)
+Frame: `mov ebp, esp` / `sub esp, 0x200` (0x200 bytes reserved)
 
 ## Export Context (reserved - do not allocate)
 
@@ -52,9 +52,9 @@ _No structures._
 
 | Offset | Label | Value | Size |
 |--------|-------|-------|------|
-| `[ebp-0xb0]` | reg_subkey | SOFTWARE\Microsoft\Windows\CurrentVersion\Run | 48 |
-| `[ebp-0xbc]` | reg_value_name | UpdateSvc | 12 |
-| `[ebp-0xc8]` | dst_path | C:\dest.txt | 12 |
+| `[ebp-0x130]` | reg_subkey | SOFTWARE\Microsoft\Windows\CurrentVersion\Run | 48 |
+| `[ebp-0x13c]` | reg_value_name | UpdateSvc | 12 |
+| `[ebp-0x148]` | dst_path | C:\dest.txt | 12 |
 
 ---
 
@@ -276,15 +276,15 @@ dd ebp-0x38 L1    ; ExitProcess
 ## Inspect Stack Strings
 
 ```
-da ebp-0xb0    ; reg_subkey
+da ebp-0x130    ; reg_subkey
 ```
 
 ```
-da ebp-0xbc    ; reg_value_name
+da ebp-0x13c    ; reg_value_name
 ```
 
 ```
-da ebp-0xc8    ; dst_path
+da ebp-0x148    ; dst_path
 ```
 
 ## Breakpoint Strategy

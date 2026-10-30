@@ -69,12 +69,12 @@ def test_struct_sizes(revshell_layout):
 
 
 # ---------------------------------------------------------------------------
-# Struct zone starts at hard constant 0x80
+# Struct zone starts at hard constant 0x100
 # ---------------------------------------------------------------------------
 
-def test_struct_zone_starts_at_0x80(revshell_layout):
+def test_struct_zone_starts_at_0x100(revshell_layout):
     si = revshell_layout.slot("STARTUPINFOA")
-    assert si.offset == 0x80 + si.size
+    assert si.offset == 0x100 + si.size
 
 
 # ---------------------------------------------------------------------------
