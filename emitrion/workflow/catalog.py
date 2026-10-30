@@ -458,6 +458,113 @@ ABI_CATALOG: dict[str, ABIRecord] = {
         workflow_supported=True,
     ),
 
+    # -- kernel32: process enumeration --
+    "CreateToolhelp32Snapshot": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("dwFlags", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("th32ProcessID", ArgDirection.IN, ArgCategory.IMMEDIATE),
+        ),
+        returns=ReturnDescriptor("HANDLE", SuccessPredicate.INVALID_HANDLE),
+        workflow_supported=True,
+    ),
+    "Process32First": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hSnapshot", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lppe", ArgDirection.INOUT, ArgCategory.STRUCT_PTR,
+                          struct_type="PROCESSENTRY32"),
+        ),
+        returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "Process32Next": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hSnapshot", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lppe", ArgDirection.INOUT, ArgCategory.STRUCT_PTR,
+                          struct_type="PROCESSENTRY32"),
+        ),
+        returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "OpenProcess": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("dwDesiredAccess", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("bInheritHandle", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("dwProcessId", ArgDirection.IN, ArgCategory.IMMEDIATE),
+        ),
+        returns=ReturnDescriptor("HANDLE", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "WaitForSingleObject": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hHandle", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("dwMilliseconds", ArgDirection.IN, ArgCategory.IMMEDIATE),
+        ),
+        returns=ReturnDescriptor("DWORD", SuccessPredicate.ZERO),
+        workflow_supported=True,
+    ),
+
+    # -- kernel32: remote process manipulation --
+    "VirtualAllocEx": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hProcess", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lpAddress", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("dwSize", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("flAllocationType", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("flProtect", ArgDirection.IN, ArgCategory.IMMEDIATE),
+        ),
+        returns=ReturnDescriptor("LPVOID", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "WriteProcessMemory": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hProcess", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lpBaseAddress", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lpBuffer", ArgDirection.IN, ArgCategory.BUFFER_PTR),
+            ArgDescriptor("nSize", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("lpNumberOfBytesWritten", ArgDirection.IN, ArgCategory.NULL_PTR),
+        ),
+        returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "GetModuleHandleA": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("lpModuleName", ArgDirection.IN, ArgCategory.STRING_PTR),
+        ),
+        returns=ReturnDescriptor("HMODULE", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "GetProcAddress": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hModule", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lpProcName", ArgDirection.IN, ArgCategory.STRING_PTR),
+        ),
+        returns=ReturnDescriptor("FARPROC", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+    "CreateRemoteThread": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("hProcess", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lpThreadAttributes", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("dwStackSize", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("lpStartAddress", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("lpParameter", ArgDirection.IN, ArgCategory.HANDLE),
+            ArgDescriptor("dwCreationFlags", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("lpThreadId", ArgDirection.IN, ArgCategory.NULL_PTR),
+        ),
+        returns=ReturnDescriptor("HANDLE", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+
     # -- urlmon: download file --
     "URLDownloadToFileA": ABIRecord(
         calling_convention="stdcall",

@@ -47,6 +47,8 @@ def _normalise_assembly(assembly: str) -> str:
         ("ir_get_username.yaml", "ir_get_username"),
         ("ir_download_to_userpath.yaml", "ir_download_to_userpath"),
         ("ir_tcp_download_to_userpath.yaml", "ir_tcp_download_to_userpath"),
+        ("ir_dll_inject.yaml", "ir_dll_inject"),
+        ("ir_process_replace.yaml", "ir_process_replace"),
     ],
 )
 def test_ir_workflow_matches_reviewed_assembly_and_contract(
@@ -92,6 +94,8 @@ def test_ir_workflow_matches_reviewed_assembly_and_contract(
         ("ir_get_username.yaml", "ir_get_username"),
         ("ir_download_to_userpath.yaml", "ir_download_to_userpath"),
         ("ir_tcp_download_to_userpath.yaml", "ir_tcp_download_to_userpath"),
+        ("ir_dll_inject.yaml", "ir_dll_inject"),
+        ("ir_process_replace.yaml", "ir_process_replace"),
     ],
 )
 def test_ir_workflow_binary_matches_reviewed_digest(

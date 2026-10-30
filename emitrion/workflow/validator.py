@@ -22,6 +22,7 @@ from .catalog import ABIRecord, ArgCategory, get_abi
 from .ir import (
     TERMINATOR_TYPES,
     AddressOf,
+    AddressOfField,
     AllocateLocal,
     AllocateStruct,
     ArithOp,
@@ -30,6 +31,7 @@ from .ir import (
     CallSlot,
     CarveBuffer,
     Compare,
+    CompareStrings,
     ConstructString,
     DefineConstant,
     Immediate,
@@ -37,6 +39,7 @@ from .ir import (
     Jump,
     MemCopy,
     NameRef,
+    ReadStructField,
     ValueRef,
     Workflow,
     WriteSlot,
@@ -170,6 +173,11 @@ def validate(workflow: Workflow) -> ValidationResult:
                     predecessors[last.true_block].append(block.name)
                 if last.false_block in predecessors:
                     predecessors[last.false_block].append(block.name)
+            elif isinstance(last, CompareStrings):
+                if last.match_block in predecessors:
+                    predecessors[last.match_block].append(block.name)
+                if last.nomatch_block in predecessors:
+                    predecessors[last.nomatch_block].append(block.name)
             elif isinstance(last, Jump):
                 if last.target in predecessors:
                     predecessors[last.target].append(block.name)
@@ -221,6 +229,9 @@ def _compute_reachable(
             if isinstance(op, Compare):
                 stack.append(op.true_block)
                 stack.append(op.false_block)
+            elif isinstance(op, CompareStrings):
+                stack.append(op.match_block)
+                stack.append(op.nomatch_block)
             elif isinstance(op, Jump):
                 stack.append(op.target)
             # CallSlot is a terminator with no successor blocks
@@ -247,6 +258,9 @@ def _topological_order(
         if isinstance(last, Compare):
             queue.append(last.true_block)
             queue.append(last.false_block)
+        elif isinstance(last, CompareStrings):
+            queue.append(last.match_block)
+            queue.append(last.nomatch_block)
         elif isinstance(last, Jump):
             queue.append(last.target)
     return order
@@ -335,6 +349,27 @@ def _validate_block(
                 op.value, defs.values, defs.allocations,
                 block.name, errors,
             )
+
+        elif isinstance(op, ReadStructField):
+            _check_unique_name(op.result, all_names, block.name, errors)
+            if op.struct_name not in defs.struct_allocations:
+                errors.append(
+                    f"Block '{block.name}': ReadStructField references "
+                    f"undefined struct '{op.struct_name}'"
+                )
+            else:
+                stype = defs.struct_allocations[op.struct_name]
+                if stype in STRUCT_DATABASE:
+                    field_names = {
+                        f.name for f in STRUCT_DATABASE[stype].fields
+                    }
+                    if op.field_name not in field_names:
+                        errors.append(
+                            f"Block '{block.name}': ReadStructField "
+                            f"'{op.field_name}' not found in struct "
+                            f"'{stype}' (available: {sorted(field_names)})"
+                        )
+            defs.values.add(op.result)
 
         elif isinstance(op, CallAPI):
             _validate_call(op, defs, block.name, errors, warnings)
@@ -432,6 +467,26 @@ def _validate_block(
                     f"'{op.false_block}' does not exist"
                 )
 
+        elif isinstance(op, CompareStrings):
+            _validate_value_ref(
+                op.left, defs.values, defs.allocations,
+                block.name, errors,
+            )
+            _validate_value_ref(
+                op.right, defs.values, defs.allocations,
+                block.name, errors,
+            )
+            if op.match_block not in block_map:
+                errors.append(
+                    f"Block '{block.name}': CompareStrings match_block "
+                    f"'{op.match_block}' does not exist"
+                )
+            if op.nomatch_block not in block_map:
+                errors.append(
+                    f"Block '{block.name}': CompareStrings nomatch_block "
+                    f"'{op.nomatch_block}' does not exist"
+                )
+
         elif isinstance(op, Jump):
             if op.target not in block_map:
                 errors.append(
@@ -477,6 +532,8 @@ def _validate_value_ref(
                 f"Block '{block_name}': AddressOf '{ref.name}' references "
                 f"undefined allocation"
             )
+    elif isinstance(ref, AddressOfField):
+        pass
 
 
 def _validate_call(

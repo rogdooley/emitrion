@@ -1,0 +1,21 @@
+template: ir_process_replace
+# IR workflow: kill a running process by name, copy a replacement binary,
+# restart it.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_process_replace.yaml \
+#       --no-assemble --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - CreateToolhelp32Snapshot
+  - Process32First
+  - Process32Next
+  - OpenProcess
+  - TerminateProcess
+  - WaitForSingleObject
+  - CloseHandle
+  - CopyFileA
+  - WinExec
+  - ExitProcess

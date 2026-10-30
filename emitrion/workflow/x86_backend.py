@@ -29,6 +29,7 @@ from ..stack_alloc import StackLayout
 from .catalog import get_abi
 from .ir import (
     AddressOf,
+    AddressOfField,
     AllocateLocal,
     AllocateStruct,
     ArithOp,
@@ -37,6 +38,7 @@ from .ir import (
     CallSlot,
     CarveBuffer,
     Compare,
+    CompareStrings,
     ConstructString,
     DefineConstant,
     Immediate,
@@ -45,6 +47,7 @@ from .ir import (
     MemCopy,
     NameRef,
     Operation,
+    ReadStructField,
     SuccessPredicate,
     Terminate,
     TerminateStyle,
@@ -136,6 +139,7 @@ class _LoweringContext:
         self.constants: dict[str, int] = {}
         self.struct_types: dict[str, str] = {}
         self._hang_counter = 0
+        self._strcmp_counter = 0
 
     def lower_block(self, block: Block) -> list[str]:
         lines: list[str] = []
@@ -158,6 +162,9 @@ class _LoweringContext:
 
         if isinstance(op, (ConstructString, AllocateLocal)):
             return []
+
+        if isinstance(op, ReadStructField):
+            return self._lower_read_struct_field(op)
 
         if isinstance(op, ZeroStruct):
             return self._lower_zero_struct(op)
@@ -182,6 +189,9 @@ class _LoweringContext:
 
         if isinstance(op, Compare):
             return self._lower_compare(op)
+
+        if isinstance(op, CompareStrings):
+            return self._lower_compare_strings(op)
 
         if isinstance(op, Jump):
             return [f"    jmp  wf_{op.target}"]
@@ -226,6 +236,25 @@ class _LoweringContext:
             else:
                 offset = -self.layout.slot(name).offset
             lines = list(safe_lea("eax", "ebp", offset, self.bc))
+            return (lines, "eax")
+
+        if isinstance(ref, AddressOfField):
+            stype = self.struct_types.get(ref.struct_name)
+            if stype is None:
+                return ([f"    ; ERROR: AddressOfField struct '{ref.struct_name}' unknown"], "eax")
+            st_rec = STRUCT_DATABASE.get(stype)
+            if st_rec is None:
+                return ([f"    ; ERROR: struct type '{stype}' not in database"], "eax")
+            field_info = None
+            for f in st_rec.fields:
+                if f.name == ref.field_name:
+                    field_info = f
+                    break
+            if field_info is None:
+                return ([f"    ; ERROR: field '{ref.field_name}' not in '{stype}'"], "eax")
+            struct_base_offset = -self.layout.slot(stype).offset
+            field_abs = struct_base_offset + field_info.offset
+            lines = list(safe_lea("eax", "ebp", field_abs, self.bc))
             return (lines, "eax")
 
         if isinstance(ref, Input):
@@ -431,6 +460,68 @@ class _LoweringContext:
 
         result_offset = -self.layout.slot(op.result).offset
         lines.extend(safe_mem_store("ebp", result_offset, "ecx", self.bc))
+        return lines
+
+    def _lower_read_struct_field(self, op: ReadStructField) -> list[str]:
+        """Lower ReadStructField: load a dword from a struct field into a slot."""
+        stype = self.struct_types.get(op.struct_name)
+        if stype is None:
+            return [f"    ; ERROR: ReadStructField struct '{op.struct_name}' unknown"]
+        st_rec = STRUCT_DATABASE.get(stype)
+        if st_rec is None:
+            return [f"    ; ERROR: struct type '{stype}' not in database"]
+        field_info = None
+        for f in st_rec.fields:
+            if f.name == op.field_name:
+                field_info = f
+                break
+        if field_info is None:
+            return [f"    ; ERROR: field '{op.field_name}' not in '{stype}'"]
+
+        lines: list[str] = []
+        lines.append(f"    ; {op.result} = {op.struct_name}.{op.field_name}")
+        struct_base_offset = -self.layout.slot(stype).offset
+        field_abs = struct_base_offset + field_info.offset
+        lines.extend(safe_mem_load("eax", "ebp", field_abs, self.bc))
+        result_offset = -self.layout.slot(op.result).offset
+        lines.extend(safe_mem_store("ebp", result_offset, "eax", self.bc))
+        return lines
+
+    def _lower_compare_strings(self, op: CompareStrings) -> list[str]:
+        """Lower CompareStrings to inline byte-by-byte comparison loop."""
+        lines: list[str] = []
+        lines.append("    ; strcmp")
+
+        left_setup, _ = self._resolve_value(op.left)
+        lines.extend(left_setup)
+        lines.append("    mov  esi, eax")
+
+        right_setup, _ = self._resolve_value(op.right)
+        lines.extend(right_setup)
+        lines.append("    mov  edi, eax")
+
+        cmp_label = f"wf_strcmp_{self._strcmp_counter}"
+        end_label = f"wf_strcmp_end_{self._strcmp_counter}"
+        self._strcmp_counter += 1
+
+        lines.append(f"{cmp_label}:")
+        lines.append("    lodsb")
+        lines.append("    mov  cl, byte [edi]")
+        lines.append("    inc  edi")
+        lines.append("    test al, al")
+        lines.append(f"    jz   {end_label}")
+        if op.case_insensitive:
+            lines.append("    or   al, 0x20")
+            lines.append("    or   cl, 0x20")
+        lines.append("    cmp  al, cl")
+        lines.append(f"    jne  wf_{op.nomatch_block}")
+        lines.append(f"    jmp  {cmp_label}")
+
+        lines.append(f"{end_label}:")
+        lines.append("    test cl, cl")
+        lines.append(f"    jz   wf_{op.match_block}")
+        lines.append(f"    jmp  wf_{op.nomatch_block}")
+
         return lines
 
     def _lower_carve_buffer(self, op: CarveBuffer) -> list[str]:

@@ -43,13 +43,21 @@ class AddressOf:
 
 
 @dataclass(frozen=True)
+class AddressOfField:
+    """Address of a specific field within a named struct allocation."""
+    struct_name: str
+    field_name: str
+    kind: ValueKind = field(default=ValueKind.ADDRESS_OF, init=False, repr=False)
+
+
+@dataclass(frozen=True)
 class Input:
     """A manifest or config-derived input value (lhost, lport, etc.)."""
     name: str
     kind: ValueKind = field(default=ValueKind.INPUT, init=False, repr=False)
 
 
-ValueRef = Immediate | NameRef | AddressOf | Input
+ValueRef = Immediate | NameRef | AddressOf | AddressOfField | Input
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +137,17 @@ class WriteStructField:
 
 
 @dataclass(frozen=True)
+class ReadStructField:
+    """Read a scalar value from a structure field into a named slot.
+
+    The result slot is defined by this operation (like CallAPI result).
+    """
+    result: str
+    struct_name: str
+    field_name: str
+
+
+@dataclass(frozen=True)
 class CallAPI:
     """Call a catalogued API with explicit ordered arguments.
 
@@ -193,6 +212,22 @@ class Compare:
 
 
 @dataclass(frozen=True)
+class CompareStrings:
+    """Inline byte-by-byte string comparison with branching.
+
+    Compares null-terminated strings at left and right pointers.
+    When case_insensitive is True, each byte is OR'd with 0x20 before
+    comparison (works for ASCII letters; non-alpha bytes are unchanged).
+    This is a terminator: branches to match_block or nomatch_block.
+    """
+    left: ValueRef
+    right: ValueRef
+    case_insensitive: bool
+    match_block: str
+    nomatch_block: str
+
+
+@dataclass(frozen=True)
 class Jump:
     """Unconditional jump to a named block."""
     target: str
@@ -216,12 +251,13 @@ class Terminate:
 
 Operation = (
     DefineConstant | ConstructString | AllocateLocal | AllocateStruct
-    | ZeroStruct | WriteStructField | CallAPI | WriteSlot | ArithOp
+    | ZeroStruct | WriteStructField | ReadStructField
+    | CallAPI | WriteSlot | ArithOp
     | CarveBuffer | MemCopy
-    | Compare | Jump | CallSlot | Terminate
+    | Compare | CompareStrings | Jump | CallSlot | Terminate
 )
 
-TERMINATOR_TYPES = (Compare, Jump, CallSlot, Terminate)
+TERMINATOR_TYPES = (Compare, CompareStrings, Jump, CallSlot, Terminate)
 
 
 # ---------------------------------------------------------------------------

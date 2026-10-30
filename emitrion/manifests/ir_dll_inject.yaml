@@ -1,0 +1,22 @@
+template: ir_dll_inject
+# IR workflow: inject a DLL into a running process via
+# CreateRemoteThread + LoadLibraryA.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_dll_inject.yaml \
+#       --no-assemble --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - CreateToolhelp32Snapshot
+  - Process32First
+  - Process32Next
+  - OpenProcess
+  - VirtualAllocEx
+  - WriteProcessMemory
+  - GetModuleHandleA
+  - GetProcAddress
+  - CreateRemoteThread
+  - CloseHandle
+  - ExitProcess

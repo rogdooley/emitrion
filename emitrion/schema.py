@@ -38,6 +38,8 @@ _VALID_TEMPLATES = {
     "ir_get_username",
     "ir_download_to_userpath",
     "ir_tcp_download_to_userpath",
+    "ir_dll_inject",
+    "ir_process_replace",
 }
 
 
