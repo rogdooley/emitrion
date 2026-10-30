@@ -42,6 +42,8 @@ def _normalise_assembly(assembly: str) -> str:
         ("ir_service_persist.yaml", "ir_service_persist"),
         ("ir_tcp_stager.yaml", "ir_tcp_stager"),
         ("ir_tcp_download.yaml", "ir_tcp_download"),
+        ("ir_http_download.yaml", "ir_http_download"),
+        ("ir_http_exfil.yaml", "ir_http_exfil"),
     ],
 )
 def test_ir_workflow_matches_reviewed_assembly_and_contract(
@@ -82,6 +84,8 @@ def test_ir_workflow_matches_reviewed_assembly_and_contract(
         ("ir_service_persist.yaml", "ir_service_persist"),
         ("ir_tcp_stager.yaml", "ir_tcp_stager"),
         ("ir_tcp_download.yaml", "ir_tcp_download"),
+        ("ir_http_download.yaml", "ir_http_download"),
+        ("ir_http_exfil.yaml", "ir_http_exfil"),
     ],
 )
 def test_ir_workflow_binary_matches_reviewed_digest(

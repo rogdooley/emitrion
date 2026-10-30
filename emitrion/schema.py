@@ -33,6 +33,8 @@ _VALID_TEMPLATES = {
     "ir_service_persist",
     "ir_tcp_stager",
     "ir_tcp_download",
+    "ir_http_download",
+    "ir_http_exfil",
 }
 
 

