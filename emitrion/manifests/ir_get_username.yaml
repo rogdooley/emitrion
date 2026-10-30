@@ -1,0 +1,14 @@
+template: ir_get_username
+# IR workflow: build C:\Users\<username>\Desktop\payload.exe on the stack,
+# then WinExec it.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_get_username.yaml \
+#       --no-assemble --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - GetUserNameA
+  - WinExec
+  - ExitProcess

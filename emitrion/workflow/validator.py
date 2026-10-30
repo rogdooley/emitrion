@@ -28,12 +28,14 @@ from .ir import (
     Block,
     CallAPI,
     CallSlot,
+    CarveBuffer,
     Compare,
     ConstructString,
     DefineConstant,
     Immediate,
     Input,
     Jump,
+    MemCopy,
     NameRef,
     ValueRef,
     Workflow,
@@ -369,6 +371,30 @@ def _validate_block(
             )
             _validate_value_ref(
                 op.right, defs.values, defs.allocations,
+                block.name, errors,
+            )
+
+        elif isinstance(op, CarveBuffer):
+            _check_unique_name(op.name, all_names, block.name, errors)
+            if op.size <= 0:
+                errors.append(
+                    f"Block '{block.name}': CarveBuffer '{op.name}' "
+                    f"has non-positive size {op.size}"
+                )
+            defs.values.add(op.name)
+            defs.allocations.add(op.name)
+
+        elif isinstance(op, MemCopy):
+            _validate_value_ref(
+                op.dst, defs.values, defs.allocations,
+                block.name, errors,
+            )
+            _validate_value_ref(
+                op.src, defs.values, defs.allocations,
+                block.name, errors,
+            )
+            _validate_value_ref(
+                op.count, defs.values, defs.allocations,
                 block.name, errors,
             )
 

@@ -35,6 +35,9 @@ _VALID_TEMPLATES = {
     "ir_tcp_download",
     "ir_http_download",
     "ir_http_exfil",
+    "ir_get_username",
+    "ir_download_to_userpath",
+    "ir_tcp_download_to_userpath",
 }
 
 

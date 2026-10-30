@@ -446,6 +446,31 @@ ABI_CATALOG: dict[str, ABIRecord] = {
         returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
         workflow_supported=True,
     ),
+
+    # -- advapi32: username --
+    "GetUserNameA": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("lpBuffer", ArgDirection.OUT, ArgCategory.BUFFER_PTR),
+            ArgDescriptor("pcbBuffer", ArgDirection.INOUT, ArgCategory.BUFFER_PTR),
+        ),
+        returns=ReturnDescriptor("BOOL", SuccessPredicate.NONZERO),
+        workflow_supported=True,
+    ),
+
+    # -- urlmon: download file --
+    "URLDownloadToFileA": ABIRecord(
+        calling_convention="stdcall",
+        arguments=(
+            ArgDescriptor("pCaller", ArgDirection.IN, ArgCategory.NULL_PTR),
+            ArgDescriptor("szURL", ArgDirection.IN, ArgCategory.STRING_PTR),
+            ArgDescriptor("szFileName", ArgDirection.IN, ArgCategory.BUFFER_PTR),
+            ArgDescriptor("dwReserved", ArgDirection.IN, ArgCategory.IMMEDIATE),
+            ArgDescriptor("lpfnCB", ArgDirection.IN, ArgCategory.NULL_PTR),
+        ),
+        returns=ReturnDescriptor("HRESULT", SuccessPredicate.ZERO),
+        workflow_supported=True,
+    ),
 }
 
 

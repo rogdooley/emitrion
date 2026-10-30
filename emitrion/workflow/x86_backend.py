@@ -35,12 +35,14 @@ from .ir import (
     Block,
     CallAPI,
     CallSlot,
+    CarveBuffer,
     Compare,
     ConstructString,
     DefineConstant,
     Immediate,
     Input,
     Jump,
+    MemCopy,
     NameRef,
     Operation,
     SuccessPredicate,
@@ -171,6 +173,12 @@ class _LoweringContext:
 
         if isinstance(op, ArithOp):
             return self._lower_arith(op)
+
+        if isinstance(op, CarveBuffer):
+            return self._lower_carve_buffer(op)
+
+        if isinstance(op, MemCopy):
+            return self._lower_mem_copy(op)
 
         if isinstance(op, Compare):
             return self._lower_compare(op)
@@ -423,6 +431,38 @@ class _LoweringContext:
 
         result_offset = -self.layout.slot(op.result).offset
         lines.extend(safe_mem_store("ebp", result_offset, "ecx", self.bc))
+        return lines
+
+    def _lower_carve_buffer(self, op: CarveBuffer) -> list[str]:
+        """Lower CarveBuffer: sub esp, size; mov [ebp-slot], esp."""
+        lines: list[str] = []
+        lines.append(f"    ; carve {op.name} ({op.size} bytes below ESP)")
+        size_lines = list(encode_dword(op.size, self.bc, "eax"))
+        lines.extend(size_lines)
+        lines.append("    sub  esp, eax")
+        offset = -self.layout.slot(op.name).offset
+        lines.extend(safe_mem_store("ebp", offset, "esp", self.bc))
+        return lines
+
+    def _lower_mem_copy(self, op: MemCopy) -> list[str]:
+        """Lower MemCopy: set up esi/edi/ecx then cld; rep movsb."""
+        lines: list[str] = []
+        lines.append("    ; memcopy")
+
+        src_setup, _ = self._resolve_value(op.src)
+        lines.extend(src_setup)
+        lines.append("    mov  esi, eax")
+
+        dst_setup, _ = self._resolve_value(op.dst)
+        lines.extend(dst_setup)
+        lines.append("    mov  edi, eax")
+
+        count_setup, _ = self._resolve_value(op.count)
+        lines.extend(count_setup)
+        lines.append("    mov  ecx, eax")
+
+        lines.append("    cld")
+        lines.append("    rep movsb")
         return lines
 
     def _lower_call_slot(self, op: CallSlot) -> list[str]:

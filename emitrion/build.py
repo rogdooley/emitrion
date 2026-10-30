@@ -804,6 +804,9 @@ def _load_template(name: str) -> PayloadTemplate:
         "ir_tcp_download":     "emitrion.workflow.reference.IRTcpDownloadTemplate",
         "ir_http_download":    "emitrion.workflow.reference.IRHttpDownloadTemplate",
         "ir_http_exfil":       "emitrion.workflow.reference.IRHttpExfilTemplate",
+        "ir_get_username":     "emitrion.workflow.reference.IRGetUsernameTemplate",
+        "ir_download_to_userpath": "emitrion.workflow.reference.IRDownloadToUserpathTemplate",
+        "ir_tcp_download_to_userpath": "emitrion.workflow.reference.IRTcpDownloadToUserpathTemplate",
     }
     if name not in registry:
         raise ValueError(

@@ -161,6 +161,29 @@ class ArithOp:
 
 
 @dataclass(frozen=True)
+class CarveBuffer:
+    """Allocate a runtime buffer below ESP and store the pointer in a slot.
+
+    Lowering: sub esp, size; mov [ebp-slot], esp
+    The carved space is separate from the managed stack frame.
+    """
+    name: str
+    size: int
+
+
+@dataclass(frozen=True)
+class MemCopy:
+    """Copy count bytes from src to dst using rep movsb.
+
+    src, dst are ValueRef (NameRef for a pointer slot, AddressOf for a
+    stack string/struct address). count is a ValueRef (Immediate or NameRef).
+    """
+    dst: ValueRef
+    src: ValueRef
+    count: ValueRef
+
+
+@dataclass(frozen=True)
 class Compare:
     """Branch on a named value using a success predicate."""
     value: str
@@ -194,6 +217,7 @@ class Terminate:
 Operation = (
     DefineConstant | ConstructString | AllocateLocal | AllocateStruct
     | ZeroStruct | WriteStructField | CallAPI | WriteSlot | ArithOp
+    | CarveBuffer | MemCopy
     | Compare | Jump | CallSlot | Terminate
 )
 
