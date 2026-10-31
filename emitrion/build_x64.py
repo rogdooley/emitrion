@@ -82,7 +82,10 @@ def _emit_framework_stubs_x64(badchars: set[int]) -> str:
     lines.append("    jmp  find_kernel32_entry")
     lines.append("")
 
-    # module_not_found: hard stop, prevents invalid PE parsing through rbx=0
+    # module_not_found: hard stop (int3 = debug break exception).
+    # Assumption: shellcode is terminal (never returns to caller).
+    # If return-to-caller is needed, replace int3 with a configurable
+    # failure mode that restores the stack and returns an error code.
     lines.append("module_not_found:")
     lines.append("    int3")
     lines.append("")
@@ -186,7 +189,8 @@ def _emit_framework_stubs_x64(badchars: set[int]) -> str:
     lines.append("    cmp  ecx, eax")
     lines.append("    jl   find_export_loop")
     lines.append("")
-    lines.append("    ; export not found: hard stop, prevents NULL indirect call")
+    lines.append("    ; export not found: hard stop (int3 = debug break exception).")
+    lines.append("    ; Same terminal-shellcode assumption as module_not_found.")
     lines.append("    int3")
 
     return "\n".join(lines)

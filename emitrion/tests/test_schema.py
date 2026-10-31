@@ -159,3 +159,29 @@ def test_unknown_template_raises(tmp_path):
     )
     with pytest.raises(ValueError, match="Unknown template"):
         load(str(f))
+
+
+def test_canonical_and_legacy_sets_disjoint():
+    from emitrion.schema import CANONICAL_TEMPLATES, LEGACY_TEMPLATES, _VALID_TEMPLATES
+    assert CANONICAL_TEMPLATES & LEGACY_TEMPLATES == set()
+    assert CANONICAL_TEMPLATES | LEGACY_TEMPLATES == _VALID_TEMPLATES
+
+
+def test_all_canonical_templates_are_ir():
+    from emitrion.schema import CANONICAL_TEMPLATES
+    for name in CANONICAL_TEMPLATES:
+        assert name.startswith("ir_"), f"Canonical template '{name}' lacks ir_ prefix"
+
+
+def test_no_legacy_templates_are_ir():
+    from emitrion.schema import LEGACY_TEMPLATES
+    for name in LEGACY_TEMPLATES:
+        assert not name.startswith("ir_"), f"Legacy template '{name}' has ir_ prefix"
+
+
+def test_registry_covers_all_valid_templates():
+    from emitrion.build import _load_template
+    from emitrion.schema import _VALID_TEMPLATES
+    for name in _VALID_TEMPLATES:
+        tmpl = _load_template(name)
+        assert tmpl is not None

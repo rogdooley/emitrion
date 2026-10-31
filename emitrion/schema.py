@@ -11,9 +11,25 @@ _VALID_METHODS = {"mov", "shiftor", "push", "xor"}
 _VALID_REGS = {"eax", "ebx", "ecx", "edx", "esi", "edi"}
 _VALID_REGS_X64 = {"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11"}
 _VALID_ARCHES = {"x86", "x64"}
-_VALID_TEMPLATES = {
-    "reverse_shell", "run_command", "copy_file", "copy_then_run",
-    "move_then_run", "tcp_download", "tcp_stager", "bind_shell",
+CANONICAL_TEMPLATES = {
+    "ir_run_command",
+    "ir_reverse_shell",
+    "ir_bind_shell",
+    "ir_copy_file",
+    "ir_copy_then_run",
+    "ir_move_then_run",
+    "ir_check_path",
+}
+
+LEGACY_TEMPLATES = {
+    "reverse_shell",
+    "run_command",
+    "copy_file",
+    "copy_then_run",
+    "move_then_run",
+    "tcp_download",
+    "tcp_stager",
+    "bind_shell",
     "http_download",
     "http_exfil",
     "process_replace",
@@ -24,14 +40,9 @@ _VALID_TEMPLATES = {
     "get_username",
     "download_to_userpath",
     "tcp_download_to_userpath",
-    "ir_run_command",
-    "ir_reverse_shell",
-    "ir_bind_shell",
-    "ir_copy_file",
-    "ir_copy_then_run",
-    "ir_move_then_run",
-    "ir_check_path",
 }
+
+_VALID_TEMPLATES = CANONICAL_TEMPLATES | LEGACY_TEMPLATES
 
 
 @dataclass
