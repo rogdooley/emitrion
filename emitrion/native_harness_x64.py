@@ -1,8 +1,11 @@
 """Native Windows x64 shellcode validation harness.
 
-Executes assembled x64 shellcode on a Windows x64 system and reports
-structured results. Designed for use on the Windows lab VM after
-transferring the script and assembled shellcode.
+Executes assembled x64 shellcode on a Windows x64 system via process
+isolation and reports structured results. The controller spawns a
+subprocess worker that performs the actual VirtualAlloc + CreateThread
+execution. If the shellcode crashes, calls ExitProcess, or triggers an
+unhandled exception, only the worker dies. The controller inspects the
+worker's exit code and produces JSON regardless.
 
 Usage (standalone):
     python -m emitrion.native_harness_x64 emitter_out/bin/shellcode.bin
@@ -12,6 +15,24 @@ Usage (standalone):
 Usage (from build pipeline):
     from emitrion.native_harness_x64 import execute_shellcode, HarnessConfig
     result = execute_shellcode(shellcode_bytes, HarnessConfig(timeout_ms=5000))
+
+Architecture:
+    Controller (this process)
+        |
+        | subprocess.run(worker script, timeout)
+        v
+    Worker (disposable Python process)
+        +-- SetErrorMode (suppress WER dialogs)
+        +-- VirtualAlloc RWX
+        +-- RtlMoveMemory shellcode
+        +-- CreateThread
+        +-- WaitForSingleObject(timeout)
+        +-- GetExitCodeThread
+        +-- Write JSON result to stdout
+        +-- sys.exit(0)  [or process dies from shellcode]
+
+    If worker crashes or is killed, controller reads its exit code
+    and produces a result. JSON output is always available.
 
 Requirements:
     - Windows x64 (10/11/Server 2019+)
@@ -27,7 +48,10 @@ ABI verification limitations:
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
+import tempfile
+import textwrap
 import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
@@ -37,7 +61,9 @@ from pathlib import Path
 class ExecutionStatus(str, Enum):
     SUCCESS = "success"
     TIMEOUT = "timeout"
+    INDETERMINATE = "indeterminate"
     EXCEPTION = "exception"
+    WORKER_CRASH = "worker_crash"
     SETUP_FAILURE = "setup_failure"
     NOT_WINDOWS = "not_windows"
 
@@ -86,6 +112,8 @@ class ExecutionResult:
     failure_reason: str | None = None
     timeout_ms: int = 0
     native_execution: bool = False
+    worker_pid: int | None = None
+    worker_exit_code: int | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
@@ -93,7 +121,9 @@ class ExecutionResult:
     @classmethod
     def from_json(cls, data: str) -> ExecutionResult:
         d = json.loads(data)
-        return cls(**d)
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        filtered = {k: v for k, v in d.items() if k in known}
+        return cls(**filtered)
 
     @property
     def passed(self) -> bool:
@@ -108,11 +138,167 @@ def _is_64bit_python() -> bool:
     return sys.maxsize > 2**32
 
 
+# ---------------------------------------------------------------------------
+# Worker script template (runs in isolated subprocess)
+# ---------------------------------------------------------------------------
+
+_WORKER_SCRIPT = textwrap.dedent(r'''
+    """Shellcode execution worker. Runs in an isolated subprocess."""
+    import ctypes
+    import json
+    import sys
+    import time
+
+    EXCEPTION_NAMES = {
+        0x80000003: "EXCEPTION_BREAKPOINT",
+        0x80000004: "EXCEPTION_SINGLE_STEP",
+        0xC0000005: "EXCEPTION_ACCESS_VIOLATION",
+        0xC0000008: "EXCEPTION_INVALID_HANDLE",
+        0xC000001D: "EXCEPTION_ILLEGAL_INSTRUCTION",
+        0xC0000094: "EXCEPTION_INT_DIVIDE_BY_ZERO",
+        0xC00000FD: "EXCEPTION_STACK_OVERFLOW",
+        0xC0000096: "EXCEPTION_PRIV_INSTRUCTION",
+        0x40010006: "DBG_PRINTEXCEPTION_C",
+    }
+
+    def main():
+        shellcode_path = sys.argv[1]
+        timeout_ms = int(sys.argv[2])
+        interactive = sys.argv[3] == "1"
+
+        with open(shellcode_path, "rb") as f:
+            shellcode = f.read()
+
+        kernel32 = ctypes.windll.kernel32
+
+        kernel32.SetErrorMode.argtypes = [ctypes.c_uint]
+        kernel32.SetErrorMode.restype = ctypes.c_uint
+        SEM_FAILCRITICALERRORS = 0x0001
+        SEM_NOGPFAULTERRORBOX = 0x0002
+        prev = kernel32.SetErrorMode(0)
+        kernel32.SetErrorMode(prev | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX)
+
+        kernel32.VirtualAlloc.restype = ctypes.c_void_p
+        kernel32.VirtualAlloc.argtypes = [
+            ctypes.c_void_p, ctypes.c_size_t, ctypes.c_ulong, ctypes.c_ulong,
+        ]
+        kernel32.RtlMoveMemory.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t,
+        ]
+        kernel32.CreateThread.restype = ctypes.c_void_p
+        kernel32.CreateThread.argtypes = [
+            ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p,
+            ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p,
+        ]
+        kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        kernel32.WaitForSingleObject.restype = ctypes.c_ulong
+        kernel32.GetExitCodeThread.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong),
+        ]
+        kernel32.GetExitCodeThread.restype = ctypes.c_int
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel32.VirtualFree.argtypes = [
+            ctypes.c_void_p, ctypes.c_size_t, ctypes.c_ulong,
+        ]
+
+        MEM_COMMIT_RESERVE = 0x3000
+        PAGE_EXECUTE_READWRITE = 0x40
+        MEM_RELEASE = 0x8000
+        WAIT_TIMEOUT = 0x00000102
+        STILL_ACTIVE = 259
+
+        result = {
+            "shellcode_size": len(shellcode),
+            "status": "setup_failure",
+            "native_execution": False,
+        }
+
+        ptr = kernel32.VirtualAlloc(
+            None, len(shellcode), MEM_COMMIT_RESERVE, PAGE_EXECUTE_READWRITE,
+        )
+        if not ptr:
+            result["failure_reason"] = "VirtualAlloc failed"
+            print(json.dumps(result))
+            sys.exit(0)
+
+        result["alloc_address"] = ptr
+
+        buf = (ctypes.c_char * len(shellcode)).from_buffer_copy(shellcode)
+        kernel32.RtlMoveMemory(ptr, ctypes.addressof(buf), len(shellcode))
+
+        if interactive:
+            sys.stderr.write(f"[+] Shellcode:  {len(shellcode)} bytes\n")
+            sys.stderr.write(f"[+] Address:    {ptr:#018x}\n")
+            sys.stderr.write(f"[+] WinDbg:     bp {ptr:#018x}\n")
+            sys.stderr.write(f"[+] PID:        {ctypes.windll.kernel32.GetCurrentProcessId()}\n\n")
+            input("... attach WinDbg, set breakpoints, then press Enter ...")
+
+        t0 = time.perf_counter()
+
+        ht = kernel32.CreateThread(None, 0, ptr, None, 0, None)
+        if not ht:
+            result["failure_reason"] = "CreateThread failed"
+            kernel32.VirtualFree(ptr, 0, MEM_RELEASE)
+            print(json.dumps(result))
+            sys.exit(0)
+
+        wait_result = kernel32.WaitForSingleObject(ht, timeout_ms)
+
+        t1 = time.perf_counter()
+        result["duration_ms"] = round((t1 - t0) * 1000, 2)
+        result["native_execution"] = True
+
+        if wait_result == WAIT_TIMEOUT:
+            result["status"] = "indeterminate"
+            result["failure_reason"] = (
+                f"Execution exceeded {timeout_ms}ms. "
+                "Timeout does not distinguish success from failure."
+            )
+            kernel32.CloseHandle(ht)
+            kernel32.VirtualFree(ptr, 0, MEM_RELEASE)
+            print(json.dumps(result))
+            sys.exit(0)
+
+        exit_code = ctypes.c_ulong(0)
+        kernel32.GetExitCodeThread(ht, ctypes.byref(exit_code))
+        result["exit_code"] = exit_code.value
+
+        if exit_code.value in EXCEPTION_NAMES:
+            result["status"] = "exception"
+            result["exception_code"] = exit_code.value
+            result["exception_name"] = EXCEPTION_NAMES[exit_code.value]
+            if exit_code.value == 0x80000003:
+                result["failure_reason"] = (
+                    "EXCEPTION_BREAKPOINT (int3): resolver or module "
+                    "enumeration hit a terminal failure path"
+                )
+            else:
+                result["failure_reason"] = (
+                    f"{EXCEPTION_NAMES[exit_code.value]} "
+                    f"(0x{exit_code.value:08X})"
+                )
+        elif exit_code.value == STILL_ACTIVE:
+            result["status"] = "indeterminate"
+            result["failure_reason"] = "Thread still active after wait returned"
+        else:
+            result["status"] = "success"
+
+        kernel32.CloseHandle(ht)
+        kernel32.VirtualFree(ptr, 0, MEM_RELEASE)
+
+        print(json.dumps(result))
+        sys.exit(0)
+
+    if __name__ == "__main__":
+        main()
+''').lstrip()
+
+
 def execute_shellcode(
     shellcode: bytes,
     config: HarnessConfig | None = None,
 ) -> ExecutionResult:
-    """Execute x64 shellcode on Windows and return structured results.
+    """Execute x64 shellcode via an isolated worker subprocess.
 
     On non-Windows platforms, returns a NOT_WINDOWS result without
     attempting execution.
@@ -143,132 +329,98 @@ def execute_shellcode(
         result.failure_reason = "Empty shellcode"
         return result
 
-    return _execute_on_windows(shellcode, config, result)
+    return _execute_via_worker(shellcode, config, result)
 
 
-def _execute_on_windows(
+def _execute_via_worker(
     shellcode: bytes,
     config: HarnessConfig,
     result: ExecutionResult,
 ) -> ExecutionResult:
-    """Windows-specific execution via VirtualAlloc + CreateThread."""
-    import ctypes
-    import ctypes.wintypes
+    """Spawn an isolated worker subprocess to execute shellcode."""
+    with tempfile.TemporaryDirectory(prefix="emitera_harness_") as tmpdir:
+        tmp = Path(tmpdir)
+        sc_path = tmp / "shellcode.bin"
+        worker_path = tmp / "worker.py"
 
-    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        sc_path.write_bytes(shellcode)
+        worker_path.write_text(_WORKER_SCRIPT, encoding="utf-8")
 
-    kernel32.VirtualAlloc.restype = ctypes.c_void_p
-    kernel32.VirtualAlloc.argtypes = [
-        ctypes.c_void_p, ctypes.c_size_t, ctypes.c_ulong, ctypes.c_ulong,
-    ]
-    kernel32.RtlMoveMemory.argtypes = [
-        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t,
-    ]
-    kernel32.CreateThread.restype = ctypes.c_void_p
-    kernel32.CreateThread.argtypes = [
-        ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p,
-        ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p,
-    ]
-    kernel32.WaitForSingleObject.argtypes = [
-        ctypes.c_void_p, ctypes.c_ulong,
-    ]
-    kernel32.WaitForSingleObject.restype = ctypes.c_ulong
-    kernel32.GetExitCodeThread.argtypes = [
-        ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong),
-    ]
-    kernel32.GetExitCodeThread.restype = ctypes.c_int
-    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-    kernel32.VirtualFree.argtypes = [
-        ctypes.c_void_p, ctypes.c_size_t, ctypes.c_ulong,
-    ]
+        cmd = [
+            sys.executable, "-I", str(worker_path),
+            str(sc_path),
+            str(config.timeout_ms),
+            "1" if config.interactive else "0",
+        ]
 
-    MEM_COMMIT_RESERVE = 0x3000
-    PAGE_EXECUTE_READWRITE = 0x40
-    MEM_RELEASE = 0x8000
-    WAIT_OBJECT_0 = 0x00000000
-    WAIT_TIMEOUT = 0x00000102
-    STILL_ACTIVE = 259
-    SEM_FAILCRITICALERRORS = 0x0001
-    SEM_NOGPFAULTERRORBOX = 0x0002
+        subprocess_timeout_s = (config.timeout_ms / 1000.0) + 5.0
 
-    kernel32.SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX)
+        t0 = time.perf_counter()
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=subprocess_timeout_s,
+            )
+        except subprocess.TimeoutExpired:
+            t1 = time.perf_counter()
+            result.duration_ms = round((t1 - t0) * 1000, 2)
+            result.status = ExecutionStatus.INDETERMINATE.value
+            result.native_execution = True
+            result.failure_reason = (
+                f"Worker subprocess exceeded {subprocess_timeout_s:.0f}s. "
+                "Timeout does not distinguish success from failure."
+            )
+            return result
 
-    ptr = kernel32.VirtualAlloc(
-        None, len(shellcode), MEM_COMMIT_RESERVE, PAGE_EXECUTE_READWRITE,
-    )
-    if not ptr:
-        result.failure_reason = "VirtualAlloc failed"
-        return result
+        t1 = time.perf_counter()
+        result.worker_exit_code = proc.returncode
 
-    result.alloc_address = ptr
+        if proc.stdout.strip():
+            try:
+                worker_data = json.loads(proc.stdout.strip())
+                result.shellcode_size = worker_data.get("shellcode_size", result.shellcode_size)
+                result.status = worker_data.get("status", result.status)
+                result.exit_code = worker_data.get("exit_code")
+                result.exception_code = worker_data.get("exception_code")
+                result.exception_name = worker_data.get("exception_name")
+                result.duration_ms = worker_data.get("duration_ms", 0.0)
+                result.alloc_address = worker_data.get("alloc_address")
+                result.failure_reason = worker_data.get("failure_reason")
+                result.native_execution = worker_data.get("native_execution", False)
+                result.worker_pid = worker_data.get("worker_pid")
+                return result
+            except json.JSONDecodeError:
+                pass
 
-    buf = (ctypes.c_char * len(shellcode)).from_buffer_copy(shellcode)
-    kernel32.RtlMoveMemory(ptr, ctypes.addressof(buf), len(shellcode))
+        result.duration_ms = round((t1 - t0) * 1000, 2)
 
-    if config.interactive:
-        print(f"[+] Shellcode:  {len(shellcode)} bytes")
-        print(f"[+] Address:    {ptr:#018x}")
-        print(f"[+] WinDbg:     bp {ptr:#018x}")
-        print()
-        input("... attach WinDbg, set breakpoints, then press Enter ...")
+        if proc.returncode != 0:
+            result.native_execution = True
+            exit_unsigned = proc.returncode & 0xFFFFFFFF
 
-    t0 = time.perf_counter()
-
-    ht = kernel32.CreateThread(None, 0, ptr, None, 0, None)
-    if not ht:
-        result.failure_reason = "CreateThread failed"
-        kernel32.VirtualFree(ptr, 0, MEM_RELEASE)
-        return result
-
-    wait_result = kernel32.WaitForSingleObject(ht, config.timeout_ms)
-
-    t1 = time.perf_counter()
-    result.duration_ms = round((t1 - t0) * 1000, 2)
-    result.native_execution = True
-
-    if wait_result == WAIT_TIMEOUT:
-        result.status = ExecutionStatus.TIMEOUT.value
-        result.failure_reason = f"Execution exceeded {config.timeout_ms}ms"
-        kernel32.CloseHandle(ht)
-        kernel32.VirtualFree(ptr, 0, MEM_RELEASE)
-        return result
-
-    if config.collect_exit_code:
-        exit_code = ctypes.c_ulong(0)
-        kernel32.GetExitCodeThread(ht, ctypes.byref(exit_code))
-        result.exit_code = exit_code.value
-
-        if exit_code.value in EXCEPTION_NAMES:
-            result.status = ExecutionStatus.EXCEPTION.value
-            result.exception_code = exit_code.value
-            result.exception_name = EXCEPTION_NAMES[exit_code.value]
-            if exit_code.value == 0x80000003:
+            if exit_unsigned in EXCEPTION_NAMES:
+                result.status = ExecutionStatus.WORKER_CRASH.value
+                result.exception_code = exit_unsigned
+                result.exception_name = EXCEPTION_NAMES[exit_unsigned]
                 result.failure_reason = (
-                    "EXCEPTION_BREAKPOINT (int3): resolver or module "
-                    "enumeration hit a terminal failure path"
+                    f"Worker process terminated by {EXCEPTION_NAMES[exit_unsigned]} "
+                    f"(0x{exit_unsigned:08X}). Shellcode caused unrecoverable "
+                    f"process-level exception."
                 )
             else:
+                result.status = ExecutionStatus.WORKER_CRASH.value
                 result.failure_reason = (
-                    f"{EXCEPTION_NAMES[exit_code.value]} "
-                    f"(0x{exit_code.value:08X})"
+                    f"Worker process exited with code {proc.returncode} "
+                    f"(0x{exit_unsigned:08X}). No JSON output recovered."
                 )
-        elif exit_code.value == STILL_ACTIVE:
-            result.status = ExecutionStatus.TIMEOUT.value
-            result.failure_reason = "Thread still active after wait returned"
+                if proc.stderr.strip():
+                    result.failure_reason += f" stderr: {proc.stderr.strip()[:500]}"
         else:
-            result.status = ExecutionStatus.SUCCESS.value
+            result.failure_reason = "Worker exited 0 but produced no JSON output"
 
-    else:
-        result.status = (
-            ExecutionStatus.SUCCESS.value
-            if wait_result == WAIT_OBJECT_0
-            else ExecutionStatus.EXCEPTION.value
-        )
-
-    kernel32.CloseHandle(ht)
-    kernel32.VirtualFree(ptr, 0, MEM_RELEASE)
-
-    return result
+        return result
 
 
 def execute_from_asm(
@@ -469,8 +621,10 @@ def _cli() -> None:
             for r in results:
                 status_icon = {
                     "success": "[PASS]",
+                    "indeterminate": "[????]",
                     "timeout": "[TIME]",
                     "exception": "[EXCP]",
+                    "worker_crash": "[DEAD]",
                     "setup_failure": "[FAIL]",
                     "not_windows": "[SKIP]",
                 }.get(r.status, "[????]")
@@ -523,6 +677,8 @@ def _cli() -> None:
             print(f"Exit:     0x{result.exit_code:08X}")
         if result.exception_name:
             print(f"Exception: {result.exception_name}")
+        if result.worker_exit_code is not None:
+            print(f"Worker:   exit {result.worker_exit_code}")
         if result.failure_reason:
             print(f"Reason:   {result.failure_reason}")
         print(f"Native:   {result.native_execution}")

@@ -4,8 +4,8 @@ These tests validate the harness module's data structures, JSON
 serialization, config validation, and scenario definitions. They do NOT
 execute shellcode and run on any platform.
 
-Tests that require Windows native execution are in test_native_harness_windows.py
-and are marked with @pytest.mark.windows.
+Tests that require Windows native execution should be marked with
+@pytest.mark.windows and run on the Windows lab VM.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from emitrion.native_harness_x64 import (
     ExecutionResult,
     ExecutionStatus,
     HarnessConfig,
+    _WORKER_SCRIPT,
     execute_shellcode,
 )
 
@@ -72,6 +73,8 @@ class TestExecutionResult:
         assert r.arch == "x64"
         assert r.status == ExecutionStatus.SETUP_FAILURE.value
         assert r.native_execution is False
+        assert r.worker_pid is None
+        assert r.worker_exit_code is None
 
     def test_json_roundtrip(self):
         r = ExecutionResult(
@@ -83,6 +86,7 @@ class TestExecutionResult:
             alloc_address=0x7FF000000000,
             timeout_ms=5000,
             native_execution=True,
+            worker_exit_code=0,
         )
         j = r.to_json()
         parsed = json.loads(j)
@@ -91,6 +95,7 @@ class TestExecutionResult:
         assert parsed["status"] == "success"
         assert parsed["alloc_address"] == 0x7FF000000000
         assert parsed["native_execution"] is True
+        assert parsed["worker_exit_code"] == 0
 
     def test_from_json(self):
         data = json.dumps({
@@ -106,11 +111,25 @@ class TestExecutionResult:
             "failure_reason": "AV",
             "timeout_ms": 10000,
             "native_execution": True,
+            "worker_pid": None,
+            "worker_exit_code": 0,
         })
         r = ExecutionResult.from_json(data)
         assert r.test_id == "from_json"
         assert r.status == "exception"
         assert r.exception_code == 0xC0000005
+
+    def test_from_json_ignores_unknown_fields(self):
+        data = json.dumps({
+            "test_id": "compat",
+            "arch": "x64",
+            "shellcode_size": 0,
+            "status": "success",
+            "future_field": "should_be_ignored",
+        })
+        r = ExecutionResult.from_json(data)
+        assert r.test_id == "compat"
+        assert not hasattr(r, "future_field")
 
     def test_passed_property_success(self):
         r = ExecutionResult(test_id="p", status="success")
@@ -124,6 +143,14 @@ class TestExecutionResult:
         r = ExecutionResult(test_id="p", status="timeout")
         assert r.passed is False
 
+    def test_passed_property_indeterminate(self):
+        r = ExecutionResult(test_id="p", status="indeterminate")
+        assert r.passed is False
+
+    def test_passed_property_worker_crash(self):
+        r = ExecutionResult(test_id="p", status="worker_crash")
+        assert r.passed is False
+
     def test_json_contains_all_fields(self):
         r = ExecutionResult(test_id="fields")
         parsed = json.loads(r.to_json())
@@ -131,7 +158,7 @@ class TestExecutionResult:
             "test_id", "arch", "shellcode_size", "status", "exit_code",
             "exception_code", "exception_name", "duration_ms",
             "alloc_address", "failure_reason", "timeout_ms",
-            "native_execution",
+            "native_execution", "worker_pid", "worker_exit_code",
         }
         assert set(parsed.keys()) == expected_keys
 
@@ -144,7 +171,9 @@ class TestExecutionStatus:
     def test_all_values(self):
         assert ExecutionStatus.SUCCESS.value == "success"
         assert ExecutionStatus.TIMEOUT.value == "timeout"
+        assert ExecutionStatus.INDETERMINATE.value == "indeterminate"
         assert ExecutionStatus.EXCEPTION.value == "exception"
+        assert ExecutionStatus.WORKER_CRASH.value == "worker_crash"
         assert ExecutionStatus.SETUP_FAILURE.value == "setup_failure"
         assert ExecutionStatus.NOT_WINDOWS.value == "not_windows"
 
@@ -172,6 +201,29 @@ class TestExceptionNames:
             assert code > 0
             assert isinstance(name, str)
             assert name.startswith("EXCEPTION_") or name.startswith("DBG_")
+
+
+# ---------------------------------------------------------------------------
+# Worker script
+# ---------------------------------------------------------------------------
+
+class TestWorkerScript:
+    def test_worker_script_is_valid_python(self):
+        compile(_WORKER_SCRIPT, "<worker>", "exec")
+
+    def test_worker_script_contains_set_error_mode(self):
+        assert "SetErrorMode" in _WORKER_SCRIPT
+
+    def test_worker_script_preserves_existing_flags(self):
+        assert "prev" in _WORKER_SCRIPT
+        assert "prev |" in _WORKER_SCRIPT
+
+    def test_worker_script_sets_argtypes(self):
+        assert "SetErrorMode.argtypes" in _WORKER_SCRIPT
+        assert "SetErrorMode.restype" in _WORKER_SCRIPT
+
+    def test_worker_script_uses_indeterminate_for_timeout(self):
+        assert '"indeterminate"' in _WORKER_SCRIPT
 
 
 # ---------------------------------------------------------------------------

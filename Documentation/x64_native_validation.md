@@ -2,7 +2,7 @@
 
 ## Overview
 
-The native validation harness (`emitrion/native_harness_x64.py`) executes assembled x64 shellcode on a Windows x64 system and reports structured results. It extends the existing `generate_debug_runner_x64()` pattern (VirtualAlloc + CreateThread) with noninteractive execution, configurable timeouts, structured JSON output, and Windows exception decoding.
+The native validation harness (`emitrion/native_harness_x64.py`) executes assembled x64 shellcode on a Windows x64 system via process isolation and reports structured results. A controller process spawns a disposable worker subprocess that performs the actual VirtualAlloc + CreateThread execution. If shellcode crashes, calls ExitProcess, or triggers an unhandled exception, only the worker dies. The controller inspects the worker's exit code and produces JSON regardless.
 
 ## Requirements
 
@@ -14,34 +14,48 @@ The native validation harness (`emitrion/native_harness_x64.py`) executes assemb
 ## Architecture
 
 ```
-                       +------------------+
-                       |  HarnessConfig   |
-                       |  timeout_ms      |
-                       |  interactive     |
-                       |  test_id         |
-                       +--------+---------+
-                                |
-                    +-----------+-----------+
-                    |                       |
-            execute_shellcode()     execute_from_build()
-                    |                       |
-                    v                       v
-            VirtualAlloc (RWX)      build_x64() pipeline
-            RtlMoveMemory               |
-            CreateThread                v
-            WaitForSingleObject   execute_shellcode()
-            GetExitCodeThread
-                    |
-                    v
-            +------------------+
-            | ExecutionResult  |
-            | status           |
-            | exit_code        |
-            | exception_code   |
-            | duration_ms      |
-            | to_json()        |
-            +------------------+
+    Controller (Python process)
+        |
+        | subprocess.run(worker, timeout)
+        v
+    Worker (disposable Python process)
+        +-- SetErrorMode (suppress WER dialogs, preserve existing flags)
+        +-- VirtualAlloc RWX
+        +-- RtlMoveMemory shellcode
+        +-- CreateThread
+        +-- WaitForSingleObject(timeout_ms)
+        +-- GetExitCodeThread
+        +-- Write JSON to stdout
+        +-- sys.exit(0)
+        |
+        | If worker crashes (ExitProcess, unhandled exception, etc.):
+        |   - No JSON on stdout
+        |   - Controller reads worker exit code
+        |   - Maps to WORKER_CRASH with exception name if recognized
+        v
+    Controller reads stdout or exit code
+        |
+        v
+    +------------------+
+    | ExecutionResult  |
+    | status           |
+    | exit_code        |
+    | exception_code   |
+    | worker_exit_code |
+    | duration_ms      |
+    | to_json()        |
+    +------------------+
 ```
+
+### Why process isolation
+
+An unhandled native exception in a secondary thread can terminate the entire Windows process, not just the faulting thread. This includes:
+
+- Access violations (0xC0000005)
+- int3 breakpoints (0x80000003) without a debugger attached
+- ExitProcess / TerminateProcess called by shellcode
+
+Without process isolation, any of these would kill the Python controller before it could serialize results. The subprocess boundary guarantees JSON output for every execution attempt.
 
 ## Usage
 
@@ -119,9 +133,11 @@ print(result.to_json())
 
 | Status | Meaning |
 |--------|---------|
-| `success` | Thread completed without exception |
-| `timeout` | WaitForSingleObject returned WAIT_TIMEOUT |
-| `exception` | Thread terminated with a Windows exception code |
+| `success` | Worker thread completed without exception |
+| `indeterminate` | Timeout expired. Does not distinguish success from failure. Shellcode may have succeeded then entered a terminal loop, or may have never reached the API call. Requires WinDbg to classify. |
+| `timeout` | Legacy alias. Worker-level timeout before process isolation was added. |
+| `exception` | Worker thread terminated with a Windows exception code (worker produced JSON) |
+| `worker_crash` | Worker process terminated by unhandled exception or ExitProcess (no JSON recovered, controller decoded exit code) |
 | `setup_failure` | VirtualAlloc, CreateThread, or config validation failed |
 | `not_windows` | Attempted execution on a non-Windows platform |
 
@@ -338,13 +354,13 @@ python -m emitrion.native_harness_x64 shellcode.bin --interactive
 
 ### Interpreting Results
 
-A passing suite looks like:
+A typical suite run looks like:
 
 ```
 [PASS] test_a_winexec: success
        42.5ms, 384 bytes
-[TIME] test_b_dll_load: timeout
-       Execution exceeded 5000ms
+[????] test_b_dll_load: indeterminate
+       Execution exceeded 5000ms. Timeout does not distinguish success from failure.
        5001.2ms, 1024 bytes
 [PASS] test_c_multi_arg: success
        38.1ms, 384 bytes
@@ -354,13 +370,28 @@ A passing suite looks like:
 ```
 
 - test_a: SUCCESS means WinExec resolved and executed
-- test_b: TIMEOUT is expected (connect blocks with no listener). EXCEPTION_BREAKPOINT means API resolution failed.
+- test_b: INDETERMINATE is expected (connect blocks with no listener). This does not prove success. WinDbg is needed to confirm that DLL loading and API resolution completed before connect() blocked. EXCEPTION_BREAKPOINT or WORKER_CRASH means resolution failed before reaching connect().
 - test_c: SUCCESS means multi-arg call completed
 - test_d: EXCEPTION_BREAKPOINT is expected (deliberate bad hash)
+
+### Classifying indeterminate results
+
+A timeout alone does not establish success or failure. Use WinDbg to distinguish:
+
+| Observation | Classification |
+|-------------|---------------|
+| API called successfully, shellcode entered terminal loop | Workflow succeeded |
+| API resolution failed (int3 before call) | Framework failure |
+| Exception before API call | Shellcode correctness failure |
+| Incorrect API arguments (wrong register values at CALL) | ABI/lowering failure |
+| Timeout with no execution evidence | Indeterminate |
+| Worker process crashes before JSON | Unhandled exception (controller reports WORKER_CRASH) |
 
 ## Limitations
 
 - No register-level ABI verification without WinDbg. The harness validates execution outcomes (success/failure/exception) but cannot inspect register values at call sites without debugger instrumentation.
 - Exit code interpretation is heuristic. Thread exit codes below 0x80000000 are treated as success. Some Win32 APIs return error codes in EAX that could be misinterpreted.
-- No VEH/SEH integration. The harness relies on GetExitCodeThread for exception detection. Structured exception handlers within the shellcode could mask faults.
+- Timeouts are classified as INDETERMINATE, not success or failure. Terminal shellcode intentionally enters infinite loops after successful execution. A timeout without independent observation of the expected API behavior (e.g., WinDbg breakpoint confirming the call was reached) does not prove success.
+- Worker process crash loses thread-level detail. When shellcode triggers a process-level termination (ExitProcess, unhandled exception that kills the process), the controller can only read the process exit code, not the thread exit code or exception record. The exception code in the process exit status is usually the same, but some edge cases (e.g., ExitProcess(0) from shellcode) are indistinguishable from clean exit.
+- No VEH/SEH integration. The worker relies on SetErrorMode + GetExitCodeThread for exception detection. Structured exception handlers within the shellcode could mask faults.
 - Single-threaded validation only. The harness does not test shellcode that spawns additional threads.
