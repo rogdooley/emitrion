@@ -82,10 +82,9 @@ def _emit_framework_stubs_x64(badchars: set[int]) -> str:
     lines.append("    jmp  find_kernel32_entry")
     lines.append("")
 
-    # module_not_found: PEB walk exhausted without finding target
+    # module_not_found: hard stop, prevents invalid PE parsing through rbx=0
     lines.append("module_not_found:")
-    lines.append("    xor  ebx, ebx")
-    lines.append("    ret")
+    lines.append("    int3")
     lines.append("")
 
     # find_module: entry point for PEB walk
@@ -187,9 +186,8 @@ def _emit_framework_stubs_x64(badchars: set[int]) -> str:
     lines.append("    cmp  ecx, eax")
     lines.append("    jl   find_export_loop")
     lines.append("")
-    lines.append("    ; export not found: return NULL")
-    lines.append("    xor  eax, eax")
-    lines.append("    ret")
+    lines.append("    ; export not found: hard stop, prevents NULL indirect call")
+    lines.append("    int3")
 
     return "\n".join(lines)
 
@@ -674,6 +672,8 @@ def build_x64(
                         f"Badchar bytes in assembled output ({len(violations)} "
                         f"occurrences): {detail}"
                     )
+                    raw = None
+                    assembler = None
         except ImportError:
             asm_errors.append("keystone not available; skipping x64 assembly")
         except Exception as e:

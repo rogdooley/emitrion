@@ -919,22 +919,19 @@ class TestWorkflowE2EBuildPipeline:
 
 
 class TestP0_1_ResolverFailurePath:
-    """P0-1: resolve_export_by_hash must not fall through on miss."""
+    """P0-1: resolve_export_by_hash halts on miss (int3)."""
 
-    def test_export_not_found_label_present(self) -> None:
-        from emitrion.build_x64 import _emit_framework_stubs_x64
-        asm = _emit_framework_stubs_x64({0x00})
-        assert "xor  eax, eax" in asm.split("jl   find_export_loop")[-1]
-        assert "ret" in asm.split("jl   find_export_loop")[-1]
-
-    def test_export_not_found_returns_null(self) -> None:
+    def test_export_not_found_halts(self) -> None:
         from emitrion.build_x64 import _emit_framework_stubs_x64
         asm = _emit_framework_stubs_x64({0x00})
         after_loop = asm.split("jl   find_export_loop")[-1]
-        lines = [l.strip() for l in after_loop.strip().splitlines()]
-        xor_idx = next(i for i, l in enumerate(lines) if "xor  eax, eax" in l)
-        ret_idx = next(i for i, l in enumerate(lines) if l == "ret" and i > xor_idx)
-        assert ret_idx > xor_idx
+        assert "int3" in after_loop
+
+    def test_export_not_found_no_null_return(self) -> None:
+        from emitrion.build_x64 import _emit_framework_stubs_x64
+        asm = _emit_framework_stubs_x64({0x00})
+        after_loop = asm.split("jl   find_export_loop")[-1]
+        assert "ret" not in after_loop.split("int3")[0]
 
 
 class TestP0_2_DLLLoaderNoRSPMutation:
@@ -1024,12 +1021,112 @@ class TestP1_2_BoundedModuleEnumeration:
         assert "r15d" in asm
         assert "module_not_found" in asm
 
-    def test_module_not_found_returns_zero_rbx(self) -> None:
+    def test_module_not_found_halts(self) -> None:
         from emitrion.build_x64 import _emit_framework_stubs_x64
         asm = _emit_framework_stubs_x64({0x00})
         section = asm.split("module_not_found:")[1].split("\n\n")[0]
-        assert "xor  ebx, ebx" in section
-        assert "ret" in section
+        assert "int3" in section
+
+    def test_r15_not_clobbered_in_loop_body(self) -> None:
+        """R15 must survive the find_kernel32_entry/next_module loop body.
+
+        The loop body is all inline assembly (no CALL instructions that
+        could clobber R15 per MS x64 ABI). Verify no instruction in the
+        loop writes to R15/R15D/R15W/R15B.
+        """
+        from emitrion.build_x64 import _emit_framework_stubs_x64
+        asm = _emit_framework_stubs_x64({0x00})
+        loop_start = asm.split("find_kernel32_entry:")[1]
+        loop_body = loop_start.split("find_module:")[0]
+        r15_writes = {"r15", "r15d", "r15w", "r15b"}
+        for line in loop_body.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(";") or ":" in stripped:
+                continue
+            if not stripped:
+                continue
+            parts = stripped.split()
+            if len(parts) < 2:
+                continue
+            instr = parts[0].lower()
+            if instr in ("dec", "mov", "xor", "add", "sub", "lea", "movzx"):
+                dst = parts[1].rstrip(",").lower()
+                if dst in r15_writes and instr != "dec":
+                    pytest.fail(
+                        f"R15 clobbered by non-counter instruction: {stripped}"
+                    )
+
+
+class TestP0_3_SemanticRegisterTrace:
+    """P0-3: Verify register assignments reach the call site intact."""
+
+    def test_four_distinct_args_reach_call(self) -> None:
+        """Trace that 4 distinct args are placed in RCX/RDX/R8/R9 before CALL.
+
+        Each arg produces a distinct setup sequence. Verify no arg register
+        is overwritten between its setup and the CALL instruction.
+        """
+        w = Workflow(
+            name="test_trace",
+            blocks=(
+                Block("entry", (
+                    AllocateStruct("si", "STARTUPINFOA"),
+                    ZeroStruct("si"),
+                    CallAPI("CreateProcessA", (
+                        NameRef("cmd"),
+                        Immediate(0),
+                        Immediate(0),
+                        Immediate(0),
+                    ), result="ret"),
+                    Terminate(),
+                )),
+            ),
+            entry="entry",
+        )
+        m = _make_manifest(
+            functions=["CreateProcessA"], variables=["ret"],
+            strings=[("cmd", "cmd.exe")],
+        )
+        layout = build_layout_x64(m, max_stack_args=0)
+        config = _x64_config()
+        asm = lower_workflow_x64(w, layout, set(), config)
+        lines = asm.splitlines()
+
+        call_idx = next(
+            i for i, l in enumerate(lines) if "call qword ptr" in l
+        )
+        pre_call = lines[:call_idx]
+
+        arg_regs = {"rcx", "rdx", "r8", "r9"}
+        last_write: dict[str, int] = {}
+        for i, line in enumerate(pre_call):
+            stripped = line.strip()
+            for reg in arg_regs:
+                r32 = {"rcx": "ecx", "rdx": "edx", "r8": "r8d", "r9": "r9d"}[reg]
+                if any(
+                    stripped.startswith(f"{instr}  {r}")
+                    for instr in ("mov", "lea", "xor")
+                    for r in (reg, r32)
+                ):
+                    last_write[reg] = i
+
+        for reg in ("rcx", "rdx", "r8", "r9"):
+            if reg not in last_write:
+                continue
+            write_line = last_write[reg]
+            for j in range(write_line + 1, call_idx):
+                stripped = lines[j].strip()
+                if stripped.startswith(";"):
+                    continue
+                r32 = {"rcx": "ecx", "rdx": "edx", "r8": "r8d", "r9": "r9d"}[reg]
+                for instr in ("mov", "xor", "lea"):
+                    for r in (reg, r32):
+                        if stripped.startswith(f"{instr}  {r},") or \
+                           stripped.startswith(f"{instr}  {r} ,"):
+                            pytest.fail(
+                                f"{reg} overwritten at line {j} after "
+                                f"setup at line {write_line}: {stripped}"
+                            )
 
 
 class TestP1_3_ErrorsAsExceptions:

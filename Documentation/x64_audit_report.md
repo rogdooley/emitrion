@@ -3,7 +3,7 @@
 ## Summary
 
 Phase 1: Three correctness defects found and fixed.
-Phase A (code review): Four P0 and five P1 defects fixed. All 744 tests pass (596 x86, 148 x64). Zero regressions.
+Phase A (code review): Four P0 and five P1 defects addressed (8 fixed, 1 documented limitation). All 746 tests pass (596 x86, 150 x64). Zero regressions.
 
 ## Audit Scope
 
@@ -146,7 +146,9 @@ Module docstring now documents which registers each function may clobber, the _S
 
 `resolve_export_by_hash` had no explicit failure path. When the target hash was not found in the export table, execution fell through past `jl find_export_loop` into whatever code followed.
 
-**Fix**: Added `xor eax, eax; ret` after the loop boundary check. A missing export now returns NULL to the caller.
+**Fix (v1)**: Added `xor eax, eax; ret` after the loop boundary check.
+
+**Fix (v2)**: Changed to `int3` (debug break). Returning NULL was insufficient: callers stored the NULL pointer and later executed `call qword ptr [rsp+offset]`, transferring control to address 0. The `int3` halts execution immediately, visible in WinDbg. A missing export in position-independent shellcode is unrecoverable at runtime.
 
 ### P0-2: DLL Loader RSP Mutation (build_x64.py)
 
@@ -164,9 +166,9 @@ Module docstring now documents which registers each function may clobber, the _S
 
 The encoder validates immediate bytes for badchars but not the complete assembled output (opcodes, REX prefixes, ModR/M, SIB, displacements, branch offsets).
 
-**Fix**: Added post-assembly scan of the raw shellcode bytes against the badchar set. Violations are reported in `asm_errors` with byte value, offset, and count. This catches encoder blind spots at build time.
+**Fix**: Added post-assembly scan of the raw shellcode bytes against the badchar set. Violations are reported in `asm_errors` with byte value, offset, and count. When violations are found, `shellcode_bytes` is set to None (hard failure: no usable binary produced). This catches encoder blind spots at build time.
 
-### P1-1: Export Forwarding Documentation (build_x64.py)
+### P1-1: Export Forwarding (build_x64.py) [documented limitation, not fixed]
 
 Added explicit comment documenting that forwarded exports (RVA inside the export directory) are not detected. Current targets (kernel32.dll, ws2_32.dll) do not forward the APIs we resolve.
 
@@ -174,7 +176,9 @@ Added explicit comment documenting that forwarded exports (RVA inside the export
 
 The `find_kernel32_entry`/`next_module` loop walked the InInitializationOrderModuleList with no termination condition. On a corrupted or unexpected PEB, this would loop forever.
 
-**Fix**: Added R15D as a 64-iteration countdown. `find_module` initializes `r15d = 0x40`, `next_module` decrements and jumps to `module_not_found` on zero. `module_not_found` sets `rbx = 0` (NULL base) and returns.
+**Fix**: Added R15D as a 64-iteration countdown. `find_module` initializes `r15d = 0x40`, `next_module` decrements and jumps to `module_not_found` on zero. `module_not_found` executes `int3` (hard stop), preventing invalid PE parsing through `rbx=0`.
+
+**R15 lifetime**: R15 is nonvolatile under MS x64 ABI. The loop body is all inline assembly (no CALL instructions): `safe_mem_load_x64` inlines, `cmp`/`jne`/`sub`/`jmp` are scalar. No instruction in the loop body writes to R15 except the `dec r15d` counter. Verified by test.
 
 ### P1-3: Error Conditions as Exceptions (x64_backend.py)
 
@@ -196,12 +200,12 @@ The compose pipeline called `_emit_struct_init_x64()` AND the workflow IR contai
 
 ## Phase A Test Coverage
 
-14 new tests in `test_x64_audit.py`:
-- P0-1: Resolver failure path (2 tests)
+16 new tests in `test_x64_audit.py`:
+- P0-1: Resolver failure halts via int3 (2 tests)
 - P0-2: DLL loader no RSP mutation (3 tests)
-- P0-3: Direct register resolution (1 test)
+- P0-3: Direct register resolution + semantic trace (2 tests)
 - P0-4: Post-assembly badchar validation (1 test)
-- P1-2: Bounded module enumeration (2 tests)
+- P1-2: Bounded module enumeration + R15 lifetime (3 tests)
 - P1-3: Errors as exceptions (2 tests)
 - P1-4: No duplicate struct init (1 test)
 - P1-5: Signed immediate handling (2 tests)
@@ -209,9 +213,9 @@ The compose pipeline called `_emit_struct_init_x64()` AND the workflow IR contai
 ## Final Test Results (Phase A)
 
 ```
-744 passed in 1.51s
+746 passed in 1.61s
   596 x86 tests (zero regressions)
-  148 x64 tests (83 pre-existing + 51 audit + 14 code review)
+  150 x64 tests (83 pre-existing + 51 audit + 16 code review)
 ```
 
 ## Out of Scope
