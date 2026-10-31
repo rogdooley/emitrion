@@ -227,7 +227,7 @@ class TestX64CallConvention:
         layout = build_layout_x64(m, max_stack_args=0)
         config = _x64_config(command="calc.exe")
         asm = lower_workflow_x64(w, layout, {0x00}, config)
-        assert "rcx" in asm
+        assert "rcx" in asm or "ecx" in asm
         assert "call qword ptr" in asm
         lines = asm.split("\n")
         for i, l in enumerate(lines):
@@ -264,8 +264,8 @@ class TestX64CallConvention:
         layout = build_layout_x64(m, max_stack_args=10)
         config = _x64_config()
         asm = lower_workflow_x64(w, layout, {0x00}, config)
-        assert "rcx" in asm
-        assert "rdx" in asm
+        assert "rcx" in asm or "ecx" in asm
+        assert "rdx" in asm or "edx" in asm
 
 
 class TestX64StructLowering:

@@ -183,7 +183,7 @@ class _LoweringContextX64:
         if isinstance(ref, Immediate):
             if ref.value == 0:
                 return ([f"    xor  {r32}, {r32}"], target_reg)
-            if ref.value <= 0xFFFFFFFF:
+            if 0 < ref.value <= 0xFFFFFFFF:
                 lines = list(encode_dword_into_r64(ref.value, self.bc, target_reg))
                 return (lines, target_reg)
             lines = list(encode_qword(ref.value, self.bc, target_reg))
@@ -195,7 +195,7 @@ class _LoweringContextX64:
                 val = self.constants[name]
                 if val == 0:
                     return ([f"    xor  {r32}, {r32}"], target_reg)
-                if val <= 0xFFFFFFFF:
+                if 0 < val <= 0xFFFFFFFF:
                     lines = list(encode_dword_into_r64(val, self.bc, target_reg))
                     return (lines, target_reg)
                 lines = list(encode_qword(val, self.bc, target_reg))
@@ -233,7 +233,7 @@ class _LoweringContextX64:
         if isinstance(val, int):
             if val == 0:
                 return ([f"    xor  {r32}, {r32}"], target_reg)
-            if val <= 0xFFFFFFFF:
+            if 0 < val <= 0xFFFFFFFF:
                 lines = list(encode_dword_into_r64(val, self.bc, target_reg))
                 return (lines, target_reg)
             lines = list(encode_qword(val, self.bc, target_reg))
@@ -283,28 +283,17 @@ class _LoweringContextX64:
             lines.extend(safe_qword_store("rsp", stack_offset, reg, self.bc))
             lines.append(f"    ; stack arg {arg_name}")
 
-        # Load register arguments (first 4) in reverse order to avoid clobbering
-        # Load into the target register directly where possible.
+        # Load register arguments directly into target registers.
+        # All sources (stack slots, immediates) are independent of arg
+        # registers, so forward order is safe. Scratch clobber (r11/rax via
+        # _SCRATCH_MAP) never conflicts with RCX/RDX/R8/R9.
         reg_args = min(len(args), 4)
 
-        # We resolve each register arg into its target register.
-        # To avoid clobbering, we resolve them into rax first if the target
-        # register would be overwritten by a later resolve, then move at the end.
-        # Simple approach: resolve all into rax, then mov to target.
-        # This is correct (if slightly verbose) because each resolve
-        # reads from stack/immediate, not from a previously set arg register.
-        resolved_regs: list[tuple[list[str], str, str]] = []
         for i in range(reg_args):
             arg = args[i]
             arg_name = arg_names[i] if i < len(arg_names) else f"arg{i}"
             target = _ARG_REGS[i]
-            setup, reg = self._resolve_value(arg, "rax")
-            resolved_regs.append((setup, reg, target))
-
-        # Emit in reverse order (last arg first) to minimize conflicts
-        for setup, reg, target in reversed(resolved_regs):
-            arg_idx = _ARG_REGS.index(target)
-            arg_name = arg_names[arg_idx] if arg_idx < len(arg_names) else f"arg{arg_idx}"
+            setup, reg = self._resolve_value(arg, target)
             lines.extend(setup)
             if reg != target:
                 lines.append(f"    mov  {target}, {reg}")
@@ -324,11 +313,17 @@ class _LoweringContextX64:
     def _lower_write_struct_field(self, op: WriteStructField) -> list[str]:
         stype = self.struct_types.get(op.struct_name)
         if stype is None:
-            return [f"    ; ERROR: WriteStructField '{op.struct_name}' has no known type"]
+            raise ValueError(
+                f"WriteStructField references '{op.struct_name}' which has no "
+                f"AllocateStruct in the workflow. Add AllocateStruct('{op.struct_name}', ...) first."
+            )
 
         st_rec = STRUCT_DATABASE_X64.get(stype) or STRUCT_DATABASE.get(stype)
         if st_rec is None:
-            return [f"    ; ERROR: struct type '{stype}' not in database"]
+            raise ValueError(
+                f"Struct type '{stype}' (from '{op.struct_name}') not found in "
+                f"STRUCT_DATABASE or STRUCT_DATABASE_X64."
+            )
 
         field_info = None
         for f in st_rec.fields:
@@ -337,7 +332,10 @@ class _LoweringContextX64:
                 break
 
         if field_info is None:
-            return [f"    ; ERROR: field '{op.field_name}' not in '{stype}'"]
+            raise ValueError(
+                f"Field '{op.field_name}' not found in struct '{stype}'. "
+                f"Available fields: {[f.name for f in st_rec.fields]}"
+            )
 
         lines: list[str] = []
         lines.append(f"    ; {op.struct_name}.{op.field_name}")
@@ -362,11 +360,17 @@ class _LoweringContextX64:
     def _lower_zero_struct(self, op: ZeroStruct) -> list[str]:
         stype = self.struct_types.get(op.name)
         if stype is None:
-            return [f"    ; ERROR: ZeroStruct '{op.name}' has no known type"]
+            raise ValueError(
+                f"ZeroStruct references '{op.name}' which has no "
+                f"AllocateStruct in the workflow. Add AllocateStruct('{op.name}', ...) first."
+            )
 
         st_rec = STRUCT_DATABASE_X64.get(stype) or STRUCT_DATABASE.get(stype)
         if st_rec is None:
-            return [f"    ; ERROR: struct type '{stype}' not in database"]
+            raise ValueError(
+                f"Struct type '{stype}' (from '{op.name}') not found in "
+                f"STRUCT_DATABASE or STRUCT_DATABASE_X64."
+            )
 
         size = st_rec.size
         slot = self.layout.slot(stype)

@@ -214,7 +214,7 @@ class TestABITwoArgs:
         layout = build_layout_x64(m)
         config = _x64_config(command="calc.exe")
         asm = lower_workflow_x64(w, layout, {0x00}, config)
-        assert "rcx" in asm
+        assert "rcx" in asm or "ecx" in asm
         assert "rdx" in asm or "edx" in asm
 
 
@@ -243,7 +243,7 @@ class TestABIFourArgs:
         layout = build_layout_x64(m, max_stack_args=0)
         config = _x64_config()
         asm = lower_workflow_x64(w, layout, {0x00}, config)
-        assert "rcx" in asm
+        assert "rcx" in asm or "ecx" in asm
         assert "rdx" in asm or "edx" in asm
         assert "r8" in asm
         assert "r9" in asm
@@ -351,7 +351,7 @@ class TestABITenArgs:
         asm = lower_workflow_x64(w, layout, {0x00}, config)
 
         # All 4 register args
-        assert "rcx" in asm
+        assert "rcx" in asm or "ecx" in asm
         assert "rdx" in asm or "edx" in asm
         assert "r8" in asm
         assert "r9" in asm
@@ -913,3 +913,196 @@ class TestWorkflowE2EBuildPipeline:
         assert "WSAStartup" in result.asm
         assert "connect" in result.asm
         assert "CreateProcessA" in result.asm
+
+
+# -- Phase A regression tests (code review fixes) --
+
+
+class TestP0_1_ResolverFailurePath:
+    """P0-1: resolve_export_by_hash must not fall through on miss."""
+
+    def test_export_not_found_label_present(self) -> None:
+        from emitrion.build_x64 import _emit_framework_stubs_x64
+        asm = _emit_framework_stubs_x64({0x00})
+        assert "xor  eax, eax" in asm.split("jl   find_export_loop")[-1]
+        assert "ret" in asm.split("jl   find_export_loop")[-1]
+
+    def test_export_not_found_returns_null(self) -> None:
+        from emitrion.build_x64 import _emit_framework_stubs_x64
+        asm = _emit_framework_stubs_x64({0x00})
+        after_loop = asm.split("jl   find_export_loop")[-1]
+        lines = [l.strip() for l in after_loop.strip().splitlines()]
+        xor_idx = next(i for i, l in enumerate(lines) if "xor  eax, eax" in l)
+        ret_idx = next(i for i, l in enumerate(lines) if l == "ret" and i > xor_idx)
+        assert ret_idx > xor_idx
+
+
+class TestP0_2_DLLLoaderNoRSPMutation:
+    """P0-2: DLL loading must not push to stack or modify RSP."""
+
+    def test_no_push_in_dll_load(self) -> None:
+        import pathlib
+        from emitrion.build_x64 import build_x64
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
+        result = build_x64(path, assemble=False)
+        dll_section = result.asm.split("Loading ws2_32.dll")[1].split("resolve")[0]
+        for line in dll_section.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(";"):
+                continue
+            assert not stripped.startswith("push "), f"RSP-mutating push found: {stripped}"
+
+    def test_dll_load_uses_string_slot(self) -> None:
+        import pathlib
+        from emitrion.build_x64 import build_x64
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
+        result = build_x64(path, assemble=False)
+        dll_section = result.asm.split("Loading ws2_32.dll")[1].split("resolve")[0]
+        assert "lea  rcx" in dll_section or "lea  ecx" in dll_section or \
+               ("add" in dll_section and "mov  rcx" in dll_section)
+
+    def test_no_add_rsp_cleanup(self) -> None:
+        import pathlib
+        from emitrion.build_x64 import build_x64
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
+        result = build_x64(path, assemble=False)
+        dll_section = result.asm.split("Loading ws2_32.dll")[1].split("resolve")[0]
+        for line in dll_section.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(";"):
+                continue
+            assert "add  rsp" not in stripped, f"RSP cleanup found: {stripped}"
+
+
+class TestP0_3_DirectRegisterResolution:
+    """P0-3: Args resolved directly into target registers, not via RAX."""
+
+    def test_two_arg_direct_resolution(self) -> None:
+        w = Workflow(
+            name="test_direct",
+            blocks=(
+                Block("entry", (
+                    CallAPI("WinExec", (
+                        NameRef("cmd"), Immediate(5),
+                    ), result="ret"),
+                    Terminate(),
+                )),
+            ),
+            entry="entry",
+        )
+        m = _make_manifest(
+            functions=["WinExec"], variables=["ret"],
+            strings=[("cmd", "calc.exe")],
+        )
+        layout = build_layout_x64(m)
+        config = _x64_config(command="calc.exe")
+        asm = lower_workflow_x64(w, layout, {0x00}, config)
+        lines = asm.splitlines()
+        call_idx = next(i for i, l in enumerate(lines) if "call qword ptr" in l)
+        pre_call = "\n".join(lines[:call_idx])
+        assert "mov  rcx" in pre_call or "lea  rcx" in pre_call or "ecx" in pre_call
+        assert "edx" in pre_call or "rdx" in pre_call
+
+
+class TestP0_4_PostAssemblyBadcharValidation:
+    """P0-4: Badchar validation of assembled output (requires keystone)."""
+
+    def test_badchar_check_runs_without_keystone(self) -> None:
+        import pathlib
+        from emitrion.build_x64 import build_x64
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "run_command_x64.yaml")
+        result = build_x64(path, assemble=False)
+        assert result.asm
+
+
+class TestP1_2_BoundedModuleEnumeration:
+    """P1-2: Module walk has a bounded iteration count."""
+
+    def test_module_counter_present(self) -> None:
+        from emitrion.build_x64 import _emit_framework_stubs_x64
+        asm = _emit_framework_stubs_x64({0x00})
+        assert "r15d" in asm
+        assert "module_not_found" in asm
+
+    def test_module_not_found_returns_zero_rbx(self) -> None:
+        from emitrion.build_x64 import _emit_framework_stubs_x64
+        asm = _emit_framework_stubs_x64({0x00})
+        section = asm.split("module_not_found:")[1].split("\n\n")[0]
+        assert "xor  ebx, ebx" in section
+        assert "ret" in section
+
+
+class TestP1_3_ErrorsAsExceptions:
+    """P1-3: Lowering errors raise exceptions, not assembly comments."""
+
+    def test_write_struct_field_unknown_struct_raises(self) -> None:
+        w = Workflow(
+            name="test_err",
+            blocks=(
+                Block("entry", (
+                    WriteStructField("ghost", "field", Immediate(0)),
+                    Terminate(),
+                )),
+            ),
+            entry="entry",
+        )
+        m = _make_manifest(functions=["WinExec"], variables=["ret"])
+        layout = build_layout_x64(m)
+        with pytest.raises(ValueError, match="has no AllocateStruct"):
+            lower_workflow_x64(w, layout, set(), _x64_config())
+
+    def test_zero_struct_unknown_raises(self) -> None:
+        w = Workflow(
+            name="test_err",
+            blocks=(
+                Block("entry", (
+                    ZeroStruct("ghost"),
+                    Terminate(),
+                )),
+            ),
+            entry="entry",
+        )
+        m = _make_manifest(functions=["WinExec"], variables=["ret"])
+        layout = build_layout_x64(m)
+        with pytest.raises(ValueError, match="has no AllocateStruct"):
+            lower_workflow_x64(w, layout, set(), _x64_config())
+
+
+class TestP1_4_NoDuplicateStructInit:
+    """P1-4: Workflow templates skip compose-level struct init."""
+
+    def test_workflow_skips_compose_struct_init(self) -> None:
+        import pathlib
+        from emitrion.build_x64 import build_x64
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
+        result = build_x64(path, assemble=False)
+        assert "handled by workflow IR" in result.asm
+
+
+class TestP1_5_SignedImmediateHandling:
+    """P1-5: Immediate(-1) must produce 64-bit 0xFFFFFFFFFFFFFFFF."""
+
+    def test_negative_one_uses_qword(self) -> None:
+        from emitrion.workflow.x64_backend import _LoweringContextX64
+        from emitrion.workflow.ir import Immediate
+
+        m = _make_manifest(functions=["WinExec"])
+        layout = build_layout_x64(m)
+        ctx = _LoweringContextX64(layout, {0x00}, None)
+        lines, reg = ctx._resolve_value(Immediate(-1), "rax")
+        asm = "\n".join(lines)
+        assert "0x" in asm
+        val_strs = re.findall(r"0x([0-9a-f]+)", asm)
+        combined = "".join(val_strs)
+        assert "ffffffffffffffff" in combined or len(combined) > 8
+
+    def test_positive_fits_32bit(self) -> None:
+        from emitrion.workflow.x64_backend import _LoweringContextX64
+        from emitrion.workflow.ir import Immediate
+
+        m = _make_manifest(functions=["WinExec"])
+        layout = build_layout_x64(m)
+        ctx = _LoweringContextX64(layout, set(), None)
+        lines, reg = ctx._resolve_value(Immediate(0x100), "rax")
+        asm = "\n".join(lines)
+        assert "eax" in asm

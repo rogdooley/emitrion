@@ -2,7 +2,8 @@
 
 ## Summary
 
-Three correctness defects found and fixed. All 730 tests pass (596 x86, 134 x64). Zero regressions.
+Phase 1: Three correctness defects found and fixed.
+Phase A (code review): Four P0 and five P1 defects fixed. All 744 tests pass (596 x86, 148 x64). Zero regressions.
 
 ## Audit Scope
 
@@ -138,6 +139,80 @@ A violation raises `ValueError` identifying the offending slot. This catches all
 ### Explicit clobber documentation (encode_x64.py)
 
 Module docstring now documents which registers each function may clobber, the _SCRATCH_MAP policy, and the caller's responsibility to save RAX/R11 if they hold live values.
+
+## Phase A: Code Review Fixes
+
+### P0-1: Export Resolver Fall-Through (build_x64.py)
+
+`resolve_export_by_hash` had no explicit failure path. When the target hash was not found in the export table, execution fell through past `jl find_export_loop` into whatever code followed.
+
+**Fix**: Added `xor eax, eax; ret` after the loop boundary check. A missing export now returns NULL to the caller.
+
+### P0-2: DLL Loader RSP Mutation (build_x64.py)
+
+`_dll_load_block_x64()` used `emit_push()` to construct DLL name strings on the stack via PUSH instructions, then called LoadLibraryA with `mov rcx, rsp`. The PUSH instructions mutated RSP, invalidating all RSP-relative offsets for the LoadLibraryA call and the subsequent module_slot store.
+
+**Fix**: Rewrote to construct the DLL name in a pre-allocated string slot using mov-based encoding (same approach as `_emit_strings_x64`), then `lea rcx, [rsp+offset]`. No RSP mutation. Removed `emit_push`/`to_dwords` imports.
+
+### P0-3: Register Argument Clobbering (x64_backend.py)
+
+`_lower_call()` resolved all register arguments through RAX first, then emitted in reverse order. While sources (stack slots, immediates) don't conflict with arg registers, the RAX routing was fragile: any future _resolve_value path touching an arg register would silently corrupt prepared args.
+
+**Fix**: Each argument is now resolved directly into its target register (RCX, RDX, R8, R9) in forward order. All sources read from stack-relative offsets or encode immediates, so no inter-argument dependency exists. Scratch clobber (R11/RAX via _SCRATCH_MAP) never conflicts with arg registers.
+
+### P0-4: Post-Assembly Badchar Validation (build_x64.py)
+
+The encoder validates immediate bytes for badchars but not the complete assembled output (opcodes, REX prefixes, ModR/M, SIB, displacements, branch offsets).
+
+**Fix**: Added post-assembly scan of the raw shellcode bytes against the badchar set. Violations are reported in `asm_errors` with byte value, offset, and count. This catches encoder blind spots at build time.
+
+### P1-1: Export Forwarding Documentation (build_x64.py)
+
+Added explicit comment documenting that forwarded exports (RVA inside the export directory) are not detected. Current targets (kernel32.dll, ws2_32.dll) do not forward the APIs we resolve.
+
+### P1-2: Bounded Module Enumeration (build_x64.py)
+
+The `find_kernel32_entry`/`next_module` loop walked the InInitializationOrderModuleList with no termination condition. On a corrupted or unexpected PEB, this would loop forever.
+
+**Fix**: Added R15D as a 64-iteration countdown. `find_module` initializes `r15d = 0x40`, `next_module` decrements and jumps to `module_not_found` on zero. `module_not_found` sets `rbx = 0` (NULL base) and returns.
+
+### P1-3: Error Conditions as Exceptions (x64_backend.py)
+
+`_lower_write_struct_field` and `_lower_zero_struct` emitted error conditions as assembly comments (e.g., `; ERROR: WriteStructField 'x' has no known type`). These produced silently broken shellcode.
+
+**Fix**: All five error paths now raise `ValueError` with diagnostic messages naming the missing struct, the available fields, or the database that lacks the type. Errors are caught at build time.
+
+### P1-4: Duplicate Struct Initialization (build_x64.py)
+
+The compose pipeline called `_emit_struct_init_x64()` AND the workflow IR contained `ZeroStruct` operations, zeroing the same structs twice.
+
+**Fix**: When the template is a `WorkflowTemplate`, the compose-level struct init is skipped with a comment noting it's handled by workflow IR.
+
+### P1-5: Signed Immediate Handling (x64_backend.py)
+
+`Immediate(-1)` with `ref.value <= 0xFFFFFFFF` evaluated True (Python: -1 <= 4294967295), routing through `encode_dword_into_r64` which masked to 0xFFFFFFFF. The 32-bit mov zero-extends to 0x00000000FFFFFFFF, not the intended 0xFFFFFFFFFFFFFFFF.
+
+**Fix**: Changed condition to `0 < ref.value <= 0xFFFFFFFF`. Negative values now fall through to `encode_qword` which handles full 64-bit representation. Applied to all three sites: `_resolve_value` (Immediate), `_resolve_value` (NameRef constant), `_resolve_input`.
+
+## Phase A Test Coverage
+
+14 new tests in `test_x64_audit.py`:
+- P0-1: Resolver failure path (2 tests)
+- P0-2: DLL loader no RSP mutation (3 tests)
+- P0-3: Direct register resolution (1 test)
+- P0-4: Post-assembly badchar validation (1 test)
+- P1-2: Bounded module enumeration (2 tests)
+- P1-3: Errors as exceptions (2 tests)
+- P1-4: No duplicate struct init (1 test)
+- P1-5: Signed immediate handling (2 tests)
+
+## Final Test Results (Phase A)
+
+```
+744 passed in 1.51s
+  596 x86 tests (zero regressions)
+  148 x64 tests (83 pre-existing + 51 audit + 14 code review)
+```
 
 ## Out of Scope
 
