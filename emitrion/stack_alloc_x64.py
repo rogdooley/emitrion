@@ -52,6 +52,12 @@ MODULE_BASE_START_X64 = 0x40
 
 STRUCT_ZONE_START_X64 = 0x100
 
+# Framework stubs save export context at [rbp-0x08..rbp-0x30] (6 qwords).
+# After 'mov rbp, rsp; sub rsp, frame_size', those addresses map to
+# [RSP + frame_size - 0x08] through [RSP + frame_size - 0x30].
+# The allocator must not assign slots into this region.
+EXPORT_CONTEXT_RESERVE = 0x30
+
 
 @dataclass(frozen=True)
 class SlotX64:
@@ -234,7 +240,7 @@ def build_layout_x64(
         )
         string_cursor += slot_size
 
-    frame_size = _ceil16(string_cursor)
+    frame_size = _ceil16(string_cursor + EXPORT_CONTEXT_RESERVE)
 
     if frame_size > 0x2000:
         raise ValueError(

@@ -70,6 +70,29 @@ _SCRATCH_MAP = {
 }
 
 
+_REG_FAMILY = {}
+for _r64, _r32 in _R64_TO_R32.items():
+    _REG_FAMILY[_r64] = _r64
+    _REG_FAMILY[_r32] = _r64
+for _r64, _w in {
+    "rax": "ax", "rbx": "bx", "rcx": "cx", "rdx": "dx",
+    "rsi": "si", "rdi": "di", "rbp": "bp", "rsp": "sp",
+    "r8": "r8w", "r9": "r9w", "r10": "r10w", "r11": "r11w",
+}.items():
+    _REG_FAMILY[_w] = _r64
+
+
+def _reg_to_r64(reg: str) -> str:
+    return _REG_FAMILY.get(reg, reg)
+
+
+def _safe_tmp(src_reg: str, tmp: str) -> str:
+    """Pick a tmp register that does not alias src_reg."""
+    if _reg_to_r64(src_reg) != _reg_to_r64(tmp):
+        return tmp
+    return _scratch_r64(_reg_to_r64(src_reg))
+
+
 def _r64_to_r32(reg: str) -> str:
     return _R64_TO_R32.get(reg, reg)
 
@@ -86,6 +109,7 @@ def safe_qword_store(
     fmt = _fmt_offset(offset)
     if not _disp_has_badchar(offset, badchars):
         return [f"    mov  qword ptr [{base}{fmt}], {src_reg}"]
+    tmp = _safe_tmp(src_reg, tmp)
     lines = list(encode_dword_into_r64(offset & 0xFFFFFFFF, badchars, tmp))
     lines.append(f"    add  {tmp}, {base}")
     lines.append(f"    mov  qword ptr [{tmp}], {src_reg}")
@@ -100,6 +124,7 @@ def safe_dword_store_x64(
     fmt = _fmt_offset(offset)
     if not _disp_has_badchar(offset, badchars):
         return [f"    mov  dword ptr [{base}{fmt}], {src_reg}"]
+    tmp = _safe_tmp(src_reg, tmp)
     lines = list(encode_dword_into_r64(offset & 0xFFFFFFFF, badchars, tmp))
     lines.append(f"    add  {tmp}, {base}")
     lines.append(f"    mov  dword ptr [{tmp}], {src_reg}")
@@ -114,6 +139,7 @@ def safe_word_store_x64(
     fmt = _fmt_offset(offset)
     if not _disp_has_badchar(offset, badchars):
         return [f"    mov  word ptr [{base}{fmt}], {src_reg}"]
+    tmp = _safe_tmp(src_reg, tmp)
     lines = list(encode_dword_into_r64(offset & 0xFFFFFFFF, badchars, tmp))
     lines.append(f"    add  {tmp}, {base}")
     lines.append(f"    mov  word ptr [{tmp}], {src_reg}")
@@ -130,6 +156,7 @@ def safe_mem_load_x64(
     fmt = _fmt_offset(offset)
     if not _disp_has_badchar(offset, badchars):
         return [f"    mov  {dst}, {pfx}[{base}{fmt}]"]
+    tmp = _safe_tmp(base, tmp)
     lines = list(encode_dword_into_r64(offset & 0xFFFFFFFF, badchars, tmp))
     lines.append(f"    add  {tmp}, {base}")
     lines.append(f"    mov  {dst}, {pfx}[{tmp}]")
@@ -144,6 +171,7 @@ def safe_lea_x64(
     fmt = _fmt_offset(offset)
     if not _disp_has_badchar(offset, badchars):
         return [f"    lea  {dst}, [{base}{fmt}]"]
+    tmp = _safe_tmp(base, tmp)
     lines = list(encode_dword_into_r64(offset & 0xFFFFFFFF, badchars, tmp))
     lines.append(f"    add  {tmp}, {base}")
     if tmp != dst:
@@ -159,6 +187,7 @@ def safe_call_mem_x64(
     fmt = _fmt_offset(offset)
     if not _disp_has_badchar(offset, badchars):
         return [f"    call qword ptr [{base}{fmt}]"]
+    tmp = _safe_tmp(base, tmp)
     lines = list(encode_dword_into_r64(offset & 0xFFFFFFFF, badchars, tmp))
     lines.append(f"    add  {tmp}, {base}")
     lines.append(f"    call qword ptr [{tmp}]")
