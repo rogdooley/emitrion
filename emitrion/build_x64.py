@@ -216,14 +216,14 @@ def _emit_api_resolution_x64(
     manifest: Manifest, layout: StackLayoutX64, dll: str,
 ) -> str:
     """Emit hash-based API resolution stubs for a DLL's functions (x64)."""
-    from .hash_gen import ror13_hash
+    from .hash_gen import ror13
 
     bc = manifest.badchars
     lines: list[str] = []
     module_funcs = [n for n in manifest.functions if API_DATABASE[n].module == dll]
 
     for func_name in module_funcs:
-        h = ror13_hash(func_name)
+        h = ror13(func_name)
         slot = layout.slot(func_name)
         lines.append(f"    ; resolve {func_name} (hash 0x{h:08x})")
         lines.extend(encode_dword_into_r64(h, bc, "rax"))
@@ -494,3 +494,133 @@ def main():
 if __name__ == "__main__":
     main()
 '''
+
+
+def _emit_contract_md_x64(
+    manifest: Manifest, layout: StackLayoutX64, raw: bytes | None,
+) -> str:
+    """Generate a simplified stack layout contract document for x64."""
+    lines = [
+        "# Stack Layout (x64)",
+        "",
+        f"Architecture: x64 (64-bit, Microsoft calling convention)",
+        f"Frame: `sub rsp, 0x{layout.frame_size:x}` (0x{layout.frame_size:x} bytes reserved)",
+        "",
+    ]
+
+    for category in ("module_base", "api", "variable", "structure", "string"):
+        slots = layout.slots_by_category(category)
+        if not slots:
+            continue
+        lines.append(f"## {category.replace('_', ' ').title()} Slots")
+        lines.append("")
+        lines.append("| Offset | Name | Size |")
+        lines.append("|--------|------|------|")
+        for s in sorted(slots, key=lambda x: x.offset):
+            lines.append(f"| `[RSP+0x{s.offset:03x}]` | {s.name} | {s.size} |")
+        lines.append("")
+
+    lines.append("## API Table")
+    lines.append("")
+    lines.append("| Function | Module | Hash |")
+    lines.append("|----------|--------|------|")
+    from .hash_gen import ror13
+    for fn in manifest.functions:
+        rec = API_DATABASE[fn]
+        h = ror13(fn)
+        lines.append(f"| {fn} | {rec.module} | `0x{h:08x}` |")
+    lines.append("")
+
+    if raw:
+        lines.append(f"## Shellcode: {len(raw)} bytes")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def build_x64(
+    manifest_path: str,
+    template_name: str | None = None,
+    config: TemplateConfig | None = None,
+    out_dir: str = "emitter_out",
+    assemble: bool = True,
+) -> "BuildResult":
+    """Run the full x64 build pipeline. Returns a BuildResult (same shape as x86).
+
+    Mirrors build.build() but uses x64 stack allocator, x64 framework stubs,
+    and x64 compose pipeline.
+    """
+    from .build import (
+        BuildResult,
+        _load_template,
+        _merge_template_requirements,
+        _apply_config_overrides,
+        _bytes_to_c,
+        _bytes_to_hex_str,
+        _bytes_to_py,
+    )
+    from .schema import load as load_manifest
+    from .stack_alloc_x64 import build_layout_x64
+    from .workflow.ir import CallAPI
+    from .workflow.reference import WorkflowTemplate
+
+    manifest = load_manifest(manifest_path)
+    config = config or TemplateConfig(arch="x64")
+    config.arch = "x64"
+    config.badchars = manifest.badchars
+
+    manifest = _apply_config_overrides(manifest, config)
+
+    effective_template = template_name or manifest.template
+    template = _load_template(effective_template) if effective_template else None
+
+    extra_structs: list[str] | None = None
+    max_stack_args = 0
+
+    if template is not None:
+        manifest = _merge_template_requirements(manifest, template, config)
+        if isinstance(template, WorkflowTemplate):
+            struct_map = template.probe_structs(config)
+            extra_structs = list(struct_map.values())
+            wf = template._resolve_workflow(config)
+            max_args = max(
+                (len(op.arguments) for b in wf.blocks for op in b.operations if isinstance(op, CallAPI)),
+                default=0,
+            )
+            max_stack_args = max(max_args - 4, 0)
+
+    layout = build_layout_x64(manifest, extra_structs=extra_structs, max_stack_args=max_stack_args)
+    asm = compose_asm_x64(manifest, layout, manifest_path, template, config)
+
+    raw: bytes | None = None
+    assembler: str | None = None
+    asm_errors: list[str] = []
+
+    if assemble:
+        try:
+            import keystone
+            ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_64)
+            from .build import _strip_comments
+            encoding, _ = ks.asm(_strip_comments(asm))
+            raw = bytes(encoding)
+            assembler = "keystone-x64"
+        except ImportError:
+            asm_errors.append("keystone not available; skipping x64 assembly")
+        except Exception as e:
+            asm_errors.append(f"keystone-x64: {e}")
+
+    contract_md = _emit_contract_md_x64(manifest, layout, raw)
+
+    return BuildResult(
+        manifest_path=manifest_path,
+        asm=asm,
+        contract_md=contract_md,
+        shellcode_bytes=raw,
+        hex_str=_bytes_to_hex_str(raw) if raw else None,
+        py_bytes=_bytes_to_py(raw) if raw else None,
+        c_array=_bytes_to_c(raw) if raw else None,
+        debug_runner=generate_debug_runner_x64(asm),
+        layout=layout,
+        assembler=assembler,
+        asm_errors=asm_errors if asm_errors else None,
+    )

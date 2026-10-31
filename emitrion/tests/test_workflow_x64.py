@@ -360,6 +360,44 @@ class TestX64BindShellWorkflow:
         assert "accept" in asm
 
 
+class TestX64EndToEnd:
+    def test_build_x64_run_command(self) -> None:
+        from emitrion.build_x64 import build_x64
+        import pathlib
+        manifest_path = str(
+            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "run_command_x64.yaml"
+        )
+        result = build_x64(manifest_path, assemble=False)
+        assert result.asm
+        assert "[BITS 64]" in result.asm
+        assert "GS:" in result.asm or "gs:" in result.asm
+        assert result.contract_md
+        assert "x64" in result.contract_md
+
+    def test_build_x64_revshell(self) -> None:
+        from emitrion.build_x64 import build_x64
+        import pathlib
+        manifest_path = str(
+            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml"
+        )
+        result = build_x64(manifest_path, assemble=False)
+        assert result.asm
+        assert "[BITS 64]" in result.asm
+        assert "WSAStartup" in result.asm
+        assert "connect" in result.asm
+        assert result.debug_runner
+        assert "KS_MODE_64" in result.debug_runner
+
+    def test_build_dispatch_routes_x64(self) -> None:
+        from emitrion.build import build
+        import pathlib
+        manifest_path = str(
+            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "run_command_x64.yaml"
+        )
+        result = build(manifest_path, assemble=False)
+        assert "[BITS 64]" in result.asm
+
+
 class TestX64SchemaArch:
     def test_manifest_arch_field(self) -> None:
         m = _make_manifest(functions=["WinExec"])

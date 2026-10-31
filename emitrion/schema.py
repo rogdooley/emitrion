@@ -115,7 +115,8 @@ def load(path: str) -> Manifest:
         label = entry.get("label", "")
         value = entry.get("value", "")
         method = entry.get("method", "")
-        dest = entry.get("dest", "edi")
+        default_dest = "rdi" if arch == "x64" else "edi"
+        dest = entry.get("dest", default_dest)
 
         entry_ok = True
 

@@ -1142,6 +1142,12 @@ def build(
     from .xor_encoder import xor_encode
 
     manifest = load_manifest(manifest_path)
+    if manifest.arch == "x64":
+        from .build_x64 import build_x64 as _build_x64
+        return _build_x64(
+            manifest_path, template_name=template_name,
+            config=config, out_dir=out_dir, assemble=assemble,
+        )
     config = config or TemplateConfig()
     config.badchars = manifest.badchars   # manifest is authoritative
     manifest = _apply_config_overrides(manifest, config)
