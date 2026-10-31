@@ -1,0 +1,15 @@
+# Run command (WinExec) - x64
+arch: x64
+template: ir_run_command
+badchars: ["00", "0A", "0D"]
+
+functions:
+  - WinExec
+
+variables: []
+
+strings:
+  - label: cmd
+    value: calc.exe
+    method: mov
+    dest: rdi

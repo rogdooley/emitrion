@@ -812,6 +812,47 @@ STRUCT_DATABASE: dict[str, StructRecord] = {
 }
 
 
+# x64 structure layouts: fields have different offsets/sizes due to pointer width.
+STRUCT_DATABASE_X64: dict[str, StructRecord] = {
+    "STARTUPINFOA": StructRecord(
+        size=0x68,
+        alignment=8,
+        fields=[
+            StructField(0x00, "cb",         4, "must be 0x68 on x64"),
+            StructField(0x3c, "dwFlags",    4, "STARTF_USESTDHANDLES = 0x100"),
+            StructField(0x50, "hStdInput",  8, "socket handle (HANDLE is 8 bytes on x64)"),
+            StructField(0x58, "hStdOutput", 8, "socket handle"),
+            StructField(0x60, "hStdError",  8, "socket handle"),
+        ],
+    ),
+    "PROCESS_INFORMATION": StructRecord(
+        size=0x18,
+        alignment=8,
+        fields=[
+            StructField(0x00, "hProcess",    8, "populated by Windows"),
+            StructField(0x08, "hThread",     8, "populated by Windows"),
+            StructField(0x10, "dwProcessId", 4, "populated by Windows"),
+            StructField(0x14, "dwThreadId",  4, "populated by Windows"),
+        ],
+    ),
+    "sockaddr_in": StructRecord(
+        size=0x10,
+        alignment=4,
+        fields=[
+            StructField(0x00, "sin_family", 2, "AF_INET = 0x0002"),
+            StructField(0x02, "sin_port",   2, "network byte order"),
+            StructField(0x04, "sin_addr",   4, "network byte order IPv4 address"),
+            StructField(0x08, "sin_zero",   8, "zeroed padding"),
+        ],
+    ),
+    "WSADATA": StructRecord(
+        size=0x190,
+        alignment=8,
+        fields=[],
+    ),
+}
+
+
 MODULE_LOAD_ORDER: list[ModuleInfo] = [
     ModuleInfo(dll="kernel32.dll", load_via="peb"),
     ModuleInfo(dll="ws2_32.dll",   load_via="LoadLibraryA"),

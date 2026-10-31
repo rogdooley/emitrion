@@ -25,6 +25,7 @@ class TemplateConfig:
     service_name: str | None = None
     badchars: set[int] = field(default_factory=lambda: {0x00})
     exit_strategy: str = "exit_process"
+    arch: str = "x86"
 
 
 class PayloadTemplate(ABC):
@@ -50,8 +51,12 @@ class PayloadTemplate(ABC):
         """Discover which slot names emit() references by running it
         against a RecordingLayout.  Returns names in first-access order.
         """
-        from ..stack_alloc import RecordingLayout
-        rec = RecordingLayout()
+        if config.arch == "x64":
+            from ..stack_alloc_x64 import RecordingLayoutX64
+            rec = RecordingLayoutX64()
+        else:
+            from ..stack_alloc import RecordingLayout
+            rec = RecordingLayout()
         self.emit(rec, config)
         seen: set[str] = set()
         ordered: list[str] = []

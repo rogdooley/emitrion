@@ -9,6 +9,8 @@ from .api_database import API_DATABASE, MODULE_LOAD_ORDER
 
 _VALID_METHODS = {"mov", "shiftor", "push", "xor"}
 _VALID_REGS = {"eax", "ebx", "ecx", "edx", "esi", "edi"}
+_VALID_REGS_X64 = {"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11"}
+_VALID_ARCHES = {"x86", "x64"}
 _VALID_TEMPLATES = {
     "reverse_shell", "run_command", "copy_file", "copy_then_run",
     "move_then_run", "tcp_download", "tcp_stager", "bind_shell",
@@ -52,6 +54,7 @@ class Manifest:
     strings: list[StringEntry]
     variables: list[VariableEntry] = field(default_factory=list)
     template: str | None = None
+    arch: str = "x86"
 
 
 def load(path: str) -> Manifest:
@@ -60,6 +63,13 @@ def load(path: str) -> Manifest:
         data = yaml.safe_load(fh)
 
     errors: list[str] = []
+
+    # --- arch ---
+    raw_arch = data.get("arch", "x86")
+    if raw_arch not in _VALID_ARCHES:
+        errors.append(f"Unknown arch: '{raw_arch}'. Available: {sorted(_VALID_ARCHES)}")
+    arch = raw_arch if raw_arch in _VALID_ARCHES else "x86"
+    valid_regs = _VALID_REGS_X64 if arch == "x64" else _VALID_REGS
 
     # --- badchars ---
     raw_badchars = data.get("badchars", [])
@@ -119,7 +129,7 @@ def load(path: str) -> Manifest:
         else:
             seen_labels.add(label)
 
-        if dest not in _VALID_REGS:
+        if dest not in valid_regs:
             errors.append(f"Invalid dest register: '{dest}'.")
             entry_ok = False
 
@@ -158,5 +168,5 @@ def load(path: str) -> Manifest:
 
     return Manifest(
         badchars=badchars, functions=functions, strings=strings,
-        variables=variables, template=template,
+        variables=variables, template=template, arch=arch,
     )

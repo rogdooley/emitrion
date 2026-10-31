@@ -22,6 +22,7 @@ import socket as _socket
 import struct as _struct
 from collections.abc import Callable
 
+from ..arch import Arch
 from ..payload_templates.base import PayloadTemplate, TemplateConfig
 from ..stack_alloc import StackLayout
 from .ir import (
@@ -47,6 +48,7 @@ from .ir import (
 )
 from .validator import validate
 from .x86_backend import lower_workflow
+from .x64_backend import lower_workflow_x64
 
 # GetCurrentProcess() returns the pseudo-handle (HANDLE)-1 = 0xFFFFFFFF.
 # We use the well-known constant directly to avoid an extra API resolution.
@@ -146,10 +148,12 @@ class WorkflowTemplate(PayloadTemplate):
         """
         return self._workflow
 
-    def emit(self, layout: StackLayout, config: TemplateConfig) -> str:
-        return lower_workflow(
-            self._resolve_workflow(config), layout, config.badchars, config,
-        )
+    def emit(self, layout, config: TemplateConfig) -> str:
+        from ..stack_alloc_x64 import StackLayoutX64
+        workflow = self._resolve_workflow(config)
+        if isinstance(layout, StackLayoutX64):
+            return lower_workflow_x64(workflow, layout, config.badchars, config)
+        return lower_workflow(workflow, layout, config.badchars, config)
 
     def _extract_slots(self, workflow: Workflow) -> list[str]:
         """Extract all slot names from a workflow's IR operations."""
@@ -187,7 +191,7 @@ class WorkflowTemplate(PayloadTemplate):
 
         return ordered
 
-    def probe_slots(self, config: TemplateConfig) -> list[str]:
+    def probe_slots(self, config: TemplateConfig, arch: Arch = Arch.X86) -> list[str]:
         """Extract all slot names the workflow needs from the IR directly."""
         return self._extract_slots(self._resolve_workflow(config))
 
