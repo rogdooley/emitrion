@@ -97,6 +97,48 @@ The allocator computed `frame_size = _ceil16(string_cursor)` without reserving t
   134 x64 tests (83 pre-existing + 51 audit)
 ```
 
+## Known Limitations
+
+The following are known limitations that unit tests cannot validate. They require native Windows x64 execution to confirm or refute.
+
+### Nonvolatile register preservation
+
+The generated shellcode freely clobbers RBX, RBP, RDI, RSI, R12-R15 (all nonvolatile under MS x64 ABI). This is acceptable for terminal shellcode that never returns to its caller, but would corrupt the caller's state if the shellcode were expected to return. Any future "return-to-caller" workflow would need a save/restore prologue/epilogue.
+
+### Stack restoration after dynamic alignment
+
+The prologue does `mov rbp, rsp; and rsp, -16; sub rsp, frame_size`. Restoration via `mov rsp, rbp` correctly undoes both the alignment and the sub. However, if any future code path modifies RSP between prologue and epilogue (e.g., dynamic alloca, additional pushes for API calls), the restoration path would need adjustment. Current workflows do not modify RSP post-prologue.
+
+### Call-site alignment beyond prologue
+
+The prologue guarantees RSP is 16-byte aligned after setup. Since the lowering backend does not push/pop or adjust RSP between the prologue and API calls (all args go to registers or pre-allocated shadow space slots), call-site alignment is maintained by construction. This invariant is not enforced by assertion and would break silently if future lowering patterns introduced RSP modifications.
+
+### Encoder register clobber contract
+
+The safe_* functions in encode_x64.py may clobber one volatile scratch register (RAX or R11) beyond their explicit operands. The clobber contract is now documented in the module docstring. Callers that hold live values in RAX or R11 across a safe_* call must save those values first. The current lowering pipeline avoids this by resolving into RAX then moving to the target register before any safe_* call, but this ordering is implicit, not enforced.
+
+### Native execution not validated
+
+Generated shellcode has been validated at the assembly-text level (instruction semantics, register usage, offset correctness) but has NOT been executed on a Windows x64 system. The recommended validation before merging to main is:
+
+1. `WinExec("calc.exe", SW_SHOW)` -- simplest smoke test
+2. `CopyFileA` -- exercises stack arguments beyond 4 registers
+3. Reverse shell -- exercises WSA APIs, struct initialization, multi-block workflow
+
+## Hardening Added Post-Audit
+
+### Frame-invariant assertion (stack_alloc_x64.py)
+
+`build_layout_x64()` now asserts at construction time that:
+- No allocated slot overlaps the framework export context area (top 0x30 bytes of frame)
+- No non-shadow slot intrudes into shadow space (bottom 0x20+ bytes of frame)
+
+A violation raises `ValueError` identifying the offending slot. This catches allocator bugs at build time rather than producing silently corrupt shellcode.
+
+### Explicit clobber documentation (encode_x64.py)
+
+Module docstring now documents which registers each function may clobber, the _SCRATCH_MAP policy, and the caller's responsibility to save RAX/R11 if they hold live values.
+
 ## Out of Scope
 
 Per audit constraints, the following were NOT performed:

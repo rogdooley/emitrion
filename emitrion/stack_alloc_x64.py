@@ -248,4 +248,24 @@ def build_layout_x64(
             f"Stack probing is not yet implemented."
         )
 
+    # Frame invariant: no allocated slot may overlap the framework export
+    # context area at [RSP + frame_size - EXPORT_CONTEXT_RESERVE .. frame_size).
+    # Shadow space occupies [RSP + 0 .. shadow_size) at the bottom.
+    # These two reserved regions must not overlap each other or any slot.
+    framework_low = frame_size - EXPORT_CONTEXT_RESERVE
+    for s in slots:
+        slot_end = s.offset + s.size
+        if slot_end > framework_low:
+            raise ValueError(
+                f"Slot '{s.name}' [{s.category}] at [RSP+0x{s.offset:x}..0x{slot_end:x}) "
+                f"overlaps framework export context at [RSP+0x{framework_low:x}..0x{frame_size:x}). "
+                f"This is a stack allocator bug."
+            )
+        if s.category != "shadow" and s.offset < shadow_size:
+            raise ValueError(
+                f"Slot '{s.name}' [{s.category}] at [RSP+0x{s.offset:x}] "
+                f"intrudes into shadow space [RSP+0x00..0x{shadow_size:x}). "
+                f"This is a stack allocator bug."
+            )
+
     return StackLayoutX64(slots, frame_size)

@@ -4,6 +4,31 @@ Extends the x86 encode module with 64-bit immediate and addressing helpers.
 x64 instructions cannot embed 64-bit immediates directly in most cases;
 mov r64, imm64 (REX.W + B8+rd) is the exception. This module provides
 helpers that produce badchar-free instruction sequences for 64-bit values.
+
+Register clobber contract
+-------------------------
+Every function in this module may clobber AT MOST ONE scratch register
+beyond the explicit destination/source operands. The scratch register is
+always a volatile register under the Microsoft x64 ABI (RAX or R11), chosen
+via _SCRATCH_MAP. The mapping is:
+
+  - Most registers use R11 as scratch.
+  - R10 and R11 use RAX as scratch (to avoid self-clobber).
+
+When a displacement contains badchar bytes, the safe_* helpers load the
+displacement into a scratch register, compute the effective address, then
+perform the memory operation. The _safe_tmp() function ensures the scratch
+register never aliases the source/base operand.
+
+Callers that hold live values in RAX or R11 across a safe_* call must
+save those values first. In practice:
+  - _lower_call() resolves args into RAX then moves to target registers
+    before calling safe_call_mem_x64 (which may clobber R11).
+  - _emit_strings_x64() uses R11 for chunk values and the safe_dword_store
+    will pick RAX as scratch if the offset has badchars.
+  - encode_qword() with badchars uses _scratch_r64(reg) as a second
+    register for XOR decoding; callers must not assume that register
+    is preserved.
 """
 from __future__ import annotations
 
