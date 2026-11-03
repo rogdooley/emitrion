@@ -9,6 +9,7 @@ dependencies = [
 
 [project.scripts]
 emitrion = "emitrion.build:main"
+emitrion-x64 = "emitrion.build_x64:main_x64"
 
 [build-system]
 requires = ["hatchling"]

