@@ -207,10 +207,13 @@ _WORKER_SCRIPT = textwrap.dedent(r'''
         WAIT_TIMEOUT = 0x00000102
         STILL_ACTIVE = 259
 
+        worker_pid = kernel32.GetCurrentProcessId()
+
         result = {
             "shellcode_size": len(shellcode),
             "status": "setup_failure",
             "native_execution": False,
+            "worker_pid": worker_pid,
         }
 
         ptr = kernel32.VirtualAlloc(

@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime
 
-from .api_database import API_DATABASE, MODULE_LOAD_ORDER
+from .api_database import API_DATABASE, MODULE_LOAD_ORDER, STRUCT_DATABASE, STRUCT_DATABASE_X64
 from .encode_x64 import (
     encode_dword_into_r64,
     safe_call_mem_x64,
@@ -553,43 +553,330 @@ if __name__ == "__main__":
 def _emit_contract_md_x64(
     manifest: Manifest, layout: StackLayoutX64, raw: bytes | None,
 ) -> str:
-    """Generate a simplified stack layout contract document for x64."""
-    lines = [
-        "# Stack Layout (x64)",
-        "",
-        f"Architecture: x64 (64-bit, Microsoft calling convention)",
-        f"Frame: `sub rsp, 0x{layout.frame_size:x}` (0x{layout.frame_size:x} bytes reserved)",
-        "",
+    """Generate a full contract document for x64 builds.
+
+    Includes stack layout, API contracts with prototypes, structure layouts,
+    and a WinDbg cheatsheet with x64-specific commands.
+    """
+    from .hash_gen import ror13
+
+    lines: list[str] = []
+
+    # -- Header --
+    lines.append("# Shellcode Contract (x64)")
+    lines.append("")
+    lines.append("Generated from manifest.")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # -- Stack Layout --
+    lines.append("# Stack Layout")
+    lines.append("")
+    lines.append("Architecture: x64 (64-bit, Microsoft calling convention)")
+    lines.append(f"Frame: `sub rsp, 0x{layout.frame_size:x}` "
+                 f"(0x{layout.frame_size:x} bytes reserved)")
+    lines.append("Addressing: RSP-relative (fixed frame, RSP does not move after prologue)")
+    lines.append("")
+
+    lines.append("## Export Context (reserved, framework use)")
+    lines.append("")
+    lines.append("| Offset | Description |")
+    lines.append("|--------|-------------|")
+    ctx_rows = [
+        ("[RBP-0x08]", "Module base (transient)"),
+        ("[RBP-0x10]", "AddressOfNames RVA"),
+        ("[RBP-0x18]", "AddressOfNameOrdinals RVA"),
+        ("[RBP-0x20]", "AddressOfFunctions RVA"),
+        ("[RBP-0x28]", "NumberOfNames"),
+        ("[RBP-0x30]", "Target hash (transient)"),
     ]
+    for offset, desc in ctx_rows:
+        lines.append(f"| `{offset}` | {desc} |")
+    lines.append("")
 
     for category in ("module_base", "api", "variable", "structure", "string"):
         slots = layout.slots_by_category(category)
         if not slots:
             continue
-        lines.append(f"## {category.replace('_', ' ').title()} Slots")
+        title = category.replace("_", " ").title()
+        if category == "module_base":
+            title = "Module Bases"
+        elif category == "api":
+            title = "API Pointers"
+        lines.append(f"## {title}")
         lines.append("")
-        lines.append("| Offset | Name | Size |")
-        lines.append("|--------|------|------|")
-        for s in sorted(slots, key=lambda x: x.offset):
-            lines.append(f"| `[RSP+0x{s.offset:03x}]` | {s.name} | {s.size} |")
+        if category == "api":
+            lines.append("| Offset | API | Module | Hash |")
+            lines.append("|--------|-----|--------|------|")
+            for s in sorted(slots, key=lambda x: x.offset):
+                rec = API_DATABASE[s.name]
+                h = ror13(s.name)
+                lines.append(
+                    f"| `[RSP+0x{s.offset:03x}]` | {s.name} "
+                    f"| {rec.module} | `0x{h:08x}` |"
+                )
+        elif category == "string":
+            str_map = {se.label: se for se in manifest.strings}
+            lines.append("| Offset | Label | Value | Size |")
+            lines.append("|--------|-------|-------|------|")
+            for s in sorted(slots, key=lambda x: x.offset):
+                entry = str_map.get(s.name)
+                value = entry.value if entry else ""
+                lines.append(
+                    f"| `[RSP+0x{s.offset:03x}]` | {s.name} "
+                    f"| {value} | {s.size} |"
+                )
+        elif category == "structure":
+            lines.append("| Offset | Structure | Size |")
+            lines.append("|--------|-----------|------|")
+            for s in sorted(slots, key=lambda x: x.offset):
+                struct_db = STRUCT_DATABASE_X64 if s.name in STRUCT_DATABASE_X64 else STRUCT_DATABASE
+                struct_rec = struct_db.get(s.name)
+                sz = f"0x{struct_rec.size:x}" if struct_rec else str(s.size)
+                lines.append(f"| `[RSP+0x{s.offset:03x}]` | {s.name} | {sz} |")
+        else:
+            lines.append("| Offset | Name | Size |")
+            lines.append("|--------|------|------|")
+            for s in sorted(slots, key=lambda x: x.offset):
+                lines.append(f"| `[RSP+0x{s.offset:03x}]` | {s.name} | {s.size} |")
         lines.append("")
-
-    lines.append("## API Table")
-    lines.append("")
-    lines.append("| Function | Module | Hash |")
-    lines.append("|----------|--------|------|")
-    from .hash_gen import ror13
-    for fn in manifest.functions:
-        rec = API_DATABASE[fn]
-        h = ror13(fn)
-        lines.append(f"| {fn} | {rec.module} | `0x{h:08x}` |")
-    lines.append("")
 
     if raw:
-        lines.append(f"## Shellcode: {len(raw)} bytes")
+        lines.append(f"Shellcode size: {len(raw)} bytes")
         lines.append("")
 
-    return "\n".join(lines)
+    lines.append("---")
+    lines.append("")
+
+    # -- API Contracts --
+    lines.append("# API Contracts")
+    lines.append("")
+
+    needed_modules: dict[str, list[str]] = {}
+    for func_name in manifest.functions:
+        dll = API_DATABASE[func_name].module
+        needed_modules.setdefault(dll, []).append(func_name)
+
+    ordered_dlls = [m.dll for m in MODULE_LOAD_ORDER if m.dll in needed_modules]
+
+    for dll in ordered_dlls:
+        lines.append(f"## {dll}")
+        lines.append("")
+        module_info = next(m for m in MODULE_LOAD_ORDER if m.dll == dll)
+        if module_info.load_via == "peb":
+            lines.append("Resolution: PEB walk (GS:[0x60], InInitializationOrderModuleList)")
+        else:
+            try:
+                dll_slot = layout.slot(dll)
+                lines.append(
+                    f"Resolution: `LoadLibraryA(\"{dll}\")` stored at "
+                    f"`[RSP+0x{dll_slot.offset:03x}]`"
+                )
+            except KeyError:
+                lines.append(f"Resolution: `LoadLibraryA(\"{dll}\")`")
+        lines.append("")
+
+        for func_name in needed_modules[dll]:
+            rec = API_DATABASE[func_name]
+            h = ror13(func_name)
+            try:
+                slot = layout.slot(func_name)
+                slot_ref = f"`[RSP+0x{slot.offset:03x}]`"
+            except KeyError:
+                slot_ref = "(no slot)"
+            lines.append(f"### {func_name}")
+            lines.append("")
+            lines.append(f"**Slot:** {slot_ref}")
+            lines.append(f"**Hash:** `0x{h:08x}`")
+            lines.append(f"**Category:** {rec.category}")
+            lines.append("")
+            lines.append(f"```c\n{rec.prototype}\n```")
+            lines.append("")
+            if rec.arguments:
+                lines.append("| # | Parameter | Type | Reg/Stack | Notes |")
+                lines.append("|---|-----------|------|-----------|-------|")
+                arg_regs = ["RCX", "RDX", "R8", "R9"]
+                for i, arg in enumerate(rec.arguments):
+                    loc = arg_regs[i] if i < 4 else f"[RSP+0x{0x20 + (i - 4) * 8:02x}]"
+                    lines.append(
+                        f"| {i + 1} | {arg.name} | {arg.type} | {loc} | {arg.notes} |"
+                    )
+            else:
+                lines.append("No parameters.")
+            lines.append("")
+        lines.append("---")
+        lines.append("")
+
+    # -- Structure Layouts --
+    struct_slots = layout.slots_by_category("structure")
+    if struct_slots:
+        lines.append("# Structure Layouts")
+        lines.append("")
+
+        required_by: dict[str, list[str]] = {}
+        for func_name in manifest.functions:
+            rec = API_DATABASE[func_name]
+            for struct_name in rec.requires_structs:
+                required_by.setdefault(struct_name, []).append(func_name)
+
+        for slot in struct_slots:
+            struct_db = STRUCT_DATABASE_X64 if slot.name in STRUCT_DATABASE_X64 else STRUCT_DATABASE
+            struct_rec = struct_db.get(slot.name)
+            if struct_rec is None:
+                continue
+            lines.append(f"## {slot.name}")
+            lines.append("")
+            lines.append(f"**Size:** `0x{struct_rec.size:x}`")
+            lines.append(f"**Base:** `[RSP+0x{slot.offset:03x}]`")
+            apis = required_by.get(slot.name, [])
+            if apis:
+                lines.append(f"**Required by:** {', '.join(apis)}")
+            lines.append("")
+
+            if struct_rec.fields:
+                lines.append("| Offset | Field | Size | Notes |")
+                lines.append("|--------|-------|------|-------|")
+                for f in struct_rec.fields:
+                    lines.append(
+                        f"| `+0x{f.offset:02x}` | {f.name} | {f.size} | {f.notes} |"
+                    )
+            else:
+                lines.append("Opaque output buffer (no field documentation).")
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+
+    # -- WinDbg Cheatsheet (x64) --
+    lines.append("# WinDbg Cheatsheet (x64)")
+    lines.append("")
+    lines.append("Run `debug_runner.py` under 64-bit Python on Windows.")
+    lines.append("Attach WinDbg to the python.exe process. Set `bp <address>`")
+    lines.append("using the printed shellcode address, then press Enter to execute.")
+    lines.append("")
+
+    lines.append("## Quick Reference")
+    lines.append("")
+    lines.append("| Command | Description |")
+    lines.append("|---------|-------------|")
+    lines.append("| `bp <addr>` | Set breakpoint |")
+    lines.append("| `bl` | List breakpoints |")
+    lines.append("| `g` | Go (continue) |")
+    lines.append("| `t` | Step into |")
+    lines.append("| `p` | Step over |")
+    lines.append("| `pt` | Step to next return |")
+    lines.append("| `r` | Show all registers |")
+    lines.append("| `r rax` | Show one register |")
+    lines.append("| `u rip L10` | Disassemble next 16 instructions |")
+    lines.append("| `db <addr> L<n>` | Dump bytes |")
+    lines.append("| `dq <addr> L<n>` | Dump qwords |")
+    lines.append("| `da <addr>` | Dump ASCII string |")
+    lines.append("| `!address <addr>` | Show memory region info |")
+    lines.append("| `? rsp & f` | Check 16-byte alignment (must be 0) |")
+    lines.append("")
+
+    api_slots = layout.slots_by_category("api")
+    if api_slots:
+        lines.append("## Inspect API Pointers After Resolution")
+        lines.append("")
+        lines.append("After PEB walk and hash resolution, verify stored function pointers:")
+        lines.append("")
+        lines.append("```")
+        for s in api_slots:
+            lines.append(f"dq @rsp+0x{s.offset:x} L1    ; {s.name}")
+        lines.append("```")
+        lines.append("")
+
+    if struct_slots:
+        lines.append("## Inspect Structures Before API Calls")
+        lines.append("")
+        for slot in struct_slots:
+            struct_db = STRUCT_DATABASE_X64 if slot.name in STRUCT_DATABASE_X64 else STRUCT_DATABASE
+            struct_rec = struct_db.get(slot.name)
+            if struct_rec is None:
+                continue
+            lines.append(f"### {slot.name} (0x{struct_rec.size:x} bytes)")
+            lines.append("")
+            lines.append(f"Base: `rsp+0x{slot.offset:x}`")
+            lines.append("")
+            qwords = min(struct_rec.size // 8, 8)
+            lines.append("```")
+            lines.append(f"dq @rsp+0x{slot.offset:x} L{qwords:x}    ; first {qwords} qwords")
+            lines.append(f"db @rsp+0x{slot.offset:x} L{min(struct_rec.size, 0x40):x}    ; raw bytes")
+            lines.append("```")
+            lines.append("")
+            if struct_rec.fields:
+                lines.append("Key fields:")
+                lines.append("")
+                for f in struct_rec.fields:
+                    field_off = slot.offset + f.offset
+                    if f.size <= 4:
+                        lines.append(
+                            f"- `dd @rsp+0x{field_off:x} L1`  "
+                            f"{f.name} (+0x{f.offset:02x})"
+                        )
+                    else:
+                        lines.append(
+                            f"- `dq @rsp+0x{field_off:x} L1`  "
+                            f"{f.name} (+0x{f.offset:02x})"
+                        )
+                lines.append("")
+
+    string_slots = layout.slots_by_category("string")
+    if string_slots:
+        lines.append("## Inspect Stack Strings")
+        lines.append("")
+        for s in string_slots:
+            lines.append("```")
+            lines.append(f"da @rsp+0x{s.offset:x}    ; {s.name}")
+            lines.append("```")
+            lines.append("")
+
+    lines.append("## ABI Verification at Call Sites")
+    lines.append("")
+    lines.append("Set breakpoints at each `call qword ptr [rsp+0xNN]`. Before")
+    lines.append("the call executes, verify:")
+    lines.append("")
+    lines.append("```")
+    lines.append("r rcx         ; 1st arg")
+    lines.append("r rdx         ; 2nd arg")
+    lines.append("r r8          ; 3rd arg")
+    lines.append("r r9          ; 4th arg")
+    lines.append("dq @rsp L5    ; shadow space (32 bytes) + 5th arg")
+    lines.append("? @rsp & f    ; alignment check (must be 0 at CALL)")
+    lines.append("```")
+    lines.append("")
+
+    if api_slots:
+        lines.append("## Breakpoint Strategy")
+        lines.append("")
+        lines.append("Break before each API call to verify arguments and return values:")
+        lines.append("")
+        lines.append("```")
+        for s in api_slots:
+            note = ""
+            if s.name == "WSAStartup":
+                note = "  ; rax=0 on success"
+            elif s.name == "WSASocketA":
+                note = "  ; rax=socket handle"
+            elif s.name == "connect":
+                note = "  ; rax=0 on success"
+            elif s.name == "CreateProcessA":
+                note = "  ; rax!=0 on success"
+            elif s.name == "WinExec":
+                note = "  ; rax>31 on success"
+            elif s.name == "ExitProcess":
+                note = "  ; does not return"
+            lines.append(
+                f"bp <sc_base>+<offset_of_call_{s.name}>{note}"
+            )
+        lines.append("```")
+        lines.append("")
+        lines.append("Find call offsets by searching `generated.asm` for")
+        lines.append("`call qword ptr [rsp+` instructions. Add the instruction's")
+        lines.append("byte offset to the base address printed by the debug runner.")
+
+    return "\n".join(line.rstrip() for line in lines)
 
 
 def build_x64(
