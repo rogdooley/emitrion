@@ -1147,6 +1147,7 @@ def build(
         return _build_x64(
             manifest_path, template_name=template_name,
             config=config, out_dir=out_dir, assemble=assemble,
+            encode=encode,
         )
     config = config or TemplateConfig()
     config.badchars = manifest.badchars   # manifest is authoritative

