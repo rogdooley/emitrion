@@ -243,6 +243,7 @@ class BuildResult:
     asm_errors: list[str] | None = None
     encoded_bytes: bytes | None = None
     encoder_report: str | None = None
+    xor_wrapper: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1130,6 +1131,7 @@ def build(
     out_dir: str = "emitter_out",
     assemble: bool = True,
     encode: bool = False,
+    raw: bool = False,
 ) -> BuildResult:
     """Run the full build pipeline. Returns a BuildResult.
 
@@ -1137,6 +1139,12 @@ def build(
     violations, the XOR encoder is invoked automatically.  The raw
     (unencoded) shellcode is still available in *shellcode_bytes*; the
     encoded output goes into *encoded_bytes*.
+
+    When *raw* is True, inline badchar avoidance is skipped during code
+    generation (no XOR-mask pairs for immediates, no safe_* indirection).
+    The manifest badchars are still recorded for post-assembly validation
+    and XOR encoding. Use ``--raw --encode`` to produce the smallest
+    shellcode with a whole-payload XOR wrapper.
     """
     from .scanner import scan
     from .xor_encoder import xor_encode
@@ -1147,10 +1155,11 @@ def build(
         return _build_x64(
             manifest_path, template_name=template_name,
             config=config, out_dir=out_dir, assemble=assemble,
-            encode=encode,
+            encode=encode, raw=raw,
         )
     config = config or TemplateConfig()
-    config.badchars = manifest.badchars   # manifest is authoritative
+    manifest_badchars = manifest.badchars
+    config.badchars = set() if raw else manifest.badchars
     manifest = _apply_config_overrides(manifest, config)
 
     effective_template = template_name or manifest.template
@@ -1171,12 +1180,12 @@ def build(
     encoder_report: str | None = None
 
     if assemble:
-        raw, assembler, asm, asm_errors = _assemble_aligned(asm, config.badchars)
+        raw, assembler, asm, asm_errors = _assemble_aligned(asm, manifest_badchars)
         if raw:
-            scan_result = scan(raw, config.badchars)
+            scan_result = scan(raw, manifest_badchars)
             if not scan_result.clean:
                 if encode:
-                    enc = xor_encode(raw, config.badchars)
+                    enc = xor_encode(raw, manifest_badchars)
                     encoder_report = enc.diagnostics
                     if enc.success:
                         encoded_bytes = enc.encoded
@@ -1185,7 +1194,7 @@ def build(
                             f"[!] Encoding failed: {enc.diagnostics}"
                         ]
                 else:
-                    violations = _check_badchars(raw, config.badchars)
+                    violations = _check_badchars(raw, manifest_badchars)
                     asm_errors = (asm_errors or []) + violations
 
     contract_md = emit_full_contract_md(
@@ -1209,7 +1218,13 @@ def build(
         asm_errors=asm_errors if asm_errors else None,
         encoded_bytes=encoded_bytes,
         encoder_report=encoder_report,
+        xor_wrapper=_generate_xor_wrapper("x86", manifest_badchars),
     )
+
+
+def _generate_xor_wrapper(arch: str, badchars: set[int]) -> str:
+    from .build_x64 import generate_xor_wrapper
+    return generate_xor_wrapper(arch=arch, badchars=badchars)
 
 
 def write_outputs(result: BuildResult, out_dir: str) -> None:
@@ -1261,6 +1276,12 @@ def write_outputs(result: BuildResult, out_dir: str) -> None:
         _write_text(base / "Documentation" / "encoder_report.txt", result.encoder_report)
     else:
         (base / "Documentation" / "encoder_report.txt").unlink(missing_ok=True)
+
+    if result.xor_wrapper:
+        (base / "bin").mkdir(parents=True, exist_ok=True)
+        _write_text(base / "bin" / "xor_wrapper.py", result.xor_wrapper)
+    else:
+        (base / "bin" / "xor_wrapper.py").unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1337,6 +1358,11 @@ def main() -> None:
         "--encode", action="store_true",
         help="Apply XOR encoding when badchar violations are detected",
     )
+    parser.add_argument(
+        "--raw", action="store_true",
+        help="Skip inline badchar avoidance (smallest shellcode). "
+             "Combine with --encode for whole-payload XOR encoding.",
+    )
 
     args = parser.parse_args()
 
@@ -1389,6 +1415,7 @@ def main() -> None:
         out_dir=args.out,
         assemble=not args.no_assemble,
         encode=args.encode,
+        raw=args.raw,
     )
     write_outputs(result, args.out)
 

