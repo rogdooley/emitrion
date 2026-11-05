@@ -535,6 +535,50 @@ SCENARIOS: dict[str, dict] = {
             "WSA init, socket creation, bind, and listen all succeeded."
         ),
     },
+    "test_f_copy_file": {
+        "description": "CopyFileA: file copy with ExitProcess",
+        "manifest": "emitrion/manifests/x64/copy_file_x64.yaml",
+        "timeout_ms": 10000,
+        "expect_success": True,
+        "expect_note": (
+            "CopyFileA(src, dst, FALSE) then ExitProcess(0). "
+            "SUCCESS if both APIs resolve and execute. "
+            "EXCEPTION if source path does not exist on target."
+        ),
+    },
+    "test_g_copy_then_run": {
+        "description": "CopyFileA + WinExec: copy and execute",
+        "manifest": "emitrion/manifests/x64/copy_then_run_x64.yaml",
+        "timeout_ms": 10000,
+        "expect_success": True,
+        "expect_note": (
+            "CopyFileA then WinExec then ExitProcess. "
+            "SUCCESS if all three APIs resolve. "
+            "WinExec may fail if source path doesn't exist on target."
+        ),
+    },
+    "test_h_move_then_run": {
+        "description": "MoveFileA + WinExec: move and execute",
+        "manifest": "emitrion/manifests/x64/move_then_run_x64.yaml",
+        "timeout_ms": 10000,
+        "expect_success": True,
+        "expect_note": (
+            "MoveFileA then WinExec then ExitProcess. "
+            "SUCCESS if all three APIs resolve. "
+            "UNC path in default manifest requires network access."
+        ),
+    },
+    "test_i_check_path": {
+        "description": "GetFileAttributesA: path existence check",
+        "manifest": "emitrion/manifests/x64/check_path_x64.yaml",
+        "timeout_ms": 10000,
+        "expect_success": True,
+        "expect_note": (
+            "GetFileAttributesA(path) then ExitProcess. "
+            "SUCCESS if API resolves. Return value in RAX indicates "
+            "whether path exists (INVALID_FILE_ATTRIBUTES = 0xFFFFFFFF on failure)."
+        ),
+    },
 }
 
 

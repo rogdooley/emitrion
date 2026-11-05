@@ -231,11 +231,15 @@ class TestWorkerScript:
 # ---------------------------------------------------------------------------
 
 class TestScenarios:
-    def test_five_scenarios_defined(self):
-        assert len(SCENARIOS) == 5
+    def test_nine_scenarios_defined(self):
+        assert len(SCENARIOS) == 9
 
     def test_scenario_ids(self):
-        expected = {"test_a_winexec", "test_b_dll_load", "test_c_multi_arg", "test_d_failure", "test_e_bind_shell"}
+        expected = {
+            "test_a_winexec", "test_b_dll_load", "test_c_multi_arg",
+            "test_d_failure", "test_e_bind_shell", "test_f_copy_file",
+            "test_g_copy_then_run", "test_h_move_then_run", "test_i_check_path",
+        }
         assert set(SCENARIOS.keys()) == expected
 
     def test_all_have_description(self):

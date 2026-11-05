@@ -1,0 +1,23 @@
+# Copy file (CopyFileA) - x64
+# IR workflow: CopyFileA(src, dst, FALSE) with exit strategy.
+#
+# Build:
+#   uv run emitrion-x64 emitrion/manifests/x64/copy_file_x64.yaml \
+#       --src "C:\source.txt" --dst "C:\dest.txt" --out emitter_out/
+arch: x64
+template: ir_copy_file
+badchars: ["00", "0A", "0D"]
+
+functions:
+  - CopyFileA
+  - ExitProcess
+
+strings:
+  - label: src_path
+    value: "C:\\OSED\\source.txt"
+    method: mov
+    dest: rdi
+  - label: dst_path
+    value: "C:\\OSED\\output.txt"
+    method: mov
+    dest: rdi
