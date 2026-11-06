@@ -96,6 +96,111 @@ The `encode_x64` module provides:
 When a displacement or immediate contains badchars, the encoder splits the value
 into an XOR-masked pair where neither half contains forbidden bytes.
 
+## Encoding Pipeline
+
+The emitter supports two encoding strategies, controlled by CLI flags. Both
+strategies apply to x86 and x64 builds.
+
+### Inline Badchar Avoidance (default)
+
+Every immediate value and memory displacement is checked against the manifest
+badchar set at code generation time. When a value contains a forbidden byte,
+the emitter substitutes an equivalent instruction sequence that avoids it:
+a `mov reg, encoded_value` followed by `xor reg, mask`, where neither the
+encoded value nor the mask contain any badchar bytes.
+
+This is the default behavior. It produces shellcode that is directly usable
+without a decoder stub, at the cost of a few extra instructions per encoded
+value (typically 2-10 extra instructions depending on the payload).
+
+Framework stubs (PEB walk, export resolution) contain fixed offsets like
+`0x3C`, `0x78`, and `0x18` that inline encoding cannot change. These bytes
+will always be present in the assembled output regardless of the badchar set.
+
+### Raw Mode (`--raw`)
+
+Skips inline badchar avoidance entirely. All immediates and displacements
+are emitted directly, producing the shortest possible assembly. The manifest
+badchar set is still recorded for post-assembly validation and XOR encoding.
+
+```bash
+# x86
+uv run emitrion manifest.yaml --raw --no-assemble --out emitter_out/
+
+# x64
+uv run emitrion-x64 manifest_x64.yaml --raw --no-assemble --out emitter_out/
+```
+
+From Python:
+
+```python
+from emitrion.build import build
+result = build("manifest.yaml", assemble=False, raw=True)
+
+from emitrion.build_x64 import build_x64
+result = build_x64("manifest_x64.yaml", assemble=False, raw=True)
+```
+
+### Whole-Payload XOR Encoding (`--encode`)
+
+When `--encode` is passed and the assembled shellcode contains badchar
+violations, the XOR encoder wraps the entire payload in a decoder stub.
+The stub XOR-decodes the payload in place at runtime, then falls through
+to the clean shellcode.
+
+The encoder searches for a single-byte XOR key where neither the key, the
+encoded payload, nor the decoder stub itself contain any badchar bytes.
+
+x86 stubs use the classic `call/pop` + `fnstenv` patterns. x64 stubs use
+`call/pop rsi`, REX.W-prefixed `inc rsi` (`48 FF C6`), `xor rcx, rcx`
+(`48 31 C9`), and the `loop` instruction (which uses RCX in 64-bit mode).
+
+### Smallest Shellcode: `--raw --encode`
+
+The recommended workflow for production payloads:
+
+1. `--raw` disables inline encoding, producing the shortest possible assembly
+2. `--encode` wraps the raw payload in a XOR decoder stub (~25 bytes overhead)
+
+This is smaller than default inline encoding when the payload has more than
+2-3 values that would need XOR-mask pairs (each pair adds ~10 bytes).
+
+```bash
+uv run emitrion manifest.yaml --raw --encode --out emitter_out/
+uv run emitrion-x64 manifest_x64.yaml --raw --encode --out emitter_out/
+```
+
+### Standalone XOR Wrapper (`xor_wrapper.py`)
+
+Every build generates a `bin/xor_wrapper.py` script alongside the shellcode
+outputs. This is a self-contained Python script that can XOR-encode raw
+shellcode offline, on any platform with Python 3.12+. No assembler or
+external dependencies are needed.
+
+The wrapper embeds the manifest badchar set and target architecture from the
+build. It supports both x86 and x64, custom badchar sets, and forced XOR keys.
+
+```bash
+# Encode raw shellcode with manifest defaults
+python xor_wrapper.py shellcode.bin
+
+# Custom output path
+python xor_wrapper.py shellcode.bin -o encoded.bin
+
+# Override badchars
+python xor_wrapper.py shellcode.bin --badchars 00,0a,0d,20
+
+# Force a specific key
+python xor_wrapper.py shellcode.bin --key 0x41
+
+# Override architecture
+python xor_wrapper.py shellcode.bin --arch x64
+```
+
+This is useful when you have raw shellcode from an external source (or
+produced with `--raw --no-assemble` and assembled separately) and need to
+encode it without re-running the full build pipeline.
+
 ## Build Pipeline
 
 ### From CLI
