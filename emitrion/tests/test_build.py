@@ -335,20 +335,20 @@ def test_harness_contains_breakpoint_hint():
 
 
 def test_try_assemble_collects_backend_errors(monkeypatch):
-    import emitrion.build as build_module
+    import emitrion.build_common as common_module
 
     monkeypatch.setattr(
-        build_module,
+        common_module,
         "_try_assemble_keystone",
         lambda asm: (None, "keystone: invalid operand"),
     )
     monkeypatch.setattr(
-        build_module,
+        common_module,
         "_try_assemble_nasm",
         lambda asm: (None, "nasm: parser: instruction expected"),
     )
 
-    raw, assembler, errors = build_module._try_assemble("invalid asm")
+    raw, assembler, errors = common_module._try_assemble("invalid asm")
 
     assert raw is None
     assert assembler is None
@@ -360,10 +360,11 @@ def test_try_assemble_collects_backend_errors(monkeypatch):
 
 def test_build_exposes_assembler_errors(monkeypatch, manifest_dir, tmp_path):
     import emitrion.build as build_module
+    import emitrion.build_common as common_module
 
     expected = ["keystone: invalid operand"]
     monkeypatch.setattr(
-        build_module,
+        common_module,
         "_try_assemble",
         lambda asm: (None, None, expected),
     )
@@ -381,9 +382,10 @@ def test_build_exposes_assembler_errors(monkeypatch, manifest_dir, tmp_path):
 
 def test_build_rejects_assembled_badchars(monkeypatch, manifest_dir, tmp_path):
     import emitrion.build as build_module
+    import emitrion.build_common as common_module
 
     monkeypatch.setattr(
-        build_module,
+        common_module,
         "_try_assemble",
         lambda asm: (b"\x90\x00\xc3", "keystone", []),
     )

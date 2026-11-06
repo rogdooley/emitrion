@@ -1104,7 +1104,7 @@ def build_x64(
     When *raw* is True, inline badchar avoidance is skipped (no XOR-mask
     pairs for immediates). Use with *encode* for smallest shellcode.
     """
-    from .build import (
+    from .build_common import (
         BuildResult,
         _load_template,
         _merge_template_requirements,
@@ -1157,7 +1157,7 @@ def build_x64(
         try:
             import keystone
             ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_64)
-            from .build import _strip_comments
+            from .build_common import _strip_comments
             encoding, _ = ks.asm(_strip_comments(asm))
             sc_bytes = bytes(encoding)
             assembler = "keystone-x64"
@@ -1227,7 +1227,7 @@ def main_x64() -> None:
         uv run emitrion-x64 manifest.yaml --lhost 192.168.1.100 --lport 9001
         uv run emitrion-x64 manifest.yaml --no-assemble --out emitter_out/
     """
-    from .build import _resolve_lhost, write_outputs
+    from .build_common import _resolve_lhost, write_outputs
     from .schema import CANONICAL_TEMPLATES, LEGACY_TEMPLATES
 
     valid_x64_templates = sorted(
