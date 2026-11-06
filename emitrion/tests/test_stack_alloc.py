@@ -23,8 +23,7 @@ def calc_layout(manifest_dir):
     return build_layout(manifest)
 
 
-@pytest.fixture(params=["revshell.yaml", "calc.yaml", "tcp_stager.yaml",
-                         "tcp_download.yaml", "copy_then_run.yaml"])
+@pytest.fixture(params=["revshell.yaml", "calc.yaml"])
 def any_layout(request, manifest_dir):
     """Parameterised fixture: runs the test once per manifest."""
     from emitrion.schema import load

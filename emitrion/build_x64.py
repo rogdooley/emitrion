@@ -1228,11 +1228,9 @@ def main_x64() -> None:
         uv run emitrion-x64 manifest.yaml --no-assemble --out emitter_out/
     """
     from .build_common import _resolve_lhost, write_outputs
-    from .schema import CANONICAL_TEMPLATES, LEGACY_TEMPLATES
+    from .schema import CANONICAL_TEMPLATES
 
-    valid_x64_templates = sorted(
-        t for t in CANONICAL_TEMPLATES | LEGACY_TEMPLATES
-    )
+    valid_x64_templates = sorted(CANONICAL_TEMPLATES)
 
     parser = argparse.ArgumentParser(
         description="emitrion-x64: manifest -> x64 assembly + contract",

@@ -1,5 +1,5 @@
 # Minimal — calc.exe launcher
-template: run_command
+template: ir_run_command
 badchars: ["00", "0a", "0d"]
 
 functions:

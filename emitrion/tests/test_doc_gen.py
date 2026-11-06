@@ -145,12 +145,11 @@ def test_cheatsheet_no_trailing_whitespace(revshell_doc_with_cheatsheet):
 
 
 def test_cheatsheet_standalone_emitter():
+    from emitrion.build_common import _load_template
     from emitrion.doc_gen import emit_cheatsheet_md
     from emitrion.payload_templates.base import TemplateConfig
-    from emitrion.payload_templates.tcp_stager import TcpStagerTemplate
-    template = TcpStagerTemplate()
-    config = TemplateConfig(lhost="10.0.0.1", lport=8080)
+    template = _load_template("ir_run_command")
+    config = TemplateConfig(lhost="10.0.0.1", lport=8080, command="calc.exe")
     result = emit_cheatsheet_md(template, config, shellcode_size=256)
-    assert "tcp_stage_server.py" in result
     assert "10.0.0.1" in result
     assert "8080" in result

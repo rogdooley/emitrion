@@ -199,29 +199,6 @@ class TestAssemblyPhase:
         assert report.badchar_clean, report.badchar_violations
         assert report.deterministic is True
 
-    def test_verify_legacy_run_command(self, manifest_dir, tmp_path, monkeypatch):
-        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
-        report = verify(
-            str(manifest_dir / "calc.yaml"),
-            template_name="run_command",
-            out_dir=str(tmp_path),
-            check_determinism=False,
-        )
-        assert report.assembled, report.errors
-        assert report.badchar_clean, report.badchar_violations
-
-    def test_verify_revshell(self, manifest_dir, tmp_path, monkeypatch):
-        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
-        config = TemplateConfig(lhost="192.168.1.100", lport=9001)
-        report = verify(
-            str(manifest_dir / "revshell.yaml"),
-            template_name="reverse_shell",
-            config=config,
-            out_dir=str(tmp_path),
-            check_determinism=False,
-        )
-        assert report.assembled, report.errors
-
     def test_write_verification_produces_json(self, manifest_dir, tmp_path, monkeypatch):
         monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
         report = verify(

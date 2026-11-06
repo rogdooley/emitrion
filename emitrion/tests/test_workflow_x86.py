@@ -173,31 +173,6 @@ class TestEndToEndBuild:
         )
         assert "WinExec" in result.contract_md
 
-    def test_legacy_build_not_regressed(self, manifest_dir, tmp_path):
-        """Verify legacy run_command template still works."""
-        from emitrion.build import build
-        result = build(
-            str(manifest_dir / "calc.yaml"),
-            template_name="run_command",
-            out_dir=str(tmp_path),
-            assemble=False,
-        )
-        assert result.asm
-        assert "WinExec" in result.asm
-        assert "main:" in result.asm
-
-    def test_legacy_revshell_not_regressed(self, manifest_dir, tmp_path):
-        """Verify legacy reverse_shell template still works."""
-        from emitrion.build import build
-        result = build(
-            str(manifest_dir / "revshell.yaml"),
-            template_name="reverse_shell",
-            out_dir=str(tmp_path),
-            assemble=False,
-        )
-        assert result.asm
-        assert "WSAStartup" in result.asm
-        assert "CreateProcessA" in result.asm
 
 
 class TestStructLowering:

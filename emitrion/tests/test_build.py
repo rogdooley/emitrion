@@ -10,7 +10,7 @@ def test_build_generates_asm(manifest_dir, tmp_path):
     from emitrion.build import build
     result = build(
         str(manifest_dir / "revshell.yaml"),
-        template_name="reverse_shell",
+        template_name="ir_reverse_shell",
         out_dir=str(tmp_path),
         assemble=False,
     )
@@ -106,7 +106,7 @@ def test_calc_build_no_network(manifest_dir, tmp_path):
     from emitrion.build import build
     result = build(
         str(manifest_dir / "calc.yaml"),
-        template_name="run_command",
+        template_name="ir_run_command",
         out_dir=str(tmp_path),
         assemble=False,
     )
@@ -589,10 +589,10 @@ class TestConfigOverrides:
         """When config field is None, manifest string value is preserved."""
         from emitrion.build import build
         from emitrion.payload_templates.base import TemplateConfig
-        config = TemplateConfig()  # all overridable fields are None
+        config = TemplateConfig()
         result = build(
-            str(manifest_dir / "tcp_download.yaml"),
-            template_name="tcp_download",
+            str(manifest_dir / "ir_copy_then_run.yaml"),
+            template_name="ir_copy_then_run",
             config=config,
             out_dir=str(tmp_path),
             assemble=False,
@@ -606,8 +606,8 @@ class TestConfigOverrides:
         from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(dst_path="C:\\evil.exe")
         result = build(
-            str(manifest_dir / "tcp_download.yaml"),
-            template_name="tcp_download",
+            str(manifest_dir / "ir_copy_then_run.yaml"),
+            template_name="ir_copy_then_run",
             config=config,
             out_dir=str(tmp_path),
             assemble=False,
@@ -621,8 +621,8 @@ class TestConfigOverrides:
         from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(dst_path="C:\\dest.txt")
         result = build(
-            str(manifest_dir / "tcp_download.yaml"),
-            template_name="tcp_download",
+            str(manifest_dir / "ir_copy_then_run.yaml"),
+            template_name="ir_copy_then_run",
             config=config,
             out_dir=str(tmp_path),
             assemble=False,
@@ -637,7 +637,7 @@ class TestConfigOverrides:
         from emitrion.schema import load
         from emitrion.stack_alloc import build_layout
 
-        manifest = load(str(manifest_dir / "tcp_download.yaml"))
+        manifest = load(str(manifest_dir / "ir_copy_then_run.yaml"))
         original_layout = build_layout(manifest)
         orig_size = original_layout.slot("dst_path").size
 
@@ -654,8 +654,8 @@ class TestConfigOverrides:
         from emitrion.payload_templates.base import TemplateConfig
         config = TemplateConfig(dst_path="C:\\pwned.exe")
         result = build(
-            str(manifest_dir / "tcp_download.yaml"),
-            template_name="tcp_download",
+            str(manifest_dir / "ir_copy_then_run.yaml"),
+            template_name="ir_copy_then_run",
             config=config,
             out_dir=str(tmp_path),
             assemble=False,
@@ -667,7 +667,7 @@ class TestConfigOverrides:
         from emitrion.build import _apply_config_overrides
         from emitrion.payload_templates.base import TemplateConfig
         from emitrion.schema import load
-        manifest = load(str(manifest_dir / "copy_then_run.yaml"))
+        manifest = load(str(manifest_dir / "ir_copy_then_run.yaml"))
         config = TemplateConfig()
         _apply_config_overrides(manifest, config)
         assert config.src_path == "C:\\source\\payload.exe"

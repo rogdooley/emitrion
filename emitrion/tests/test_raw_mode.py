@@ -302,16 +302,8 @@ class TestCLIRawFlag:
 class TestRawNoBadchars:
     def test_x86_no_badchars_raw(self, tmp_path) -> None:
         manifest_content = """\
-template: run_command
+template: ir_run_command
 badchars: []
-functions:
-  - WinExec
-variables: []
-strings:
-  - label: cmd
-    value: calc.exe
-    method: mov
-    dest: edi
 """
         manifest_path = tmp_path / "no_bc.yaml"
         manifest_path.write_text(manifest_content)
@@ -341,16 +333,8 @@ strings:
 
     def test_no_badchars_normal_equals_raw(self, tmp_path) -> None:
         manifest_content = """\
-template: run_command
+template: ir_run_command
 badchars: []
-functions:
-  - WinExec
-variables: []
-strings:
-  - label: cmd
-    value: calc.exe
-    method: mov
-    dest: edi
 """
         manifest_path = tmp_path / "no_bc_eq.yaml"
         manifest_path.write_text(manifest_content)

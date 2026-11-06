@@ -10,7 +10,7 @@ uv run pytest
 
 # Run a single test file or test function
 uv run pytest emitrion/tests/test_encode.py -q
-uv run pytest emitrion/tests/test_payload_templates.py::TestReverseShellAutoDerive::test_asm_output -q
+uv run pytest emitrion/tests/test_workflow_x86.py::TestReverseShellTemplate -q
 
 # Build shellcode from a manifest (emitrion CLI)
 uv run emitrion emitrion/manifests/revshell.yaml --lhost 192.168.1.100 --lport 9001 --out emitter_out/
@@ -56,33 +56,28 @@ manifest.yaml -> schema.py (load/validate)
 - **`schema.py`**: Loads YAML manifests into a Manifest dataclass. Contains `_VALID_TEMPLATES` set; new templates must be registered here.
 - **`stack_alloc.py`**: Assigns EBP-relative offsets in four zones: module_base (0x20+), api, variable/structure (0x80+), string. The `Slot.ebp_ref` property produces `[ebp-0xNN]` references. Templates must use `layout.slot(name)` for all stack references; hardcoded offsets are forbidden.
 - **`encode.py`**: Bad-character-safe encoding for x86 immediates and memory operands. Produces XOR-mask pairs or arithmetic sequences that avoid specified bytes.
-- **`build.py`**: Orchestrator. Also contains framework stub generation, template registry (`_load_template`), the assembler backends, and test harness generation. New templates must be added to the `registry` dict in `_load_template()`.
+- **`build.py`**: x86 orchestrator. Contains framework stub generation and the x86 `compose_asm()`/`build()` pipeline.
+- **`build_x64.py`**: x64 orchestrator. Contains x64 framework stubs, compose pipeline, and `build_x64()`.
+- **`build_common.py`**: Arch-independent utilities shared by both orchestrators: `BuildResult`, template loading (`_load_template`), assembler backends, badchar validation, byte formatting, config overrides, and `write_outputs()`.
 - **`payload_templates/base.py`**: `PayloadTemplate` ABC with `emit(layout, config)` and `cheatsheet(config)`. `probe_slots()` auto-discovers which stack slots a template uses by running `emit()` against a RecordingLayout.
+- **`workflow/reference.py`**: All 7 IR workflow templates (dual-arch). These are the only active templates; legacy hand-written templates have been removed.
 
 ### Adding a new payload template
 
 1. Add any new APIRecords to `api_database.py` (and update `MODULE_LOAD_ORDER` if the DLL is new)
-2. Add the template name to `_VALID_TEMPLATES` in `schema.py`
-3. Create `payload_templates/<name>.py` with a class extending `PayloadTemplate`
-4. Register it in `_load_template()` in `build.py`
+2. Add the template name to `CANONICAL_TEMPLATES` in `schema.py`
+3. Create a `WorkflowTemplate` subclass in `workflow/reference.py`
+4. Register it in `_load_template()` in `build_common.py`
 5. Create a manifest YAML in `manifests/`
 6. If adding a new API category, add it to the valid set in `tests/test_api_database.py`
 
 ### Manifest structure
 
 ```yaml
-template: reverse_shell          # must be in _VALID_TEMPLATES
+template: ir_reverse_shell       # must be in CANONICAL_TEMPLATES
 badchars: ["00", "0A", "0D"]     # hex bytes to avoid
-functions:                        # Win32 APIs to resolve
-  - CreateProcessA
-  - LoadLibraryA
-variables:                        # 4-byte stack slots
-  - socket_handle
-strings:                          # stack strings
-  - label: cmd
-    value: cmd.exe
-    method: mov                   # mov, push, shiftor, or xor
-    dest: edi                     # register target (for mov method)
+# IR templates auto-derive functions, variables, and strings.
+# Explicit declarations override auto-derived defaults.
 ```
 
 ### Build outputs
@@ -95,5 +90,5 @@ The emitter writes to `emitter_out/` (or `--out` path):
 
 ## Other modules
 
-- **`tcp_stage_server.py`**: Serves files over TCP with `[4-byte LE size][raw bytes]` protocol. Used with tcp_stager and tcp_download templates.
+- **`tcp_stage_server.py`**: Serves files over TCP with `[4-byte LE size][raw bytes]` protocol.
 - **`strings.py`**: Low-level string-to-push-sequence generator. Used by the emitter's string_emitter.py.

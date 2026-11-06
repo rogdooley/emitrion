@@ -853,7 +853,7 @@ def main() -> None:
     parser.add_argument("manifest", help="Path to manifest YAML file")
     parser.add_argument(
         "--template",
-        choices=["reverse_shell", "run_command", "copy_file", "copy_then_run", "move_then_run", "tcp_download", "tcp_stager", "bind_shell", "http_download", "http_exfil", "process_replace", "service_persist", "dll_inject", "registry_persist", "check_path", "ir_run_command", "ir_reverse_shell", "ir_bind_shell"],
+        choices=["ir_run_command", "ir_reverse_shell", "ir_bind_shell", "ir_copy_file", "ir_copy_then_run", "ir_move_then_run", "ir_check_path"],
     )
     parser.add_argument("--out", default="emitter_out", help="Output directory")
     parser.add_argument("--lhost", default=None, metavar="IP|IFACE",

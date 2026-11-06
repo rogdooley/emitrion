@@ -21,28 +21,7 @@ CANONICAL_TEMPLATES = {
     "ir_check_path",
 }
 
-LEGACY_TEMPLATES = {
-    "reverse_shell",
-    "run_command",
-    "copy_file",
-    "copy_then_run",
-    "move_then_run",
-    "tcp_download",
-    "tcp_stager",
-    "bind_shell",
-    "http_download",
-    "http_exfil",
-    "process_replace",
-    "service_persist",
-    "dll_inject",
-    "registry_persist",
-    "check_path",
-    "get_username",
-    "download_to_userpath",
-    "tcp_download_to_userpath",
-}
-
-_VALID_TEMPLATES = CANONICAL_TEMPLATES | LEGACY_TEMPLATES
+_VALID_TEMPLATES = CANONICAL_TEMPLATES
 
 
 @dataclass
