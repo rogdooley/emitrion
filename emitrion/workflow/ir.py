@@ -128,6 +128,13 @@ class WriteStructField:
 
 
 @dataclass(frozen=True)
+class StoreLocal:
+    """Write a value into a previously allocated local."""
+    name: str
+    value: ValueRef
+
+
+@dataclass(frozen=True)
 class CallAPI:
     """Call a catalogued API with explicit ordered arguments.
 
@@ -162,7 +169,8 @@ class Terminate:
 
 Operation = (
     DefineConstant | ConstructString | AllocateLocal | AllocateStruct
-    | ZeroStruct | WriteStructField | CallAPI | Compare | Jump | Terminate
+    | ZeroStruct | WriteStructField | StoreLocal
+    | CallAPI | Compare | Jump | Terminate
 )
 
 TERMINATOR_TYPES = (Compare, Jump, Terminate)

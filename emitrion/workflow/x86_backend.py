@@ -41,6 +41,7 @@ from .ir import (
     Jump,
     NameRef,
     Operation,
+    StoreLocal,
     SuccessPredicate,
     Terminate,
     TerminateStyle,
@@ -157,6 +158,9 @@ class _LoweringContext:
         if isinstance(op, ZeroStruct):
             return self._lower_zero_struct(op)
 
+        if isinstance(op, StoreLocal):
+            return self._lower_store_local(op)
+
         if isinstance(op, WriteStructField):
             return self._lower_write_struct_field(op)
 
@@ -271,6 +275,15 @@ class _LoweringContext:
             lines.extend(safe_mem_store("ebp", result_off, "eax", self.bc))
             lines.append(f"    ; -> {op.result}")
 
+        return lines
+
+    def _lower_store_local(self, op: StoreLocal) -> list[str]:
+        """Lower a StoreLocal to a mov into the local's stack slot."""
+        setup, reg = self._resolve_value(op.value)
+        offset = -self.layout.slot(op.name).offset
+        lines = list(setup)
+        lines.extend(safe_mem_store("ebp", offset, reg, self.bc))
+        lines.append(f"    ; -> {op.name}")
         return lines
 
     def _lower_write_struct_field(self, op: WriteStructField) -> list[str]:

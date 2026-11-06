@@ -18,7 +18,10 @@ CANONICAL_TEMPLATES = {
     "ir_copy_file",
     "ir_copy_then_run",
     "ir_move_then_run",
+    "ir_move_file",
     "ir_check_path",
+    "ir_get_username",
+    "ir_http_download",
 }
 
 _VALID_TEMPLATES = CANONICAL_TEMPLATES

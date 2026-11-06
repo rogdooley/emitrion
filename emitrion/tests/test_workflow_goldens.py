@@ -38,6 +38,9 @@ def _normalise_assembly(assembly: str) -> str:
         ("ir_copy_then_run.yaml", "ir_copy_then_run"),
         ("ir_move_then_run.yaml", "ir_move_then_run"),
         ("ir_check_path.yaml", "ir_check_path"),
+        ("move_file.yaml", "ir_move_file"),
+        ("get_username.yaml", "ir_get_username"),
+        ("http_download.yaml", "ir_http_download"),
     ],
 )
 def test_ir_workflow_matches_reviewed_assembly_and_contract(
@@ -74,6 +77,9 @@ def test_ir_workflow_matches_reviewed_assembly_and_contract(
         ("ir_copy_then_run.yaml", "ir_copy_then_run"),
         ("ir_move_then_run.yaml", "ir_move_then_run"),
         ("ir_check_path.yaml", "ir_check_path"),
+        ("move_file.yaml", "ir_move_file"),
+        ("get_username.yaml", "ir_get_username"),
+        ("http_download.yaml", "ir_http_download"),
     ],
 )
 def test_ir_workflow_binary_matches_reviewed_digest(

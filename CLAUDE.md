@@ -60,7 +60,7 @@ manifest.yaml -> schema.py (load/validate)
 - **`build_x64.py`**: x64 orchestrator. Contains x64 framework stubs, compose pipeline, and `build_x64()`.
 - **`build_common.py`**: Arch-independent utilities shared by both orchestrators: `BuildResult`, template loading (`_load_template`), assembler backends, badchar validation, byte formatting, config overrides, and `write_outputs()`.
 - **`payload_templates/base.py`**: `PayloadTemplate` ABC with `emit(layout, config)` and `cheatsheet(config)`. `probe_slots()` auto-discovers which stack slots a template uses by running `emit()` against a RecordingLayout.
-- **`workflow/reference.py`**: All 7 IR workflow templates (dual-arch). These are the only active templates; legacy hand-written templates have been removed.
+- **`workflow/reference.py`**: All 10 IR workflow templates (dual-arch). These are the only active templates; legacy hand-written templates have been removed.
 
 ### Adding a new payload template
 

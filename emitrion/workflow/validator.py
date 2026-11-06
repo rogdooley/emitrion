@@ -33,6 +33,7 @@ from .ir import (
     Input,
     Jump,
     NameRef,
+    StoreLocal,
     ValueRef,
     Workflow,
     WriteStructField,
@@ -306,6 +307,17 @@ def _validate_block(
                     f"Block '{block.name}': ZeroStruct references "
                     f"undefined allocation '{op.name}'"
                 )
+
+        elif isinstance(op, StoreLocal):
+            if op.name not in defs.allocations:
+                errors.append(
+                    f"Block '{block.name}': StoreLocal references "
+                    f"undefined local '{op.name}'"
+                )
+            _validate_value_ref(
+                op.value, defs.values, defs.allocations,
+                block.name, errors,
+            )
 
         elif isinstance(op, WriteStructField):
             if op.struct_name not in defs.struct_allocations:

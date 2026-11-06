@@ -1,0 +1,3 @@
+# GetUserNameA + command execution
+template: ir_get_username
+badchars: ["00", "0A", "0D"]

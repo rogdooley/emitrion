@@ -1,0 +1,3 @@
+# HTTP download via WinInet + execute
+template: ir_http_download
+badchars: ["00", "0A", "0D"]

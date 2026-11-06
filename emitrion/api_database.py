@@ -809,6 +809,11 @@ STRUCT_DATABASE: dict[str, StructRecord] = {
         alignment=4,
         fields=[],
     ),
+    "CHAR_BUFFER_128": StructRecord(
+        size=0x80,
+        alignment=4,
+        fields=[],
+    ),
 }
 
 
@@ -847,6 +852,11 @@ STRUCT_DATABASE_X64: dict[str, StructRecord] = {
     ),
     "WSADATA": StructRecord(
         size=0x190,
+        alignment=8,
+        fields=[],
+    ),
+    "CHAR_BUFFER_128": StructRecord(
+        size=0x80,
         alignment=8,
         fields=[],
     ),

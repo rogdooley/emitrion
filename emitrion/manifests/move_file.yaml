@@ -1,0 +1,3 @@
+# Standalone file move via MoveFileA
+template: ir_move_file
+badchars: ["00", "0A", "0D"]

