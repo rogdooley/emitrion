@@ -176,14 +176,53 @@ def _emit_framework_stubs_part2(badchars: set[int]) -> str:
     lines.append("")
 
     # resolve_matched_export: ordinal -> function address
+    # Forwarded exports: if the function RVA falls inside the export directory
+    # (RVA >= export_dir_rva && RVA < export_dir_rva + export_dir_size), the
+    # entry is an ASCII forwarder string, not code.  Detect and trap.
     lines.append("resolve_matched_export:")
     lines.extend(safe_mem_load("edx", "ebp", -0x0c, badchars, tmp="eax"))
     lines.append("    movzx eax, word ptr [edx + ecx*2]")
     lines.extend(safe_mem_load("esi", "ebp", -0x10, badchars, tmp="edx"))
     lines.append("    mov eax, [esi + eax*4]")
+    lines.append("")
+    # --- forwarded export check ---
+    # EAX = function RVA.  Re-derive export dir bounds from PE header.
+    # [ebp-0x04] = module_base.  PE+0x78 = export dir RVA, PE+0x7C = size.
+    # Register plan: push func_rva to free EAX, then ECX = module_base,
+    # EDX = PE header VA, ESI/EDI/EAX = scratch for safe_mem_load.
+    lines.append("    push eax")
     lines.extend(safe_mem_load("ecx", "ebp", -0x04, badchars, tmp="edx"))
+    lines.extend(safe_mem_load("edx", "ecx", 0x3c, badchars, tmp="esi"))
+    lines.append("    add edx, ecx")
+    # ESI = export_dir_rva
+    lines.extend(safe_mem_load("esi", "edx", 0x78, badchars, tmp="eax"))
+    # EDI = export_dir_size
+    lines.extend(safe_mem_load("edi", "edx", 0x7c, badchars, tmp="eax"))
+    lines.append("    add edi, esi")
+    lines.append("    pop eax")
+    # Lower bound: func_rva < export_dir_rva -> not forwarded
+    if 0x3b in badchars:
+        lines.append("    push eax")
+        lines.append("    sub eax, esi")
+        lines.append("    pop eax")
+    else:
+        lines.append("    cmp eax, esi")
+    lines.append("    jb not_forwarded")
+    # Upper bound: func_rva < export_dir_end -> forwarded
+    if 0x3b in badchars:
+        lines.append("    push eax")
+        lines.append("    sub eax, edi")
+        lines.append("    pop eax")
+    else:
+        lines.append("    cmp eax, edi")
+    lines.append("    jb forwarded_export")
+    lines.append("")
+    lines.append("not_forwarded:")
     lines.append("    add eax, ecx")
     lines.append("    ret")
+    lines.append("")
+    lines.append("forwarded_export:")
+    lines.append("    int3")
     lines.append("")
 
     # resolve_export_by_hash: loop through exports comparing hashes

@@ -154,17 +154,36 @@ def _emit_framework_stubs_x64(badchars: set[int]) -> str:
 
     # resolve_matched_export: ordinal -> function address (PE32+)
     # AddressOfNameOrdinals entries are 16-bit, AddressOfFunctions entries are 32-bit RVAs
-    # Limitation: forwarded exports (RVA inside export dir) are not detected.
-    # A forwarded export resolves to an ASCII redirect string, not code.
-    # Current targets (kernel32, ws2_32) do not forward the APIs we resolve.
+    # Forwarded exports: if the function RVA falls inside the export directory
+    # (RVA >= export_dir_rva && RVA < export_dir_rva + export_dir_size), the
+    # entry is an ASCII forwarder string, not code.  Detect and trap.
     lines.append("resolve_matched_export:")
     lines.append("    mov  rdx, qword ptr [rbp - 0x18]")
     lines.append("    movzx eax, word ptr [rdx + rcx*2]")
     lines.append("    mov  rsi, qword ptr [rbp - 0x20]")
     lines.append("    mov  eax, dword ptr [rsi + rax*4]")
+    lines.append("")
+    # --- forwarded export check ---
+    # EAX = function RVA.  Re-derive export dir bounds from PE header.
+    # RBX (module_base) is saved at [rbp-0x08]; PE+0x88 = export dir RVA,
+    # PE+0x8C = export dir size.
     lines.append("    mov  rcx, qword ptr [rbp - 0x08]")
+    lines.append("    mov  edx, dword ptr [rcx + 0x3c]")   # e_lfanew
+    lines.append("    add  rdx, rcx")                       # RDX = PE header VA
+    lines.append("    mov  esi, dword ptr [rdx + 0x88]")    # ESI = export dir RVA
+    lines.append("    cmp  eax, esi")
+    lines.append("    jb   not_forwarded")
+    lines.append("    mov  edi, dword ptr [rdx + 0x8c]")    # EDI = export dir size
+    lines.append("    add  edi, esi")                        # EDI = export dir end RVA
+    lines.append("    cmp  eax, edi")
+    lines.append("    jb   forwarded_export")
+    lines.append("")
+    lines.append("not_forwarded:")
     lines.append("    add  rax, rcx")
     lines.append("    ret")
+    lines.append("")
+    lines.append("forwarded_export:")
+    lines.append("    int3")
     lines.append("")
 
     # resolve_export_by_hash: loop through exports comparing hashes

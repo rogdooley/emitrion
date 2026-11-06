@@ -88,9 +88,26 @@ resolve_matched_export:
     movzx eax, word ptr [edx + ecx*2]
     mov  esi, [ebp-0x10]
     mov eax, [esi + eax*4]
+
+    push eax
     mov  ecx, [ebp-0x04]
+    mov  edx, [ecx+0x3c]
+    add edx, ecx
+    mov  esi, [edx+0x78]
+    mov  edi, [edx+0x7c]
+    add edi, esi
+    pop eax
+    cmp eax, esi
+    jb not_forwarded
+    cmp eax, edi
+    jb forwarded_export
+
+not_forwarded:
     add eax, ecx
     ret
+
+forwarded_export:
+    int3
 
 resolve_export_by_hash:
     mov  [ebp-0x18], eax
@@ -424,5 +441,3 @@ wf_zero_si:
 
 hang:
     jmp hang
-
-
