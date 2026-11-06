@@ -167,13 +167,23 @@ class Terminate:
     style: TerminateStyle = TerminateStyle.HANG
 
 
+@dataclass(frozen=True)
+class CallBuffer:
+    """Transfer control to a named buffer (downloaded shellcode).
+
+    The backend loads the buffer address from the stack and jumps to it.
+    This is a terminator: no further operations execute after it.
+    """
+    name: str
+
+
 Operation = (
     DefineConstant | ConstructString | AllocateLocal | AllocateStruct
     | ZeroStruct | WriteStructField | StoreLocal
-    | CallAPI | Compare | Jump | Terminate
+    | CallAPI | Compare | Jump | Terminate | CallBuffer
 )
 
-TERMINATOR_TYPES = (Compare, Jump, Terminate)
+TERMINATOR_TYPES = (Compare, Jump, Terminate, CallBuffer)
 
 
 # ---------------------------------------------------------------------------
