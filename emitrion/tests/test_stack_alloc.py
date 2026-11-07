@@ -23,7 +23,8 @@ def calc_layout(manifest_dir):
     return build_layout(manifest)
 
 
-@pytest.fixture(params=["revshell.yaml", "calc.yaml"])
+@pytest.fixture(params=["revshell.yaml", "calc.yaml", "tcp_stager.yaml",
+                         "tcp_download.yaml", "copy_then_run.yaml"])
 def any_layout(request, manifest_dir):
     """Parameterised fixture: runs the test once per manifest."""
     from emitrion.schema import load
@@ -68,12 +69,12 @@ def test_struct_sizes(revshell_layout):
 
 
 # ---------------------------------------------------------------------------
-# Struct zone starts at hard constant 0x80
+# Struct zone starts at hard constant 0x100
 # ---------------------------------------------------------------------------
 
-def test_struct_zone_starts_at_0x80(revshell_layout):
+def test_struct_zone_starts_at_0x100(revshell_layout):
     si = revshell_layout.slot("STARTUPINFOA")
-    assert si.offset == 0x80 + si.size
+    assert si.offset == 0x100 + si.size
 
 
 # ---------------------------------------------------------------------------

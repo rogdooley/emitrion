@@ -40,22 +40,22 @@ Frame: `mov ebp, esp` / `sub esp, 0x200` (0x200 bytes reserved)
 | Offset | Variable | Size |
 |--------|----------|------|
 | `[ebp-0x38]` | username_len | 4 |
-| `[ebp-0x3c]` | advapi_base | 4 |
-| `[ebp-0x40]` | getuser_ret | 4 |
-| `[ebp-0x44]` | exec_ret | 4 |
+| `[ebp-0x3c]` | write_pos | 4 |
+| `[ebp-0x40]` | path_buf | 4 |
+| `[ebp-0x44]` | guna_ret | 4 |
+| `[ebp-0x48]` | exec_ret | 4 |
 
 ## Structures
 
-| Offset | Structure | Size |
-|--------|-----------|------|
-| `[ebp-0x100]` | CHAR_BUFFER_128 | 0x80 |
+_No structures._
 
 ## Strings
 
 | Offset | Label | Value | Size |
 |--------|-------|-------|------|
 | `[ebp-0x110]` | advapi_dll | advapi32.dll | 16 |
-| `[ebp-0x118]` | cmd | cmd.exe | 8 |
+| `[ebp-0x11c]` | path_prefix | C:\Users\ | 12 |
+| `[ebp-0x134]` | path_suffix | \Desktop\payload.exe | 24 |
 
 ---
 
@@ -161,14 +161,6 @@ BOOL GetUserNameA(LPSTR lpBuffer, LPDWORD pcbBuffer)
 
 # Structure Layouts
 
-## CHAR_BUFFER_128
-
-**Size:** `0x80`
-
-_No field documentation (opaque output buffer)._
-
----
-
 ---
 
 # Operational Cheatsheet
@@ -179,19 +171,14 @@ _No field documentation (opaque output buffer)._
 
 ## Setup Commands
 
-**Retrieves current username via GetUserNameA:**
+**Path built on target:**
+```
+C:\Users\<username>\Desktop\payload.exe
 ```
 
+**Note:**
 ```
-
-**Command executed after:**
-```
-cmd.exe
-```
-
-**Username buffer at:**
-```
-username_buf (128 bytes on stack)
+Place payload.exe on target Desktop before running
 ```
 
 ## Encoding (if needed)
@@ -241,15 +228,6 @@ dd ebp-0x34 L1    ; ExitProcess
 
 ## Inspect Structures Before API Calls
 
-### CHAR_BUFFER_128 (0x80 bytes)
-
-Base address: `ebp-0x100`
-
-```
-dd ebp-0x100 L8    ; first 8 dwords
-db ebp-0x100 L20    ; raw bytes
-```
-
 ## Inspect Stack Strings
 
 ```
@@ -257,7 +235,11 @@ da ebp-0x110    ; advapi_dll
 ```
 
 ```
-da ebp-0x118    ; cmd
+da ebp-0x11c    ; path_prefix
+```
+
+```
+da ebp-0x134    ; path_suffix
 ```
 
 ## Breakpoint Strategy

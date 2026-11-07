@@ -36,24 +36,31 @@ from ..stack_alloc_x64 import StackLayoutX64
 from .catalog import get_abi
 from .ir import (
     AddressOf,
+    AddressOfField,
     AllocateLocal,
     AllocateStruct,
+    ArithOp,
     Block,
     CallAPI,
+    CallSlot,
+    CarveBuffer,
     Compare,
+    CompareStrings,
     ConstructString,
     DefineConstant,
     Immediate,
     Input,
     Jump,
+    MemCopy,
     NameRef,
     Operation,
-    StoreLocal,
+    ReadStructField,
     SuccessPredicate,
     Terminate,
     TerminateStyle,
     ValueRef,
     Workflow,
+    WriteSlot,
     WriteStructField,
     ZeroStruct,
 )
@@ -114,7 +121,7 @@ def lower_workflow_x64(
 
 
 def _is_terminal(block: Block) -> bool:
-    return any(isinstance(op, Terminate) for op in block.operations)
+    return any(isinstance(op, (Terminate, CallSlot)) for op in block.operations)
 
 
 class _LoweringContextX64:
@@ -132,6 +139,7 @@ class _LoweringContextX64:
         self.constants: dict[str, int] = {}
         self.struct_types: dict[str, str] = {}
         self._hang_counter = 0
+        self._strcmp_counter = 0
 
     def lower_block(self, block: Block) -> list[str]:
         lines: list[str] = []
@@ -153,11 +161,11 @@ class _LoweringContextX64:
         if isinstance(op, (ConstructString, AllocateLocal)):
             return []
 
+        if isinstance(op, ReadStructField):
+            return self._lower_read_struct_field(op)
+
         if isinstance(op, ZeroStruct):
             return self._lower_zero_struct(op)
-
-        if isinstance(op, StoreLocal):
-            return self._lower_store_local(op)
 
         if isinstance(op, WriteStructField):
             return self._lower_write_struct_field(op)
@@ -165,11 +173,29 @@ class _LoweringContextX64:
         if isinstance(op, CallAPI):
             return self._lower_call(op)
 
+        if isinstance(op, WriteSlot):
+            return self._lower_write_slot(op)
+
+        if isinstance(op, ArithOp):
+            return self._lower_arith(op)
+
+        if isinstance(op, CarveBuffer):
+            return self._lower_carve_buffer(op)
+
+        if isinstance(op, MemCopy):
+            return self._lower_mem_copy(op)
+
         if isinstance(op, Compare):
             return self._lower_compare(op)
 
+        if isinstance(op, CompareStrings):
+            return self._lower_compare_strings(op)
+
         if isinstance(op, Jump):
             return [f"    jmp  wf_{op.target}"]
+
+        if isinstance(op, CallSlot):
+            return self._lower_call_slot(op)
 
         if isinstance(op, Terminate):
             return self._lower_terminate(op)
@@ -216,6 +242,26 @@ class _LoweringContextX64:
             else:
                 slot = self.layout.slot(name)
             lines = list(safe_lea_x64(target_reg, "rsp", slot.offset, self.bc))
+            return (lines, target_reg)
+
+        if isinstance(ref, AddressOfField):
+            stype = self.struct_types.get(ref.struct_name)
+            if stype is None:
+                err = f"    ; ERROR: AddressOfField struct '{ref.struct_name}' unknown"
+                return ([err], target_reg)
+            st_rec = STRUCT_DATABASE_X64.get(stype) or STRUCT_DATABASE.get(stype)
+            if st_rec is None:
+                return ([f"    ; ERROR: struct type '{stype}' not in database"], target_reg)
+            field_info = None
+            for f in st_rec.fields:
+                if f.name == ref.field_name:
+                    field_info = f
+                    break
+            if field_info is None:
+                return ([f"    ; ERROR: field '{ref.field_name}' not in '{stype}'"], target_reg)
+            struct_slot = self.layout.slot(stype)
+            field_abs = struct_slot.offset + field_info.offset
+            lines = list(safe_lea_x64(target_reg, "rsp", field_abs, self.bc))
             return (lines, target_reg)
 
         if isinstance(ref, Input):
@@ -276,8 +322,6 @@ class _LoweringContextX64:
 
         args = list(op.arguments)
 
-        # Load stack arguments (5th onward) into shadow space area
-        # They go at [RSP+0x20], [RSP+0x28], ...
         for i in range(4, len(args)):
             arg = args[i]
             arg_name = arg_names[i] if i < len(arg_names) else f"arg{i}"
@@ -287,10 +331,6 @@ class _LoweringContextX64:
             lines.extend(safe_qword_store("rsp", stack_offset, reg, self.bc))
             lines.append(f"    ; stack arg {arg_name}")
 
-        # Load register arguments directly into target registers.
-        # All sources (stack slots, immediates) are independent of arg
-        # registers, so forward order is safe. Scratch clobber (r11/rax via
-        # _SCRATCH_MAP) never conflicts with RCX/RDX/R8/R9.
         reg_args = min(len(args), 4)
 
         for i in range(reg_args):
@@ -303,10 +343,8 @@ class _LoweringContextX64:
                 lines.append(f"    mov  {target}, {reg}")
             lines.append(f"    ; {arg_name}")
 
-        # Call the API
         lines.extend(safe_call_mem_x64("rsp", api_slot.offset, self.bc))
 
-        # Store result if needed
         if op.result is not None:
             result_slot = self.layout.slot(op.result)
             lines.extend(safe_qword_store("rsp", result_slot.offset, "rax", self.bc))
@@ -314,13 +352,14 @@ class _LoweringContextX64:
 
         return lines
 
-    def _lower_store_local(self, op: StoreLocal) -> list[str]:
-        """Lower a StoreLocal to a mov into the local's RSP-relative slot."""
+    def _lower_write_slot(self, op: WriteSlot) -> list[str]:
+        """Lower a WriteSlot to a mov into the slot's RSP-relative location."""
+        lines: list[str] = []
+        lines.append(f"    ; {op.name} = ...")
         setup, reg = self._resolve_value(op.value)
+        lines.extend(setup)
         slot = self.layout.slot(op.name)
-        lines = list(setup)
         lines.extend(safe_qword_store("rsp", slot.offset, reg, self.bc))
-        lines.append(f"    ; -> {op.name}")
         return lines
 
     def _lower_write_struct_field(self, op: WriteStructField) -> list[str]:
@@ -328,7 +367,8 @@ class _LoweringContextX64:
         if stype is None:
             raise ValueError(
                 f"WriteStructField references '{op.struct_name}' which has no "
-                f"AllocateStruct in the workflow. Add AllocateStruct('{op.struct_name}', ...) first."
+                f"AllocateStruct in the workflow. "
+                f"Add AllocateStruct('{op.struct_name}', ...) first."
             )
 
         st_rec = STRUCT_DATABASE_X64.get(stype) or STRUCT_DATABASE.get(stype)
@@ -434,7 +474,152 @@ class _LoweringContextX64:
             lines.append("    test rax, rax")
             lines.append(f"    jns  wf_{op.true_block}")
             lines.append(f"    jmp  wf_{op.false_block}")
+        elif op.predicate == SuccessPredicate.SIGNED_POSITIVE:
+            lines.append("    test rax, rax")
+            lines.append(f"    jg   wf_{op.true_block}")
+            lines.append(f"    jmp  wf_{op.false_block}")
 
+        return lines
+
+    def _lower_arith(self, op: ArithOp) -> list[str]:
+        """Lower ArithOp: load left into r11, load right into rax, operate, store."""
+        lines: list[str] = []
+        op_word = op.operator
+        lines.append(f"    ; {op.result} = ... {op_word} ...")
+
+        left_setup, _left_reg = self._resolve_value(op.left)
+        lines.extend(left_setup)
+        lines.append("    mov  r11, rax")
+
+        right_setup, _right_reg = self._resolve_value(op.right)
+        lines.extend(right_setup)
+
+        if op_word == "add":
+            lines.append("    add  r11, rax")
+        else:
+            lines.append("    sub  r11, rax")
+
+        result_slot = self.layout.slot(op.result)
+        lines.extend(safe_qword_store("rsp", result_slot.offset, "r11", self.bc))
+        return lines
+
+    def _lower_read_struct_field(self, op: ReadStructField) -> list[str]:
+        """Lower ReadStructField: load a value from a struct field into a slot."""
+        stype = self.struct_types.get(op.struct_name)
+        if stype is None:
+            return [f"    ; ERROR: ReadStructField struct '{op.struct_name}' unknown"]
+        st_rec = STRUCT_DATABASE_X64.get(stype) or STRUCT_DATABASE.get(stype)
+        if st_rec is None:
+            return [f"    ; ERROR: struct type '{stype}' not in database"]
+        field_info = None
+        for f in st_rec.fields:
+            if f.name == op.field_name:
+                field_info = f
+                break
+        if field_info is None:
+            return [f"    ; ERROR: field '{op.field_name}' not in '{stype}'"]
+
+        lines: list[str] = []
+        lines.append(f"    ; {op.result} = {op.struct_name}.{op.field_name}")
+        struct_slot = self.layout.slot(stype)
+        field_abs = struct_slot.offset + field_info.offset
+        if field_info.size <= 4:
+            lines.extend(safe_mem_load_x64("rax", "rsp", field_abs, self.bc, width="dword"))
+        else:
+            lines.extend(safe_mem_load_x64("rax", "rsp", field_abs, self.bc))
+        result_slot = self.layout.slot(op.result)
+        lines.extend(safe_qword_store("rsp", result_slot.offset, "rax", self.bc))
+        return lines
+
+    def _lower_compare_strings(self, op: CompareStrings) -> list[str]:
+        """Lower CompareStrings to inline byte-by-byte comparison loop."""
+        lines: list[str] = []
+        lines.append("    ; strcmp")
+
+        left_setup, _ = self._resolve_value(op.left)
+        lines.extend(left_setup)
+        lines.append("    mov  rsi, rax")
+
+        right_setup, _ = self._resolve_value(op.right)
+        lines.extend(right_setup)
+        lines.append("    mov  rdi, rax")
+
+        cmp_label = f"wf_strcmp_{self._strcmp_counter}"
+        end_label = f"wf_strcmp_end_{self._strcmp_counter}"
+        self._strcmp_counter += 1
+
+        lines.append(f"{cmp_label}:")
+        lines.append("    lodsb")
+        lines.append("    mov  cl, byte [rdi]")
+        lines.append("    inc  rdi")
+        lines.append("    test al, al")
+        lines.append(f"    jz   {end_label}")
+        if op.case_insensitive:
+            lines.append("    or   al, 0x20")
+            lines.append("    or   cl, 0x20")
+        lines.append("    cmp  al, cl")
+        lines.append(f"    jne  wf_{op.nomatch_block}")
+        lines.append(f"    jmp  {cmp_label}")
+
+        lines.append(f"{end_label}:")
+        lines.append("    test cl, cl")
+        lines.append(f"    jz   wf_{op.match_block}")
+        lines.append(f"    jmp  wf_{op.nomatch_block}")
+
+        return lines
+
+    def _lower_carve_buffer(self, op: CarveBuffer) -> list[str]:
+        """Lower CarveBuffer: sub rsp, size; mov [rsp+slot], rsp.
+
+        On x64, CarveBuffer adjusts RSP directly. The carved space
+        sits below the managed frame.
+        """
+        lines: list[str] = []
+        lines.append(f"    ; carve {op.name} ({op.size} bytes below RSP)")
+        size_lines = list(encode_dword_into_r64(op.size, self.bc, "rax"))
+        lines.extend(size_lines)
+        lines.append("    sub  rsp, rax")
+        slot = self.layout.slot(op.name)
+        lines.extend(safe_qword_store("rsp", slot.offset, "rsp", self.bc))
+        return lines
+
+    def _lower_mem_copy(self, op: MemCopy) -> list[str]:
+        """Lower MemCopy: set up rsi/rdi/rcx then cld; rep movsb."""
+        lines: list[str] = []
+        lines.append("    ; memcopy")
+
+        src_setup, _ = self._resolve_value(op.src)
+        lines.extend(src_setup)
+        lines.append("    mov  rsi, rax")
+
+        dst_setup, _ = self._resolve_value(op.dst)
+        lines.extend(dst_setup)
+        lines.append("    mov  rdi, rax")
+
+        count_setup, _ = self._resolve_value(op.count)
+        lines.extend(count_setup)
+        lines.append("    mov  rcx, rax")
+
+        lines.append("    cld")
+        lines.append("    rep movsb")
+        return lines
+
+    def _lower_call_slot(self, op: CallSlot) -> list[str]:
+        """Lower a CallSlot to call [rsp+offset] (transfer to shellcode)."""
+        lines: list[str] = []
+        slot = self.layout.slot(op.target)
+        lines.append(f"    ; call [{op.target}]")
+        lines.extend(safe_call_mem_x64("rsp", slot.offset, self.bc))
+        return lines
+
+    def _lower_write_slot(self, op: WriteSlot) -> list[str]:
+        """Lower a WriteSlot to a mov into the slot's RSP-relative location."""
+        lines: list[str] = []
+        lines.append(f"    ; {op.name} = ...")
+        setup, reg = self._resolve_value(op.value)
+        lines.extend(setup)
+        slot = self.layout.slot(op.name)
+        lines.extend(safe_qword_store("rsp", slot.offset, reg, self.bc))
         return lines
 
     def _lower_terminate(self, op: Terminate) -> list[str]:

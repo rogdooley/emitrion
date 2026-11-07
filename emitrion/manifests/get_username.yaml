@@ -1,3 +1,24 @@
-# GetUserNameA + command execution
+# Get username and build a user-profile path, then WinExec it.
+# Demonstrates runtime string concatenation in shellcode.
 template: ir_get_username
-badchars: ["00", "0A", "0D"]
+badchars: []
+
+functions:
+  - LoadLibraryA
+  - GetUserNameA
+  - WinExec
+
+variables:
+  - username_len
+  - path_buf_ptr
+
+strings:
+  - label: advapi_dll
+    value: advapi32.dll
+    method: push
+  - label: path_prefix
+    value: "C:\\Users\\"
+    method: push
+  - label: path_suffix
+    value: "\\Desktop\\payload.exe"
+    method: push

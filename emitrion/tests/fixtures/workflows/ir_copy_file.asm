@@ -137,7 +137,7 @@ main:
     mov  ebp, esp
     xor  ecx, ecx
     mov  ecx, 0x01010301
-    xor  ecx, 0x01010201
+    xor  ecx, 0x01010101
     sub  esp, ecx
 
     ; Bootstrap: find kernel32 via PEB walk
@@ -161,7 +161,7 @@ main:
 ; -- String Construction --
 
 ; --- src_path: "C:\OSED\source.txt" (mov) ---
-    lea  edi, [ebp-0x94]
+    lea  edi, [ebp-0x114]
 ; emit_mov: "C:\OSED\source.txt" (null-safe)
 ; 20 bytes written to [edi]
 
@@ -178,7 +178,7 @@ main:
     mov  [edi+0x10], eax
 
 ; --- dst_path: "C:\OSED\output.txt" (mov) ---
-    lea  edi, [ebp-0xa8]
+    lea  edi, [ebp-0x128]
 ; emit_mov: "C:\OSED\output.txt" (null-safe)
 ; 20 bytes written to [edi]
 
@@ -228,9 +228,9 @@ wf_entry:
     ; CopyFileA(lpExistingFileName, lpNewFileName, bFailIfExists)
     xor  eax, eax
     push eax                      ; bFailIfExists
-    lea  eax, [ebp-0xa8]
+    lea  eax, [ebp-0x128]
     push eax                      ; lpNewFileName
-    lea  eax, [ebp-0x94]
+    lea  eax, [ebp-0x114]
     push eax                      ; lpExistingFileName
     call dword ptr [ebp-0x24]
     mov  [ebp-0x2c], eax

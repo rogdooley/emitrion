@@ -816,8 +816,6 @@ STRUCT_DATABASE: dict[str, StructRecord] = {
     ),
 }
 
-
-# x64 structure layouts: fields have different offsets/sizes due to pointer width.
 STRUCT_DATABASE_X64: dict[str, StructRecord] = {
     "STARTUPINFOA": StructRecord(
         size=0x68,
@@ -838,6 +836,15 @@ STRUCT_DATABASE_X64: dict[str, StructRecord] = {
             StructField(0x08, "hThread",     8, "populated by Windows"),
             StructField(0x10, "dwProcessId", 4, "populated by Windows"),
             StructField(0x14, "dwThreadId",  4, "populated by Windows"),
+        ],
+    ),
+    "PROCESSENTRY32": StructRecord(
+        size=0x128,
+        alignment=8,
+        fields=[
+            StructField(0x00, "dwSize",        4, "must be 0x128 = sizeof(PROCESSENTRY32)"),
+            StructField(0x08, "th32ProcessID",  4, "PID of the process"),
+            StructField(0x24, "szExeFile",    260, "null-terminated process name (MAX_PATH)"),
         ],
     ),
     "sockaddr_in": StructRecord(

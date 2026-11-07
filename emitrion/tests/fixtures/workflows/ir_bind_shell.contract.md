@@ -30,40 +30,42 @@ Frame: `mov ebp, esp` / `sub esp, 0x300` (0x300 bytes reserved)
 
 | Offset | API | Module |
 |--------|-----|--------|
-| `[ebp-0x28]` | LoadLibraryA | kernel32.dll |
-| `[ebp-0x2c]` | WSAStartup | ws2_32.dll |
-| `[ebp-0x30]` | WSASocketA | ws2_32.dll |
-| `[ebp-0x34]` | bind | ws2_32.dll |
-| `[ebp-0x38]` | listen | ws2_32.dll |
-| `[ebp-0x3c]` | accept | ws2_32.dll |
-| `[ebp-0x40]` | CreateProcessA | kernel32.dll |
-| `[ebp-0x44]` | ExitProcess | kernel32.dll |
+| `[ebp-0x28]` | WSAStartup | ws2_32.dll |
+| `[ebp-0x2c]` | WSASocketA | ws2_32.dll |
+| `[ebp-0x30]` | bind | ws2_32.dll |
+| `[ebp-0x34]` | listen | ws2_32.dll |
+| `[ebp-0x38]` | accept | ws2_32.dll |
+| `[ebp-0x3c]` | CreateProcessA | kernel32.dll |
+| `[ebp-0x40]` | ExitProcess | kernel32.dll |
+| `[ebp-0x44]` | LoadLibraryA | kernel32.dll |
 
 ## Variables
 
 | Offset | Variable | Size |
 |--------|----------|------|
-| `[ebp-0x48]` | wsa_ret | 4 |
-| `[ebp-0x4c]` | listen_socket | 4 |
-| `[ebp-0x50]` | bind_ret | 4 |
-| `[ebp-0x54]` | listen_ret | 4 |
-| `[ebp-0x58]` | client_socket | 4 |
-| `[ebp-0x5c]` | cpa_ret | 4 |
+| `[ebp-0x48]` | socket_handle | 4 |
+| `[ebp-0x4c]` | bind_socket | 4 |
+| `[ebp-0x50]` | wsa_ret | 4 |
+| `[ebp-0x54]` | listen_socket | 4 |
+| `[ebp-0x58]` | bind_ret | 4 |
+| `[ebp-0x5c]` | listen_ret | 4 |
+| `[ebp-0x60]` | client_socket | 4 |
+| `[ebp-0x64]` | cpa_ret | 4 |
 
 ## Structures
 
 | Offset | Structure | Size |
 |--------|-----------|------|
-| `[ebp-0x210]` | WSADATA | 0x190 |
-| `[ebp-0x220]` | sockaddr_in | 0x10 |
-| `[ebp-0x264]` | STARTUPINFOA | 0x44 |
-| `[ebp-0x274]` | PROCESS_INFORMATION | 0x10 |
+| `[ebp-0x290]` | WSADATA | 0x190 |
+| `[ebp-0x2a0]` | sockaddr_in | 0x10 |
+| `[ebp-0x2e4]` | STARTUPINFOA | 0x44 |
+| `[ebp-0x2f4]` | PROCESS_INFORMATION | 0x10 |
 
 ## Strings
 
 | Offset | Label | Value | Size |
 |--------|-------|-------|------|
-| `[ebp-0x27c]` | cmd | cmd.exe | 8 |
+| `[ebp-0x2fc]` | cmd | cmd.exe | 8 |
 
 ---
 
@@ -77,32 +79,15 @@ Resolution: PEB walk
 
 | API | Hash | Slot | Category |
 |-----|------|------|----------|
-| LoadLibraryA | `0xec0e4e8e` | `[ebp-0x28]` | library |
-| CreateProcessA | `0x16b3fe72` | `[ebp-0x40]` | process |
-| ExitProcess | `0x73e2d87e` | `[ebp-0x44]` | process |
+| CreateProcessA | `0x16b3fe72` | `[ebp-0x3c]` | process |
+| ExitProcess | `0x73e2d87e` | `[ebp-0x40]` | process |
+| LoadLibraryA | `0xec0e4e8e` | `[ebp-0x44]` | library |
 
 ### API Details
 
-#### LoadLibraryA
-
-**Slot:** `[ebp-0x28]`
-**Hash:** `0xec0e4e8e`
-**Module:** kernel32.dll
-**Category:** library
-
-```c
-HMODULE LoadLibraryA(LPCSTR lpLibFileName)
-```
-
-| # | Parameter | Type | Notes |
-|---|-----------|------|-------|
-| 1 | lpLibFileName | LPCSTR | e.g. ws2_32.dll |
-
----
-
 #### CreateProcessA
 
-**Slot:** `[ebp-0x40]`
+**Slot:** `[ebp-0x3c]`
 **Hash:** `0x16b3fe72`
 **Module:** kernel32.dll
 **Category:** process
@@ -128,7 +113,7 @@ BOOL CreateProcessA(LPCSTR lpApplicationName, LPSTR lpCommandLine, LPSECURITY_AT
 
 #### ExitProcess
 
-**Slot:** `[ebp-0x44]`
+**Slot:** `[ebp-0x40]`
 **Hash:** `0x73e2d87e`
 **Module:** kernel32.dll
 **Category:** process
@@ -143,6 +128,23 @@ VOID ExitProcess(UINT uExitCode)
 
 ---
 
+#### LoadLibraryA
+
+**Slot:** `[ebp-0x44]`
+**Hash:** `0xec0e4e8e`
+**Module:** kernel32.dll
+**Category:** library
+
+```c
+HMODULE LoadLibraryA(LPCSTR lpLibFileName)
+```
+
+| # | Parameter | Type | Notes |
+|---|-----------|------|-------|
+| 1 | lpLibFileName | LPCSTR | e.g. ws2_32.dll |
+
+---
+
 ## ws2_32.dll
 
 Resolution: `LoadLibraryA("ws2_32.dll")` -> base stored at `[ebp-0x24]`
@@ -151,17 +153,17 @@ Resolution: `LoadLibraryA("ws2_32.dll")` -> base stored at `[ebp-0x24]`
 
 | API | Hash | Slot | Category |
 |-----|------|------|----------|
-| WSAStartup | `0x3bfcedcb` | `[ebp-0x2c]` | network |
-| WSASocketA | `0xadf509d9` | `[ebp-0x30]` | network |
-| bind | `0xc7701aa4` | `[ebp-0x34]` | network |
-| listen | `0xe92eada4` | `[ebp-0x38]` | network |
-| accept | `0x498649e5` | `[ebp-0x3c]` | network |
+| WSAStartup | `0x3bfcedcb` | `[ebp-0x28]` | network |
+| WSASocketA | `0xadf509d9` | `[ebp-0x2c]` | network |
+| bind | `0xc7701aa4` | `[ebp-0x30]` | network |
+| listen | `0xe92eada4` | `[ebp-0x34]` | network |
+| accept | `0x498649e5` | `[ebp-0x38]` | network |
 
 ### API Details
 
 #### WSAStartup
 
-**Slot:** `[ebp-0x2c]`
+**Slot:** `[ebp-0x28]`
 **Hash:** `0x3bfcedcb`
 **Module:** ws2_32.dll
 **Category:** network
@@ -179,7 +181,7 @@ int WSAStartup(WORD wVersionRequested, LPWSADATA lpWSAData)
 
 #### WSASocketA
 
-**Slot:** `[ebp-0x30]`
+**Slot:** `[ebp-0x2c]`
 **Hash:** `0xadf509d9`
 **Module:** ws2_32.dll
 **Category:** network
@@ -201,7 +203,7 @@ SOCKET WSASocketA(int af, int type, int protocol, LPWSAPROTOCOL_INFOA lpProtocol
 
 #### bind
 
-**Slot:** `[ebp-0x34]`
+**Slot:** `[ebp-0x30]`
 **Hash:** `0xc7701aa4`
 **Module:** ws2_32.dll
 **Category:** network
@@ -220,7 +222,7 @@ int bind(SOCKET s, const struct sockaddr *addr, int namelen)
 
 #### listen
 
-**Slot:** `[ebp-0x38]`
+**Slot:** `[ebp-0x34]`
 **Hash:** `0xe92eada4`
 **Module:** ws2_32.dll
 **Category:** network
@@ -238,7 +240,7 @@ int listen(SOCKET s, int backlog)
 
 #### accept
 
-**Slot:** `[ebp-0x3c]`
+**Slot:** `[ebp-0x38]`
 **Hash:** `0x498649e5`
 **Module:** ws2_32.dll
 **Category:** network
@@ -370,80 +372,80 @@ After the PEB walk and hash resolution, each resolved function
 pointer is stored at its stack slot. Verify with:
 
 ```
-dd ebp-0x28 L1    ; LoadLibraryA
-dd ebp-0x2c L1    ; WSAStartup
-dd ebp-0x30 L1    ; WSASocketA
-dd ebp-0x34 L1    ; bind
-dd ebp-0x38 L1    ; listen
-dd ebp-0x3c L1    ; accept
-dd ebp-0x40 L1    ; CreateProcessA
-dd ebp-0x44 L1    ; ExitProcess
+dd ebp-0x28 L1    ; WSAStartup
+dd ebp-0x2c L1    ; WSASocketA
+dd ebp-0x30 L1    ; bind
+dd ebp-0x34 L1    ; listen
+dd ebp-0x38 L1    ; accept
+dd ebp-0x3c L1    ; CreateProcessA
+dd ebp-0x40 L1    ; ExitProcess
+dd ebp-0x44 L1    ; LoadLibraryA
 ```
 
 ## Inspect Structures Before API Calls
 
 ### WSADATA (0x190 bytes)
 
-Base address: `ebp-0x210`
+Base address: `ebp-0x290`
 
 ```
-dd ebp-0x210 L8    ; first 8 dwords
-db ebp-0x210 L20    ; raw bytes
+dd ebp-0x290 L8    ; first 8 dwords
+db ebp-0x290 L20    ; raw bytes
 ```
 
 ### sockaddr_in (0x10 bytes)
 
-Base address: `ebp-0x220`
+Base address: `ebp-0x2a0`
 
 ```
-dd ebp-0x220 L4    ; first 4 dwords
-db ebp-0x220 L10    ; raw bytes
+dd ebp-0x2a0 L4    ; first 4 dwords
+db ebp-0x2a0 L10    ; raw bytes
 ```
 
 Key fields:
 
-- `db ebp-0x220 L2`  sin_family (+0x00)
-- `db ebp-0x21e L2`  sin_port (+0x02)
-- `dd ebp-0x21c L1`  sin_addr (+0x04)
-- `dd ebp-0x218 L1`  sin_zero (+0x08)
+- `db ebp-0x2a0 L2`  sin_family (+0x00)
+- `db ebp-0x29e L2`  sin_port (+0x02)
+- `dd ebp-0x29c L1`  sin_addr (+0x04)
+- `dd ebp-0x298 L1`  sin_zero (+0x08)
 
 ### STARTUPINFOA (0x44 bytes)
 
-Base address: `ebp-0x264`
+Base address: `ebp-0x2e4`
 
 ```
-dd ebp-0x264 L8    ; first 8 dwords
-db ebp-0x264 L20    ; raw bytes
+dd ebp-0x2e4 L8    ; first 8 dwords
+db ebp-0x2e4 L20    ; raw bytes
 ```
 
 Key fields:
 
-- `dd ebp-0x264 L1`  cb (+0x00)
-- `dd ebp-0x238 L1`  dwFlags (+0x2c)
-- `dd ebp-0x22c L1`  hStdInput (+0x38)
-- `dd ebp-0x228 L1`  hStdOutput (+0x3c)
-- `dd ebp-0x224 L1`  hStdError (+0x40)
+- `dd ebp-0x2e4 L1`  cb (+0x00)
+- `dd ebp-0x2b8 L1`  dwFlags (+0x2c)
+- `dd ebp-0x2ac L1`  hStdInput (+0x38)
+- `dd ebp-0x2a8 L1`  hStdOutput (+0x3c)
+- `dd ebp-0x2a4 L1`  hStdError (+0x40)
 
 ### PROCESS_INFORMATION (0x10 bytes)
 
-Base address: `ebp-0x274`
+Base address: `ebp-0x2f4`
 
 ```
-dd ebp-0x274 L4    ; first 4 dwords
-db ebp-0x274 L10    ; raw bytes
+dd ebp-0x2f4 L4    ; first 4 dwords
+db ebp-0x2f4 L10    ; raw bytes
 ```
 
 Key fields:
 
-- `dd ebp-0x274 L1`  hProcess (+0x00)
-- `dd ebp-0x270 L1`  hThread (+0x04)
-- `dd ebp-0x26c L1`  dwProcessId (+0x08)
-- `dd ebp-0x268 L1`  dwThreadId (+0x0c)
+- `dd ebp-0x2f4 L1`  hProcess (+0x00)
+- `dd ebp-0x2f0 L1`  hThread (+0x04)
+- `dd ebp-0x2ec L1`  dwProcessId (+0x08)
+- `dd ebp-0x2e8 L1`  dwThreadId (+0x0c)
 
 ## Inspect Stack Strings
 
 ```
-da ebp-0x27c    ; cmd
+da ebp-0x2fc    ; cmd
 ```
 
 ## Breakpoint Strategy
@@ -453,7 +455,6 @@ assembly to pause before each API call. After each call, check
 `eax` for the return value:
 
 ```
-bp <sc_base>+<offset_of_call_LoadLibraryA>
 bp <sc_base>+<offset_of_call_WSAStartup>  ; eax=0 on success
 bp <sc_base>+<offset_of_call_WSASocketA>  ; eax=socket handle (not INVALID_SOCKET)
 bp <sc_base>+<offset_of_call_bind>
@@ -461,6 +462,7 @@ bp <sc_base>+<offset_of_call_listen>
 bp <sc_base>+<offset_of_call_accept>
 bp <sc_base>+<offset_of_call_CreateProcessA>  ; eax!=0 on success
 bp <sc_base>+<offset_of_call_ExitProcess>  ; does not return
+bp <sc_base>+<offset_of_call_LoadLibraryA>
 ```
 
 Find the call offsets by searching `generated.asm` for

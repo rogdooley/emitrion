@@ -16,6 +16,7 @@ strings:
   - label: cmd
     value: cmd.exe
     method: mov
+    dest: edi
   - label: ws2_dll
     value: ws2_32.dll
     method: push

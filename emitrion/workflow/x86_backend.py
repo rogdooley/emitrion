@@ -29,24 +29,31 @@ from ..stack_alloc import StackLayout
 from .catalog import get_abi
 from .ir import (
     AddressOf,
+    AddressOfField,
     AllocateLocal,
     AllocateStruct,
+    ArithOp,
     Block,
     CallAPI,
+    CallSlot,
+    CarveBuffer,
     Compare,
+    CompareStrings,
     ConstructString,
     DefineConstant,
     Immediate,
     Input,
     Jump,
+    MemCopy,
     NameRef,
     Operation,
-    StoreLocal,
+    ReadStructField,
     SuccessPredicate,
     Terminate,
     TerminateStyle,
     ValueRef,
     Workflow,
+    WriteSlot,
     WriteStructField,
     ZeroStruct,
 )
@@ -113,8 +120,8 @@ def lower_workflow(
 
 
 def _is_terminal(block: Block) -> bool:
-    """True if the block ends control flow with a Terminate op."""
-    return any(isinstance(op, Terminate) for op in block.operations)
+    """True if the block ends control flow with a Terminate or CallSlot op."""
+    return any(isinstance(op, (Terminate, CallSlot)) for op in block.operations)
 
 
 class _LoweringContext:
@@ -132,6 +139,7 @@ class _LoweringContext:
         self.constants: dict[str, int] = {}
         self.struct_types: dict[str, str] = {}
         self._hang_counter = 0
+        self._strcmp_counter = 0
 
     def lower_block(self, block: Block) -> list[str]:
         lines: list[str] = []
@@ -155,11 +163,11 @@ class _LoweringContext:
         if isinstance(op, (ConstructString, AllocateLocal)):
             return []
 
+        if isinstance(op, ReadStructField):
+            return self._lower_read_struct_field(op)
+
         if isinstance(op, ZeroStruct):
             return self._lower_zero_struct(op)
-
-        if isinstance(op, StoreLocal):
-            return self._lower_store_local(op)
 
         if isinstance(op, WriteStructField):
             return self._lower_write_struct_field(op)
@@ -167,11 +175,29 @@ class _LoweringContext:
         if isinstance(op, CallAPI):
             return self._lower_call(op)
 
+        if isinstance(op, WriteSlot):
+            return self._lower_write_slot(op)
+
+        if isinstance(op, ArithOp):
+            return self._lower_arith(op)
+
+        if isinstance(op, CarveBuffer):
+            return self._lower_carve_buffer(op)
+
+        if isinstance(op, MemCopy):
+            return self._lower_mem_copy(op)
+
         if isinstance(op, Compare):
             return self._lower_compare(op)
 
+        if isinstance(op, CompareStrings):
+            return self._lower_compare_strings(op)
+
         if isinstance(op, Jump):
             return [f"    jmp  wf_{op.target}"]
+
+        if isinstance(op, CallSlot):
+            return self._lower_call_slot(op)
 
         if isinstance(op, Terminate):
             return self._lower_terminate(op)
@@ -210,6 +236,25 @@ class _LoweringContext:
             else:
                 offset = -self.layout.slot(name).offset
             lines = list(safe_lea("eax", "ebp", offset, self.bc))
+            return (lines, "eax")
+
+        if isinstance(ref, AddressOfField):
+            stype = self.struct_types.get(ref.struct_name)
+            if stype is None:
+                return ([f"    ; ERROR: AddressOfField struct '{ref.struct_name}' unknown"], "eax")
+            st_rec = STRUCT_DATABASE.get(stype)
+            if st_rec is None:
+                return ([f"    ; ERROR: struct type '{stype}' not in database"], "eax")
+            field_info = None
+            for f in st_rec.fields:
+                if f.name == ref.field_name:
+                    field_info = f
+                    break
+            if field_info is None:
+                return ([f"    ; ERROR: field '{ref.field_name}' not in '{stype}'"], "eax")
+            struct_base_offset = -self.layout.slot(stype).offset
+            field_abs = struct_base_offset + field_info.offset
+            lines = list(safe_lea("eax", "ebp", field_abs, self.bc))
             return (lines, "eax")
 
         if isinstance(ref, Input):
@@ -275,15 +320,6 @@ class _LoweringContext:
             lines.extend(safe_mem_store("ebp", result_off, "eax", self.bc))
             lines.append(f"    ; -> {op.result}")
 
-        return lines
-
-    def _lower_store_local(self, op: StoreLocal) -> list[str]:
-        """Lower a StoreLocal to a mov into the local's stack slot."""
-        setup, reg = self._resolve_value(op.value)
-        offset = -self.layout.slot(op.name).offset
-        lines = list(setup)
-        lines.extend(safe_mem_store("ebp", offset, reg, self.bc))
-        lines.append(f"    ; -> {op.name}")
         return lines
 
     def _lower_write_struct_field(self, op: WriteStructField) -> list[str]:
@@ -387,7 +423,145 @@ class _LoweringContext:
             lines.append("    test eax, eax")
             lines.append(f"    jns  wf_{op.true_block}")
             lines.append(f"    jmp  wf_{op.false_block}")
+        elif op.predicate == SuccessPredicate.SIGNED_POSITIVE:
+            lines.append("    test eax, eax")
+            lines.append(f"    jg   wf_{op.true_block}")
+            lines.append(f"    jmp  wf_{op.false_block}")
 
+        return lines
+
+    def _lower_write_slot(self, op: WriteSlot) -> list[str]:
+        """Lower a WriteSlot to resolve value then store to stack slot."""
+        lines: list[str] = []
+        lines.append(f"    ; {op.name} = ...")
+        setup, reg = self._resolve_value(op.value)
+        lines.extend(setup)
+        offset = -self.layout.slot(op.name).offset
+        lines.extend(safe_mem_store("ebp", offset, reg, self.bc))
+        return lines
+
+    def _lower_arith(self, op: ArithOp) -> list[str]:
+        """Lower ArithOp to load left, load right, add/sub, store result."""
+        lines: list[str] = []
+        op_word = op.operator
+        lines.append(f"    ; {op.result} = ... {op_word} ...")
+
+        left_setup, left_reg = self._resolve_value(op.left)
+        lines.extend(left_setup)
+        lines.append("    mov  ecx, eax")
+
+        right_setup, right_reg = self._resolve_value(op.right)
+        lines.extend(right_setup)
+
+        if op_word == "add":
+            lines.append("    add  ecx, eax")
+        else:
+            lines.append("    sub  ecx, eax")
+
+        result_offset = -self.layout.slot(op.result).offset
+        lines.extend(safe_mem_store("ebp", result_offset, "ecx", self.bc))
+        return lines
+
+    def _lower_read_struct_field(self, op: ReadStructField) -> list[str]:
+        """Lower ReadStructField: load a dword from a struct field into a slot."""
+        stype = self.struct_types.get(op.struct_name)
+        if stype is None:
+            return [f"    ; ERROR: ReadStructField struct '{op.struct_name}' unknown"]
+        st_rec = STRUCT_DATABASE.get(stype)
+        if st_rec is None:
+            return [f"    ; ERROR: struct type '{stype}' not in database"]
+        field_info = None
+        for f in st_rec.fields:
+            if f.name == op.field_name:
+                field_info = f
+                break
+        if field_info is None:
+            return [f"    ; ERROR: field '{op.field_name}' not in '{stype}'"]
+
+        lines: list[str] = []
+        lines.append(f"    ; {op.result} = {op.struct_name}.{op.field_name}")
+        struct_base_offset = -self.layout.slot(stype).offset
+        field_abs = struct_base_offset + field_info.offset
+        lines.extend(safe_mem_load("eax", "ebp", field_abs, self.bc))
+        result_offset = -self.layout.slot(op.result).offset
+        lines.extend(safe_mem_store("ebp", result_offset, "eax", self.bc))
+        return lines
+
+    def _lower_compare_strings(self, op: CompareStrings) -> list[str]:
+        """Lower CompareStrings to inline byte-by-byte comparison loop."""
+        lines: list[str] = []
+        lines.append("    ; strcmp")
+
+        left_setup, _ = self._resolve_value(op.left)
+        lines.extend(left_setup)
+        lines.append("    mov  esi, eax")
+
+        right_setup, _ = self._resolve_value(op.right)
+        lines.extend(right_setup)
+        lines.append("    mov  edi, eax")
+
+        cmp_label = f"wf_strcmp_{self._strcmp_counter}"
+        end_label = f"wf_strcmp_end_{self._strcmp_counter}"
+        self._strcmp_counter += 1
+
+        lines.append(f"{cmp_label}:")
+        lines.append("    lodsb")
+        lines.append("    mov  cl, byte [edi]")
+        lines.append("    inc  edi")
+        lines.append("    test al, al")
+        lines.append(f"    jz   {end_label}")
+        if op.case_insensitive:
+            lines.append("    or   al, 0x20")
+            lines.append("    or   cl, 0x20")
+        lines.append("    cmp  al, cl")
+        lines.append(f"    jne  wf_{op.nomatch_block}")
+        lines.append(f"    jmp  {cmp_label}")
+
+        lines.append(f"{end_label}:")
+        lines.append("    test cl, cl")
+        lines.append(f"    jz   wf_{op.match_block}")
+        lines.append(f"    jmp  wf_{op.nomatch_block}")
+
+        return lines
+
+    def _lower_carve_buffer(self, op: CarveBuffer) -> list[str]:
+        """Lower CarveBuffer: sub esp, size; mov [ebp-slot], esp."""
+        lines: list[str] = []
+        lines.append(f"    ; carve {op.name} ({op.size} bytes below ESP)")
+        size_lines = list(encode_dword(op.size, self.bc, "eax"))
+        lines.extend(size_lines)
+        lines.append("    sub  esp, eax")
+        offset = -self.layout.slot(op.name).offset
+        lines.extend(safe_mem_store("ebp", offset, "esp", self.bc))
+        return lines
+
+    def _lower_mem_copy(self, op: MemCopy) -> list[str]:
+        """Lower MemCopy: set up esi/edi/ecx then cld; rep movsb."""
+        lines: list[str] = []
+        lines.append("    ; memcopy")
+
+        src_setup, _ = self._resolve_value(op.src)
+        lines.extend(src_setup)
+        lines.append("    mov  esi, eax")
+
+        dst_setup, _ = self._resolve_value(op.dst)
+        lines.extend(dst_setup)
+        lines.append("    mov  edi, eax")
+
+        count_setup, _ = self._resolve_value(op.count)
+        lines.extend(count_setup)
+        lines.append("    mov  ecx, eax")
+
+        lines.append("    cld")
+        lines.append("    rep movsb")
+        return lines
+
+    def _lower_call_slot(self, op: CallSlot) -> list[str]:
+        """Lower a CallSlot to call [ebp-offset] (transfer to shellcode)."""
+        lines: list[str] = []
+        offset = -self.layout.slot(op.target).offset
+        lines.append(f"    ; call [{op.target}]")
+        lines.extend(safe_call_mem("ebp", offset, self.bc))
         return lines
 
     def _lower_terminate(self, op: Terminate) -> list[str]:

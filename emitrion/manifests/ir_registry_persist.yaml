@@ -1,0 +1,17 @@
+template: ir_registry_persist
+# IR workflow: registry Run-key persistence.
+# Writes a Run value under HKCU so the binary auto-starts on logon.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/ir_registry_persist.yaml \
+#       --service-name "UpdateSvc" \
+#       --dst "C:\\Windows\\Temp\\svc.exe" \
+#       --no-assemble --out emitter_out/
+badchars: ["00", "0a", "0d"]
+
+functions:
+  - LoadLibraryA
+  - RegOpenKeyExA
+  - RegSetValueExA
+  - RegCloseKey
+  - ExitProcess

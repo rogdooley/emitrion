@@ -22,6 +22,15 @@ CANONICAL_TEMPLATES = {
     "ir_check_path",
     "ir_get_username",
     "ir_http_download",
+    "ir_registry_persist",
+    "ir_service_persist",
+    "ir_tcp_stager",
+    "ir_tcp_download",
+    "ir_http_exfil",
+    "ir_download_to_userpath",
+    "ir_tcp_download_to_userpath",
+    "ir_dll_inject",
+    "ir_process_replace",
 }
 
 _VALID_TEMPLATES = CANONICAL_TEMPLATES
