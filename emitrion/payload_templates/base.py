@@ -23,6 +23,8 @@ class TemplateConfig:
     url: str | None = None
     url_path: str | None = None
     alloc_size: int | None = None
+    path_prefix: str | None = None
+    path_suffix: str | None = None
     process_name: str | None = None
     service_name: str | None = None
     badchars: set[int] = field(default_factory=lambda: {0x00})

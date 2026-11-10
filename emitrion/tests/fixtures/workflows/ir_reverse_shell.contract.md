@@ -6,7 +6,7 @@ Generated from manifest.
 
 # Stack Layout
 
-Frame: `mov ebp, esp` / `sub esp, 0x300` (0x300 bytes reserved)
+Frame: `mov ebp, esp` / `sub esp, 0x400` (0x400 bytes reserved)
 
 ## Export Context (reserved - do not allocate)
 
@@ -50,17 +50,17 @@ Frame: `mov ebp, esp` / `sub esp, 0x300` (0x300 bytes reserved)
 
 | Offset | Structure | Size |
 |--------|-----------|------|
-| `[ebp-0xc4]` | STARTUPINFOA | 0x44 |
-| `[ebp-0xd4]` | PROCESS_INFORMATION | 0x10 |
-| `[ebp-0x264]` | WSADATA | 0x190 |
-| `[ebp-0x274]` | sockaddr_in | 0x10 |
+| `[ebp-0x144]` | STARTUPINFOA | 0x44 |
+| `[ebp-0x154]` | PROCESS_INFORMATION | 0x10 |
+| `[ebp-0x2e4]` | WSADATA | 0x190 |
+| `[ebp-0x2f4]` | sockaddr_in | 0x10 |
 
 ## Strings
 
 | Offset | Label | Value | Size |
 |--------|-------|-------|------|
-| `[ebp-0x27c]` | cmd | cmd.exe | 8 |
-| `[ebp-0x288]` | ws2_dll | ws2_32.dll | 12 |
+| `[ebp-0x2fc]` | cmd | cmd.exe | 8 |
+| `[ebp-0x308]` | ws2_dll | ws2_32.dll | 12 |
 
 ---
 
@@ -340,70 +340,70 @@ dd ebp-0x3c L1    ; ExitProcess
 
 ### STARTUPINFOA (0x44 bytes)
 
-Base address: `ebp-0xc4`
+Base address: `ebp-0x144`
 
 ```
-dd ebp-0xc4 L8    ; first 8 dwords
-db ebp-0xc4 L20    ; raw bytes
+dd ebp-0x144 L8    ; first 8 dwords
+db ebp-0x144 L20    ; raw bytes
 ```
 
 Key fields:
 
-- `dd ebp-0xc4 L1`  cb (+0x00)
-- `dd ebp-0x98 L1`  dwFlags (+0x2c)
-- `dd ebp-0x8c L1`  hStdInput (+0x38)
-- `dd ebp-0x88 L1`  hStdOutput (+0x3c)
-- `dd ebp-0x84 L1`  hStdError (+0x40)
+- `dd ebp-0x144 L1`  cb (+0x00)
+- `dd ebp-0x118 L1`  dwFlags (+0x2c)
+- `dd ebp-0x10c L1`  hStdInput (+0x38)
+- `dd ebp-0x108 L1`  hStdOutput (+0x3c)
+- `dd ebp-0x104 L1`  hStdError (+0x40)
 
 ### PROCESS_INFORMATION (0x10 bytes)
 
-Base address: `ebp-0xd4`
+Base address: `ebp-0x154`
 
 ```
-dd ebp-0xd4 L4    ; first 4 dwords
-db ebp-0xd4 L10    ; raw bytes
+dd ebp-0x154 L4    ; first 4 dwords
+db ebp-0x154 L10    ; raw bytes
 ```
 
 Key fields:
 
-- `dd ebp-0xd4 L1`  hProcess (+0x00)
-- `dd ebp-0xd0 L1`  hThread (+0x04)
-- `dd ebp-0xcc L1`  dwProcessId (+0x08)
-- `dd ebp-0xc8 L1`  dwThreadId (+0x0c)
+- `dd ebp-0x154 L1`  hProcess (+0x00)
+- `dd ebp-0x150 L1`  hThread (+0x04)
+- `dd ebp-0x14c L1`  dwProcessId (+0x08)
+- `dd ebp-0x148 L1`  dwThreadId (+0x0c)
 
 ### WSADATA (0x190 bytes)
 
-Base address: `ebp-0x264`
+Base address: `ebp-0x2e4`
 
 ```
-dd ebp-0x264 L8    ; first 8 dwords
-db ebp-0x264 L20    ; raw bytes
+dd ebp-0x2e4 L8    ; first 8 dwords
+db ebp-0x2e4 L20    ; raw bytes
 ```
 
 ### sockaddr_in (0x10 bytes)
 
-Base address: `ebp-0x274`
+Base address: `ebp-0x2f4`
 
 ```
-dd ebp-0x274 L4    ; first 4 dwords
-db ebp-0x274 L10    ; raw bytes
+dd ebp-0x2f4 L4    ; first 4 dwords
+db ebp-0x2f4 L10    ; raw bytes
 ```
 
 Key fields:
 
-- `db ebp-0x274 L2`  sin_family (+0x00)
-- `db ebp-0x272 L2`  sin_port (+0x02)
-- `dd ebp-0x270 L1`  sin_addr (+0x04)
-- `dd ebp-0x26c L1`  sin_zero (+0x08)
+- `db ebp-0x2f4 L2`  sin_family (+0x00)
+- `db ebp-0x2f2 L2`  sin_port (+0x02)
+- `dd ebp-0x2f0 L1`  sin_addr (+0x04)
+- `dd ebp-0x2ec L1`  sin_zero (+0x08)
 
 ## Inspect Stack Strings
 
 ```
-da ebp-0x27c    ; cmd
+da ebp-0x2fc    ; cmd
 ```
 
 ```
-da ebp-0x288    ; ws2_dll
+da ebp-0x308    ; ws2_dll
 ```
 
 ## Breakpoint Strategy

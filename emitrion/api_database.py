@@ -419,6 +419,25 @@ API_DATABASE: dict[str, APIRecord] = {
             Argument("lpBuffer", "LPSTR", "pointer to buffer that receives temp path"),
         ],
     ),
+    # --- kernel32.dll : string ---
+    "lstrcpyA": APIRecord(
+        module="kernel32.dll",
+        category="string",
+        prototype="LPSTR lstrcpyA(LPSTR lpString1, LPCSTR lpString2)",
+        arguments=[
+            Argument("lpString1", "LPSTR", "destination buffer"),
+            Argument("lpString2", "LPCSTR", "source string"),
+        ],
+    ),
+    "lstrcatA": APIRecord(
+        module="kernel32.dll",
+        category="string",
+        prototype="LPSTR lstrcatA(LPSTR lpString1, LPCSTR lpString2)",
+        arguments=[
+            Argument("lpString1", "LPSTR", "destination buffer (appended to)"),
+            Argument("lpString2", "LPCSTR", "string to append"),
+        ],
+    ),
     # --- ws2_32.dll : network ---
     "WSAStartup": APIRecord(
         module="ws2_32.dll",
@@ -814,6 +833,11 @@ STRUCT_DATABASE: dict[str, StructRecord] = {
         alignment=4,
         fields=[],
     ),
+    "CHAR_BUFFER_260": StructRecord(
+        size=0x104,
+        alignment=4,
+        fields=[],
+    ),
 }
 
 
@@ -857,6 +881,11 @@ STRUCT_DATABASE_X64: dict[str, StructRecord] = {
     ),
     "CHAR_BUFFER_128": StructRecord(
         size=0x80,
+        alignment=8,
+        fields=[],
+    ),
+    "CHAR_BUFFER_260": StructRecord(
+        size=0x108,
         alignment=8,
         fields=[],
     ),

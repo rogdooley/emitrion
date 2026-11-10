@@ -24,6 +24,9 @@ CANONICAL_TEMPLATES = {
     "ir_check_path",
     "ir_get_username",
     "ir_http_download",
+    "ir_copy_to_userdir",
+    "ir_move_to_userdir",
+    "ir_http_download_to_userdir",
 }
 
 _VALID_TEMPLATES = CANONICAL_TEMPLATES

@@ -16,7 +16,7 @@ MODULE_BASE_START = 0x20
 
 # Hard constant: struct zone always starts here regardless of how many API/module slots exist.
 # Intentional gap allows adding API slots without shifting struct offsets.
-STRUCT_ZONE_START = 0x80
+STRUCT_ZONE_START = 0x100
 
 
 def _ceil4(n: int) -> int:

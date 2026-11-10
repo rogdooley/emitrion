@@ -865,6 +865,10 @@ def main() -> None:
     parser.add_argument("--service-name", default=None,
                         help="Service name for service_persist template")
     parser.add_argument("--url", default=None, help="URL for http_download template")
+    parser.add_argument("--path-prefix", default=None,
+                        help=r"Path prefix for userdir templates (e.g. C:\Users\)")
+    parser.add_argument("--path-suffix", default=None,
+                        help=r"Path suffix for userdir templates (e.g. \Desktop\payload.exe)")
     parser.add_argument("--payload-file", default=None, metavar="PATH",
                         help="Local file being served; sets VirtualAlloc size "
                              "to match (rounded up to page boundary)")
@@ -926,6 +930,8 @@ def main() -> None:
         url=args.url,
         url_path=url_path,
         alloc_size=alloc_size,
+        path_prefix=args.path_prefix,
+        path_suffix=args.path_suffix,
         process_name=args.process_name,
         service_name=args.service_name,
         exit_strategy=args.exit_strategy,

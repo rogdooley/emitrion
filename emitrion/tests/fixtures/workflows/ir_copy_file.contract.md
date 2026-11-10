@@ -6,7 +6,7 @@ Generated from manifest.
 
 # Stack Layout
 
-Frame: `mov ebp, esp` / `sub esp, 0x100` (0x100 bytes reserved)
+Frame: `mov ebp, esp` / `sub esp, 0x200` (0x200 bytes reserved)
 
 ## Export Context (reserved - do not allocate)
 
@@ -46,8 +46,8 @@ _No structures._
 
 | Offset | Label | Value | Size |
 |--------|-------|-------|------|
-| `[ebp-0x94]` | src_path | C:\OSED\source.txt | 20 |
-| `[ebp-0xa8]` | dst_path | C:\OSED\output.txt | 20 |
+| `[ebp-0x114]` | src_path | C:\OSED\source.txt | 20 |
+| `[ebp-0x128]` | dst_path | C:\OSED\output.txt | 20 |
 
 ---
 
@@ -174,11 +174,11 @@ dd ebp-0x28 L1    ; ExitProcess
 ## Inspect Stack Strings
 
 ```
-da ebp-0x94    ; src_path
+da ebp-0x114    ; src_path
 ```
 
 ```
-da ebp-0xa8    ; dst_path
+da ebp-0x128    ; dst_path
 ```
 
 ## Breakpoint Strategy

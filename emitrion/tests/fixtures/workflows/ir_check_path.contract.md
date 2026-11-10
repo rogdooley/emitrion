@@ -6,7 +6,7 @@ Generated from manifest.
 
 # Stack Layout
 
-Frame: `mov ebp, esp` / `sub esp, 0x100` (0x100 bytes reserved)
+Frame: `mov ebp, esp` / `sub esp, 0x200` (0x200 bytes reserved)
 
 ## Export Context (reserved - do not allocate)
 
@@ -46,7 +46,7 @@ _No structures._
 
 | Offset | Label | Value | Size |
 |--------|-------|-------|------|
-| `[ebp-0x9c]` | check_path | C:\Windows\System32\cmd.exe | 28 |
+| `[ebp-0x11c]` | check_path | C:\Windows\System32\cmd.exe | 28 |
 
 ---
 
@@ -176,7 +176,7 @@ dd ebp-0x28 L1    ; ExitProcess
 ## Inspect Stack Strings
 
 ```
-da ebp-0x9c    ; check_path
+da ebp-0x11c    ; check_path
 ```
 
 ## Breakpoint Strategy

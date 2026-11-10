@@ -6,7 +6,7 @@ Generated from manifest.
 
 # Stack Layout
 
-Frame: `mov ebp, esp` / `sub esp, 0x100` (0x100 bytes reserved)
+Frame: `mov ebp, esp` / `sub esp, 0x200` (0x200 bytes reserved)
 
 ## Export Context (reserved - do not allocate)
 
@@ -46,7 +46,7 @@ _No structures._
 
 | Offset | Label | Value | Size |
 |--------|-------|-------|------|
-| `[ebp-0x8c]` | cmd | calc.exe | 12 |
+| `[ebp-0x10c]` | cmd | calc.exe | 12 |
 
 ---
 
@@ -167,7 +167,7 @@ dd ebp-0x28 L1    ; ExitProcess
 ## Inspect Stack Strings
 
 ```
-da ebp-0x8c    ; cmd
+da ebp-0x10c    ; cmd
 ```
 
 ## Breakpoint Strategy

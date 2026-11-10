@@ -48,14 +48,14 @@ Frame: `mov ebp, esp` / `sub esp, 0x200` (0x200 bytes reserved)
 
 | Offset | Structure | Size |
 |--------|-----------|------|
-| `[ebp-0x100]` | CHAR_BUFFER_128 | 0x80 |
+| `[ebp-0x180]` | CHAR_BUFFER_128 | 0x80 |
 
 ## Strings
 
 | Offset | Label | Value | Size |
 |--------|-------|-------|------|
-| `[ebp-0x110]` | advapi_dll | advapi32.dll | 16 |
-| `[ebp-0x118]` | cmd | cmd.exe | 8 |
+| `[ebp-0x190]` | advapi_dll | advapi32.dll | 16 |
+| `[ebp-0x198]` | cmd | cmd.exe | 8 |
 
 ---
 
@@ -243,21 +243,21 @@ dd ebp-0x34 L1    ; ExitProcess
 
 ### CHAR_BUFFER_128 (0x80 bytes)
 
-Base address: `ebp-0x100`
+Base address: `ebp-0x180`
 
 ```
-dd ebp-0x100 L8    ; first 8 dwords
-db ebp-0x100 L20    ; raw bytes
+dd ebp-0x180 L8    ; first 8 dwords
+db ebp-0x180 L20    ; raw bytes
 ```
 
 ## Inspect Stack Strings
 
 ```
-da ebp-0x110    ; advapi_dll
+da ebp-0x190    ; advapi_dll
 ```
 
 ```
-da ebp-0x118    ; cmd
+da ebp-0x198    ; cmd
 ```
 
 ## Breakpoint Strategy

