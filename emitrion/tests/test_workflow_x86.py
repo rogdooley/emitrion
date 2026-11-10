@@ -6,13 +6,23 @@ import pytest
 from emitrion.payload_templates.base import TemplateConfig
 from emitrion.workflow.ir import (
     Block,
+    CallBuffer,
+    ExitStrategy,
     Immediate,
+    Jump,
+    Terminate,
     Workflow,
     WriteStructField,
     ZeroStruct,
 )
-from emitrion.workflow.ir import ExitStrategy
 from emitrion.workflow.reference import (
+    IRCheckPathTemplate,
+    IRCopyFileTemplate,
+    IRCopyThenRunTemplate,
+    IRGetUsernameTemplate,
+    IRHttpDownloadTemplate,
+    IRMoveFileTemplate,
+    IRMoveThenRunTemplate,
     WorkflowTemplate,
     build_bind_shell_workflow,
     build_check_path_workflow,
@@ -24,13 +34,6 @@ from emitrion.workflow.reference import (
     build_move_then_run_workflow,
     build_reverse_shell_workflow,
     build_run_command_workflow,
-    IRCheckPathTemplate,
-    IRCopyFileTemplate,
-    IRCopyThenRunTemplate,
-    IRGetUsernameTemplate,
-    IRHttpDownloadTemplate,
-    IRMoveFileTemplate,
-    IRMoveThenRunTemplate,
 )
 
 
@@ -1095,8 +1098,8 @@ class TestExitStrategyAssembly:
         assert "0xffffffff" in result.asm.lower()
 
     def test_thread_only_hangs_without_exit_call(self, manifest_dir, monkeypatch):
+
         from emitrion.build import build
-        import re
         monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
         config = TemplateConfig(
             src_path=r"C:\a.txt",
@@ -1361,3 +1364,83 @@ class TestHttpDownloadEndToEnd:
         assert result.asm
         assert result.contract_md
         assert "wininet.dll" in result.asm
+
+
+# ---------------------------------------------------------------------------
+# CallBuffer IR node lowering (x86)
+# ---------------------------------------------------------------------------
+
+
+class TestCallBufferLowering:
+    def test_call_buffer_emits_jmp(self):
+        from emitrion.stack_alloc import Slot, StackLayout
+        from emitrion.workflow.x86_backend import _LoweringContext
+
+        layout = StackLayout([
+            Slot(name="virt_buf", offset=0x90, size=4, category="variable"),
+        ])
+        ctx = _LoweringContext(layout, set(), None)
+        op = CallBuffer("virt_buf")
+        lines = ctx._lower_call_buffer(op)
+        asm = "\n".join(lines)
+        assert "jmp  eax" in asm
+        assert "virt_buf" in asm
+
+    def test_call_buffer_loads_from_stack(self):
+        from emitrion.stack_alloc import Slot, StackLayout
+        from emitrion.workflow.x86_backend import _LoweringContext
+
+        layout = StackLayout([
+            Slot(name="buf", offset=0x88, size=4, category="variable"),
+        ])
+        ctx = _LoweringContext(layout, set(), None)
+        op = CallBuffer("buf")
+        lines = ctx._lower_call_buffer(op)
+        asm = "\n".join(lines)
+        assert "ebp" in asm
+        assert "jmp  eax" in asm
+
+    def test_call_buffer_is_terminal(self):
+        from emitrion.workflow.x86_backend import _is_terminal
+
+        block = Block("exec", (
+            CallBuffer("buf"),
+        ))
+        assert _is_terminal(block) is True
+
+    def test_terminate_still_terminal(self):
+        from emitrion.workflow.x86_backend import _is_terminal
+
+        block = Block("done", (
+            Terminate(),
+        ))
+        assert _is_terminal(block) is True
+
+    def test_non_terminal_block(self):
+        from emitrion.workflow.x86_backend import _is_terminal
+        from emitrion.workflow.ir import Jump
+
+        block = Block("mid", (
+            Jump("next"),
+        ))
+        assert _is_terminal(block) is False
+
+    def test_call_buffer_in_full_workflow(self):
+        from emitrion.stack_alloc import Slot, StackLayout
+        from emitrion.workflow.x86_backend import lower_workflow
+
+        layout = StackLayout([
+            Slot(name="buf", offset=0x88, size=4, category="variable"),
+        ])
+        w = Workflow(
+            name="stager_test",
+            entry="entry",
+            blocks=(
+                Block("entry", (
+                    CallBuffer("buf"),
+                )),
+            ),
+        )
+        asm = lower_workflow(w, layout, {0x00})
+        assert "jmp  eax" in asm
+        assert "wf_entry:" in asm

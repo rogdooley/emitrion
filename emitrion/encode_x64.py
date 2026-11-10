@@ -95,16 +95,19 @@ _SCRATCH_MAP = {
 }
 
 
-_REG_FAMILY = {}
-for _r64, _r32 in _R64_TO_R32.items():
-    _REG_FAMILY[_r64] = _r64
-    _REG_FAMILY[_r32] = _r64
-for _r64, _w in {
-    "rax": "ax", "rbx": "bx", "rcx": "cx", "rdx": "dx",
-    "rsi": "si", "rdi": "di", "rbp": "bp", "rsp": "sp",
-    "r8": "r8w", "r9": "r9w", "r10": "r10w", "r11": "r11w",
-}.items():
-    _REG_FAMILY[_w] = _r64
+_REG_FAMILY = {
+    reg: r64
+    for r64, r32 in _R64_TO_R32.items()
+    for reg in (r64, r32)
+}
+_REG_FAMILY.update({
+    word: r64
+    for r64, word in {
+        "rax": "ax", "rbx": "bx", "rcx": "cx", "rdx": "dx",
+        "rsi": "si", "rdi": "di", "rbp": "bp", "rsp": "sp",
+        "r8": "r8w", "r9": "r9w", "r10": "r10w", "r11": "r11w",
+    }.items()
+})
 
 
 def _reg_to_r64(reg: str) -> str:

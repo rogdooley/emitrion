@@ -15,11 +15,7 @@ import pytest
 
 from emitrion.api_database import API_DATABASE, STRUCT_DATABASE, STRUCT_DATABASE_X64
 from emitrion.encode_x64 import (
-    encode_dword_into_r64,
-    encode_qword,
-    safe_call_mem_x64,
     safe_dword_store_x64,
-    safe_lea_x64,
     safe_mem_load_x64,
     safe_qword_store,
     safe_word_store_x64,
@@ -28,26 +24,21 @@ from emitrion.payload_templates.base import TemplateConfig
 from emitrion.schema import Manifest, StringEntry, VariableEntry
 from emitrion.stack_alloc_x64 import (
     SHADOW_SPACE,
-    STRUCT_ZONE_START_X64,
     StackLayoutX64,
     build_layout_x64,
 )
 from emitrion.workflow.ir import (
     AddressOf,
-    AllocateLocal,
     AllocateStruct,
     Block,
     CallAPI,
     Compare,
     ConstructString,
-    DefineConstant,
     Immediate,
     Input,
-    Jump,
     NameRef,
     SuccessPredicate,
     Terminate,
-    TerminateStyle,
     Workflow,
     WriteStructField,
     ZeroStruct,
@@ -80,8 +71,8 @@ def _make_manifest(
 
 def _auto_layout_x64(workflow_builder, config, **kwargs):
     """Build layout by probing a workflow, matching build pipeline behavior."""
-    from emitrion.workflow.reference import WorkflowTemplate
     from emitrion.api_database import MODULE_LOAD_ORDER
+    from emitrion.workflow.reference import WorkflowTemplate
 
     w = workflow_builder() if callable(workflow_builder) else workflow_builder
     tmpl = WorkflowTemplate(w)
@@ -315,7 +306,6 @@ class TestABITenArgs:
     """CreateProcessA (10 args): first 4 in regs, last 6 on stack."""
 
     def test_ten_arg_createprocessa(self) -> None:
-        from emitrion.workflow.ir import AddressOf
 
         w = Workflow(
             name="test_ten_args",
@@ -628,7 +618,7 @@ class TestPositionIndependence:
         asm = compose_asm_x64(m, layout, "test.yaml")
         for line in asm.split("\n"):
             stripped = line.strip()
-            if stripped.startswith("jmp") or stripped.startswith("call"):
+            if stripped.startswith(("jmp", "call")):
                 assert "0x" not in stripped or "qword ptr" in stripped or "short" in stripped, (
                     f"Potentially absolute jump/call: {stripped}"
                 )
@@ -711,8 +701,8 @@ class TestHashComputation:
         assert "ror  edx, 0x0d" in stubs.lower()
 
     def test_hash_values_match(self) -> None:
-        from emitrion.hash_gen import ror13
         from emitrion.build_x64 import _emit_api_resolution_x64
+        from emitrion.hash_gen import ror13
         m = _make_manifest(functions=["WinExec"])
         layout = build_layout_x64(m)
         asm = _emit_api_resolution_x64(m, layout, "kernel32.dll")
@@ -785,17 +775,10 @@ class TestScratchRegisterConflict:
         This is the primary collision site: _emit_strings_x64 calls
         safe_dword_store_x64("rsp", offset, "r11d", bc) where offset may have badchars.
         """
-        from emitrion.build_x64 import _emit_strings_x64
-        m = _make_manifest(
-            functions=["WinExec"],
-            strings=[("cmd", "calc.exe")],
-            badchars={0x0A},
-        )
         # Force a string offset that contains 0x0A
         # We can't control the exact offset, but we can test the encoding functions
         # are safe when called with r11 source
         lines = safe_dword_store_x64("rsp", 0x10A, "r11d", {0x0A})
-        asm = "\n".join(lines)
         assert len(lines) > 1
 
 
@@ -895,6 +878,7 @@ class TestWorkflowE2EBuildPipeline:
 
     def test_run_command_e2e(self) -> None:
         import pathlib
+
         from emitrion.build_x64 import build_x64
         path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "run_command_x64.yaml")
         result = build_x64(path, assemble=False)
@@ -906,6 +890,7 @@ class TestWorkflowE2EBuildPipeline:
 
     def test_revshell_e2e(self) -> None:
         import pathlib
+
         from emitrion.build_x64 import build_x64
         path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
         result = build_x64(path, assemble=False)
@@ -939,6 +924,7 @@ class TestP0_2_DLLLoaderNoRSPMutation:
 
     def test_no_push_in_dll_load(self) -> None:
         import pathlib
+
         from emitrion.build_x64 import build_x64
         path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
         result = build_x64(path, assemble=False)
@@ -951,6 +937,7 @@ class TestP0_2_DLLLoaderNoRSPMutation:
 
     def test_dll_load_uses_string_slot(self) -> None:
         import pathlib
+
         from emitrion.build_x64 import build_x64
         path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
         result = build_x64(path, assemble=False)
@@ -960,6 +947,7 @@ class TestP0_2_DLLLoaderNoRSPMutation:
 
     def test_no_add_rsp_cleanup(self) -> None:
         import pathlib
+
         from emitrion.build_x64 import build_x64
         path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
         result = build_x64(path, assemble=False)
@@ -1006,6 +994,7 @@ class TestP0_4_PostAssemblyBadcharValidation:
 
     def test_badchar_check_runs_without_keystone(self) -> None:
         import pathlib
+
         from emitrion.build_x64 import build_x64
         path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "run_command_x64.yaml")
         result = build_x64(path, assemble=False)
@@ -1121,8 +1110,7 @@ class TestP0_3_SemanticRegisterTrace:
                 r32 = {"rcx": "ecx", "rdx": "edx", "r8": "r8d", "r9": "r9d"}[reg]
                 for instr in ("mov", "xor", "lea"):
                     for r in (reg, r32):
-                        if stripped.startswith(f"{instr}  {r},") or \
-                           stripped.startswith(f"{instr}  {r} ,"):
+                        if stripped.startswith((f"{instr}  {r},", f"{instr}  {r} ,")):
                             pytest.fail(
                                 f"{reg} overwritten at line {j} after "
                                 f"setup at line {write_line}: {stripped}"
@@ -1170,6 +1158,7 @@ class TestP1_4_NoDuplicateStructInit:
 
     def test_workflow_skips_compose_struct_init(self) -> None:
         import pathlib
+
         from emitrion.build_x64 import build_x64
         path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
         result = build_x64(path, assemble=False)
@@ -1180,13 +1169,13 @@ class TestP1_5_SignedImmediateHandling:
     """P1-5: Immediate(-1) must produce 64-bit 0xFFFFFFFFFFFFFFFF."""
 
     def test_negative_one_uses_qword(self) -> None:
-        from emitrion.workflow.x64_backend import _LoweringContextX64
         from emitrion.workflow.ir import Immediate
+        from emitrion.workflow.x64_backend import _LoweringContextX64
 
         m = _make_manifest(functions=["WinExec"])
         layout = build_layout_x64(m)
         ctx = _LoweringContextX64(layout, {0x00}, None)
-        lines, reg = ctx._resolve_value(Immediate(-1), "rax")
+        lines, _ = ctx._resolve_value(Immediate(-1), "rax")
         asm = "\n".join(lines)
         assert "0x" in asm
         val_strs = re.findall(r"0x([0-9a-f]+)", asm)
@@ -1194,12 +1183,12 @@ class TestP1_5_SignedImmediateHandling:
         assert "ffffffffffffffff" in combined or len(combined) > 8
 
     def test_positive_fits_32bit(self) -> None:
-        from emitrion.workflow.x64_backend import _LoweringContextX64
         from emitrion.workflow.ir import Immediate
+        from emitrion.workflow.x64_backend import _LoweringContextX64
 
         m = _make_manifest(functions=["WinExec"])
         layout = build_layout_x64(m)
         ctx = _LoweringContextX64(layout, set(), None)
-        lines, reg = ctx._resolve_value(Immediate(0x100), "rax")
+        lines, _ = ctx._resolve_value(Immediate(0x100), "rax")
         asm = "\n".join(lines)
         assert "eax" in asm

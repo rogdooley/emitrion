@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import pytest
 
-from ..schema import load
+from ..arch import Arch, CallingConvention, TargetOS
+from ..build_common import _apply_config_overrides
+from ..payload_templates.base import TemplateConfig
+from ..schema import Manifest, StringEntry, load
 
 
 def test_load_revshell(manifest_dir):
@@ -22,6 +25,45 @@ def test_load_calc(manifest_dir):
     assert m.strings[0].label == "cmd"
     assert m.strings[0].value == "calc.exe"
     assert m.strings[0].method == "mov"
+
+
+def test_manifest_defaults_to_windows_x86_target(manifest_dir):
+    manifest = load(str(manifest_dir / "calc.yaml"))
+
+    assert manifest.target.os is TargetOS.WINDOWS
+    assert manifest.target.arch is Arch.X86
+    assert manifest.target.calling_convention is CallingConvention.WINDOWS_X86_STDCALL
+
+
+def test_manifest_x64_target_selects_windows_x64_abi(tmp_path):
+    manifest_file = tmp_path / "x64.yaml"
+    manifest_file.write_text("arch: x64\nbadchars: ['00']\nfunctions: []\nstrings: []\n")
+
+    manifest = load(str(manifest_file))
+
+    assert manifest.target.arch is Arch.X64
+    assert manifest.target.calling_convention is CallingConvention.WINDOWS_X64
+
+
+def test_recognized_but_unsupported_target_os_is_rejected(tmp_path):
+    manifest_file = tmp_path / "linux.yaml"
+    manifest_file.write_text("os: linux\nbadchars: ['00']\nfunctions: []\nstrings: []\n")
+
+    with pytest.raises(ValueError, match="not supported yet"):
+        load(str(manifest_file))
+
+
+def test_manifest_target_survives_config_override():
+    manifest = Manifest(
+        badchars={0x00},
+        functions=[],
+        strings=[StringEntry(label="cmd", value="cmd.exe", method="push", dest="rdi")],
+        arch="x64",
+    )
+
+    rebuilt = _apply_config_overrides(manifest, TemplateConfig(command="calc.exe"))
+
+    assert rebuilt.target == manifest.target
 
 
 def test_unknown_api_raises(tmp_path):

@@ -19,6 +19,8 @@ import sys
 from datetime import UTC, datetime
 
 from .api_database import API_DATABASE, MODULE_LOAD_ORDER, STRUCT_DATABASE, STRUCT_DATABASE_X64
+from .arch import Arch
+from .build_common import BuildResult
 from .encode_x64 import (
     encode_dword_into_r64,
     safe_call_mem_x64,
@@ -1094,7 +1096,7 @@ def build_x64(
     assemble: bool = True,
     encode: bool = False,
     raw: bool = False,
-) -> "BuildResult":
+) -> BuildResult:
     """Run the full x64 build pipeline. Returns a BuildResult (same shape as x86).
 
     Mirrors build.build() but uses x64 stack allocator, x64 framework stubs,
@@ -1105,13 +1107,12 @@ def build_x64(
     pairs for immediates). Use with *encode* for smallest shellcode.
     """
     from .build_common import (
-        BuildResult,
-        _load_template,
-        _merge_template_requirements,
         _apply_config_overrides,
         _bytes_to_c,
         _bytes_to_hex_str,
         _bytes_to_py,
+        _load_template,
+        _merge_template_requirements,
     )
     from .schema import load as load_manifest
     from .stack_alloc_x64 import build_layout_x64
@@ -1119,8 +1120,14 @@ def build_x64(
     from .workflow.reference import WorkflowTemplate
 
     manifest = load_manifest(manifest_path)
+    target = manifest.target
+    if target.arch is not Arch.X64:
+        raise ValueError(
+            f"build_x64 requires an x64 manifest; received '{target.arch.value}'"
+        )
     config = config or TemplateConfig(arch="x64")
     config.arch = "x64"
+    config.target = target
     manifest_badchars = manifest.badchars
     config.badchars = set() if raw else manifest.badchars
 
@@ -1266,7 +1273,7 @@ def main_x64() -> None:
     args = parser.parse_args()
 
     if args.run_scenario:
-        from .native_harness_x64 import run_scenario, run_all_scenarios, SCENARIOS
+        from .native_harness_x64 import SCENARIOS, run_all_scenarios, run_scenario
         if args.run_scenario == "all":
             results = run_all_scenarios()
             for r in results:
@@ -1320,7 +1327,7 @@ def main_x64() -> None:
     )
     write_outputs(result, args.out)
 
-    print(f"[+] Arch:      x64")
+    print("[+] Arch:      x64")
     print(f"[+] Generated: {args.out}/asm/generated.asm")
     print(f"[+] Debug:     {args.out}/asm/debug_runner.py")
     print(f"[+] Contract:  {args.out}/Documentation/contract.md")

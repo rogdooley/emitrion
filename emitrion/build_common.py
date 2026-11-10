@@ -20,7 +20,6 @@ from .api_database import API_DATABASE, MODULE_LOAD_ORDER, STRUCT_DATABASE
 from .payload_templates.base import PayloadTemplate, TemplateConfig
 from .schema import Manifest, StringEntry, VariableEntry
 
-
 # ---------------------------------------------------------------------------
 # Build timestamp
 # ---------------------------------------------------------------------------
@@ -382,6 +381,8 @@ def _apply_config_overrides(manifest: Manifest, config: TemplateConfig) -> Manif
         strings=new_strings,
         variables=list(manifest.variables),
         template=manifest.template,
+        arch=manifest.arch,
+        os=manifest.os,
     )
 
 
@@ -470,6 +471,8 @@ def _merge_template_requirements(
         strings=manifest.strings + new_strings,
         variables=list(manifest.variables) + new_vars,
         template=manifest.template,
+        arch=manifest.arch,
+        os=manifest.os,
     )
 
 

@@ -1,0 +1,24 @@
+# GetUserNameA + command execution - x64
+# IR workflow: GetUserNameA then WinExec with exit strategy.
+#
+# Build:
+#   uv run emitrion-x64 emitrion/manifests/x64/get_username_x64.yaml \
+#       --command "whoami" --out emitter_out/
+arch: x64
+template: ir_get_username
+badchars: ["00", "0A", "0D"]
+
+functions:
+  - LoadLibraryA
+  - GetUserNameA
+  - WinExec
+  - ExitProcess
+
+strings:
+  - label: advapi32_dll
+    value: advapi32.dll
+    method: push
+  - label: cmd
+    value: "whoami"
+    method: mov
+    dest: rdi

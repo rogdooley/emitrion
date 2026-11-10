@@ -1,8 +1,6 @@
 """Unit tests for x64 stack allocator."""
 from __future__ import annotations
 
-import pytest
-
 from emitrion.schema import Manifest, StringEntry, VariableEntry
 from emitrion.stack_alloc_x64 import (
     SHADOW_SPACE,

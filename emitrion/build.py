@@ -7,15 +7,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
-import pathlib
-import re
 import sys
 
 from emitrion.strings import emit_push, to_dwords
 
-from .api_database import API_DATABASE, MODULE_LOAD_ORDER, STRUCT_DATABASE
+from .api_database import API_DATABASE, MODULE_LOAD_ORDER
 from .api_emitter import emit_module_resolution
+from .arch import Arch
 from .build_common import (
     BuildResult,
     _apply_config_overrides,
@@ -24,30 +22,24 @@ from .build_common import (
     _bytes_to_c,
     _bytes_to_hex_str,
     _bytes_to_py,
-    _call_disp_has_badchar,
     _check_badchars,
     _generate_xor_wrapper,
     _load_template,
     _merge_template_requirements,
     _resolve_lhost,
-    _strip_comments,
+    _strip_comments,  # noqa: F401 - compatibility re-export for build consumers
     _to_keystone,
-    _to_nasm,
-    _try_assemble,
-    _try_assemble_keystone,
-    _try_assemble_nasm,
-    _validate_badchars,
-    _write_text,
+    _to_nasm,  # noqa: F401 - compatibility re-export for build consumers
+    _write_text,  # noqa: F401 - compatibility re-export for build consumers
     write_outputs,
 )
 from .doc_gen import emit_full_contract_md
 from .payload_templates.base import PayloadTemplate, TemplateConfig
-from .schema import Manifest, StringEntry, VariableEntry
+from .schema import Manifest
 from .schema import load as load_manifest
 from .stack_alloc import StackLayout, build_layout
 from .string_emitter import emit_all_strings
 from .structure_emitter import emit_all_structures
-
 
 # ---------------------------------------------------------------------------
 # Framework stubs - PEB-walk and export-resolution routines.
@@ -767,7 +759,8 @@ def build(
     from .xor_encoder import xor_encode
 
     manifest = load_manifest(manifest_path)
-    if manifest.arch == "x64":
+    target = manifest.target
+    if target.arch is Arch.X64:
         from .build_x64 import build_x64 as _build_x64
         return _build_x64(
             manifest_path, template_name=template_name,
@@ -775,6 +768,8 @@ def build(
             encode=encode, raw=raw,
         )
     config = config or TemplateConfig()
+    config.target = target
+    config.arch = target.arch.value
     manifest_badchars = manifest.badchars
     config.badchars = set() if raw else manifest.badchars
     manifest = _apply_config_overrides(manifest, config)

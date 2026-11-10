@@ -1,8 +1,6 @@
 """Unit tests for x64 badchar-safe encoding module."""
 from __future__ import annotations
 
-import pytest
-
 from emitrion.encode_x64 import (
     encode_dword_into_r64,
     encode_qword,

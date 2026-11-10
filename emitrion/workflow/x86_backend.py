@@ -33,6 +33,7 @@ from .ir import (
     AllocateStruct,
     Block,
     CallAPI,
+    CallBuffer,
     Compare,
     ConstructString,
     DefineConstant,
@@ -113,8 +114,8 @@ def lower_workflow(
 
 
 def _is_terminal(block: Block) -> bool:
-    """True if the block ends control flow with a Terminate op."""
-    return any(isinstance(op, Terminate) for op in block.operations)
+    """True if the block ends control flow with a Terminate or CallBuffer op."""
+    return any(isinstance(op, (Terminate, CallBuffer)) for op in block.operations)
 
 
 class _LoweringContext:
@@ -175,6 +176,9 @@ class _LoweringContext:
 
         if isinstance(op, Terminate):
             return self._lower_terminate(op)
+
+        if isinstance(op, CallBuffer):
+            return self._lower_call_buffer(op)
 
         return [f"    ; unhandled: {type(op).__name__}"]
 
@@ -388,6 +392,15 @@ class _LoweringContext:
             lines.append(f"    jns  wf_{op.true_block}")
             lines.append(f"    jmp  wf_{op.false_block}")
 
+        return lines
+
+    def _lower_call_buffer(self, op: CallBuffer) -> list[str]:
+        """Lower a CallBuffer to load the buffer address and jump to it."""
+        lines: list[str] = []
+        offset = -self.layout.slot(op.name).offset
+        lines.append(f"    ; jump to buffer '{op.name}'")
+        lines.extend(safe_mem_load("eax", "ebp", offset, self.bc))
+        lines.append("    jmp  eax")
         return lines
 
     def _lower_terminate(self, op: Terminate) -> list[str]:

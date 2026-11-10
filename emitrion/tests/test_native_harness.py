@@ -15,15 +15,14 @@ import sys
 import pytest
 
 from emitrion.native_harness_x64 import (
+    _WORKER_SCRIPT,
     EXCEPTION_NAMES,
     SCENARIOS,
     ExecutionResult,
     ExecutionStatus,
     HarnessConfig,
-    _WORKER_SCRIPT,
     execute_shellcode,
 )
-
 
 # ---------------------------------------------------------------------------
 # HarnessConfig validation
@@ -200,7 +199,7 @@ class TestExceptionNames:
             assert isinstance(code, int)
             assert code > 0
             assert isinstance(name, str)
-            assert name.startswith("EXCEPTION_") or name.startswith("DBG_")
+            assert name.startswith(("EXCEPTION_", "DBG_"))
 
 
 # ---------------------------------------------------------------------------

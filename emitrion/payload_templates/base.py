@@ -4,6 +4,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+from ..arch import Arch, TargetSpec
+
 
 @dataclass
 class TemplateConfig:
@@ -26,6 +28,12 @@ class TemplateConfig:
     badchars: set[int] = field(default_factory=lambda: {0x00})
     exit_strategy: str = "exit_process"
     arch: str = "x86"
+    target: TargetSpec | None = None
+
+    @property
+    def effective_target(self) -> TargetSpec:
+        """Return the typed target, deriving it for legacy arch-only callers."""
+        return self.target or TargetSpec.from_values("windows", self.arch)
 
 
 class PayloadTemplate(ABC):
@@ -51,7 +59,7 @@ class PayloadTemplate(ABC):
         """Discover which slot names emit() references by running it
         against a RecordingLayout.  Returns names in first-access order.
         """
-        if config.arch == "x64":
+        if config.effective_target.arch is Arch.X64:
             from ..stack_alloc_x64 import RecordingLayoutX64
             rec = RecordingLayoutX64()
         else:

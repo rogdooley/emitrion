@@ -11,9 +11,6 @@ Validates that:
 from __future__ import annotations
 
 import pathlib
-import sys
-
-import pytest
 
 from emitrion.build import build, write_outputs
 from emitrion.build_x64 import build_x64, generate_xor_wrapper
@@ -81,12 +78,12 @@ class TestRawPreservesManifestBadchars:
 
     def test_x86_raw_config_badchars_empty(self) -> None:
         config = TemplateConfig()
-        result = build(X86_MANIFEST, config=config, assemble=False, raw=True)
+        build(X86_MANIFEST, config=config, assemble=False, raw=True)
         assert config.badchars == set()
 
     def test_x64_raw_config_badchars_empty(self) -> None:
         config = TemplateConfig(arch="x64")
-        result = build_x64(X64_MANIFEST, config=config, assemble=False, raw=True)
+        build_x64(X64_MANIFEST, config=config, assemble=False, raw=True)
         assert config.badchars == set()
 
 
@@ -202,7 +199,7 @@ class TestGenerateXorWrapper:
         compile(w, "<gen_single>", "exec")
 
     def test_broad_badchars(self) -> None:
-        broad = set(range(0x00, 0x20)) | {0x7F, 0xFF}
+        broad = set(range(0x20)) | {0x7F, 0xFF}
         w = generate_xor_wrapper(arch="x64", badchars=broad)
         compile(w, "<gen_broad>", "exec")
 

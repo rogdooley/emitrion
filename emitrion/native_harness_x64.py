@@ -53,12 +53,12 @@ import sys
 import tempfile
 import textwrap
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 
 
-class ExecutionStatus(str, Enum):
+class ExecutionStatus(str, Enum):  # noqa: UP042 - preserve legacy str() output
     SUCCESS = "success"
     TIMEOUT = "timeout"
     INDETERMINATE = "indeterminate"

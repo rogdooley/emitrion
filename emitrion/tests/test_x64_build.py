@@ -11,10 +11,9 @@ from emitrion.build_x64 import (
     _emit_stack_reserve_x64,
     _emit_strings_x64,
     _emit_struct_init_x64,
-    _emit_api_resolution_x64,
+    build_x64,
     compose_asm_x64,
     generate_debug_runner_x64,
-    build_x64,
 )
 from emitrion.payload_templates.base import TemplateConfig
 from emitrion.schema import Manifest, StringEntry, VariableEntry
@@ -92,7 +91,6 @@ class TestStackReserveX64:
 
     def test_badchar_safe(self) -> None:
         lines = _emit_stack_reserve_x64(0x0D00, {0x0D})
-        asm = "\n".join(lines)
         for line in lines:
             if "mov" in line and "0x" in line:
                 match = re.search(r"0x([0-9a-fA-F]+)", line)
@@ -245,8 +243,10 @@ class TestCLIx64:
         assert (tmp_path / "out" / "Documentation" / "contract.md").exists()
 
     def test_cli_lhost_lport_override(self, tmp_path, monkeypatch) -> None:
+        import socket as _socket
+        import struct as _struct
+
         from emitrion.build_x64 import main_x64
-        import socket as _socket, struct as _struct
         out = str(tmp_path / "out")
         monkeypatch.setattr(
             "sys.argv",

@@ -6,11 +6,13 @@ from dataclasses import dataclass, field
 import yaml
 
 from .api_database import API_DATABASE, MODULE_LOAD_ORDER
+from .arch import Arch, TargetOS, TargetSpec
 
 _VALID_METHODS = {"mov", "shiftor", "push", "xor"}
 _VALID_REGS = {"eax", "ebx", "ecx", "edx", "esi", "edi"}
 _VALID_REGS_X64 = {"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11"}
-_VALID_ARCHES = {"x86", "x64"}
+_VALID_ARCHES = {arch.value for arch in Arch}
+_VALID_TARGET_OSES = {target_os.value for target_os in TargetOS}
 CANONICAL_TEMPLATES = {
     "ir_run_command",
     "ir_reverse_shell",
@@ -48,6 +50,12 @@ class Manifest:
     variables: list[VariableEntry] = field(default_factory=list)
     template: str | None = None
     arch: str = "x86"
+    os: str = "windows"
+
+    @property
+    def target(self) -> TargetSpec:
+        """Return the typed build target represented by this manifest."""
+        return TargetSpec.from_values(self.os, self.arch)
 
 
 def load(path: str) -> Manifest:
@@ -57,7 +65,15 @@ def load(path: str) -> Manifest:
 
     errors: list[str] = []
 
-    # --- arch ---
+    # --- target ---
+    raw_os = data.get("os", "windows")
+    if raw_os not in _VALID_TARGET_OSES:
+        errors.append(f"Unknown target OS: '{raw_os}'. Available: {sorted(_VALID_TARGET_OSES)}")
+    elif raw_os != TargetOS.WINDOWS.value:
+        errors.append(
+            f"Target OS '{raw_os}' is not supported yet; only 'windows' is currently available."
+        )
+
     raw_arch = data.get("arch", "x86")
     if raw_arch not in _VALID_ARCHES:
         errors.append(f"Unknown arch: '{raw_arch}'. Available: {sorted(_VALID_ARCHES)}")
@@ -162,5 +178,5 @@ def load(path: str) -> Manifest:
 
     return Manifest(
         badchars=badchars, functions=functions, strings=strings,
-        variables=variables, template=template, arch=arch,
+        variables=variables, template=template, arch=arch, os=raw_os,
     )

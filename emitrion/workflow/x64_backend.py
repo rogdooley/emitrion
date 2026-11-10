@@ -40,6 +40,7 @@ from .ir import (
     AllocateStruct,
     Block,
     CallAPI,
+    CallBuffer,
     Compare,
     ConstructString,
     DefineConstant,
@@ -114,7 +115,7 @@ def lower_workflow_x64(
 
 
 def _is_terminal(block: Block) -> bool:
-    return any(isinstance(op, Terminate) for op in block.operations)
+    return any(isinstance(op, (Terminate, CallBuffer)) for op in block.operations)
 
 
 class _LoweringContextX64:
@@ -173,6 +174,9 @@ class _LoweringContextX64:
 
         if isinstance(op, Terminate):
             return self._lower_terminate(op)
+
+        if isinstance(op, CallBuffer):
+            return self._lower_call_buffer(op)
 
         raise ValueError(f"Unsupported IR operation for x64: {type(op).__name__}")
 
@@ -435,6 +439,15 @@ class _LoweringContextX64:
             lines.append(f"    jns  wf_{op.true_block}")
             lines.append(f"    jmp  wf_{op.false_block}")
 
+        return lines
+
+    def _lower_call_buffer(self, op: CallBuffer) -> list[str]:
+        """Lower a CallBuffer to load the buffer address and jump to it."""
+        lines: list[str] = []
+        slot = self.layout.slot(op.name)
+        lines.append(f"    ; jump to buffer '{op.name}'")
+        lines.extend(safe_mem_load_x64("rax", "rsp", slot.offset, self.bc))
+        lines.append("    jmp  rax")
         return lines
 
     def _lower_terminate(self, op: Terminate) -> list[str]:

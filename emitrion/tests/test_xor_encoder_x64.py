@@ -1,10 +1,7 @@
 """Tests for the x64 XOR encoder stub and xor_encode_x64."""
 from __future__ import annotations
 
-import pytest
-
 from emitrion.xor_encoder import (
-    EncoderResult,
     _build_stub_x64,
     _try_build_stub_x64,
     xor_encode_x64,

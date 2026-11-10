@@ -379,7 +379,7 @@ def emit_windbg_cheatsheet_md(
         lines.append(f"Base address: `ebp-{base_off:#x}`")
         lines.append("")
         dwords = min(struct_rec.size // 4, 8)
-        lines.append(f"```")
+        lines.append("```")
         lines.append(f"dd ebp-{base_off:#x} L{dwords:x}    ; first {dwords} dwords")
         lines.append(f"db ebp-{base_off:#x} L{min(struct_rec.size, 0x20):x}    ; raw bytes")
         lines.append("```")
@@ -406,7 +406,7 @@ def emit_windbg_cheatsheet_md(
         lines.append("## Inspect Stack Strings")
         lines.append("")
         for s in string_slots:
-            lines.append(f"```")
+            lines.append("```")
             lines.append(f"da ebp-{s.offset:#x}    ; {s.name}")
             lines.append("```")
             lines.append("")
@@ -419,7 +419,6 @@ def emit_windbg_cheatsheet_md(
     lines.append("")
     lines.append("```")
     for s in api_slots:
-        rec = API_DATABASE.get(s.name)
         note = ""
         if s.name == "WSAStartup":
             note = "  ; eax=0 on success"
