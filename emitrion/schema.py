@@ -27,6 +27,9 @@ CANONICAL_TEMPLATES = {
     "ir_copy_to_userdir",
     "ir_move_to_userdir",
     "ir_http_download_to_userdir",
+    "ir_url_download",
+    "ir_url_download_to_userdir",
+    "ir_registry_persistence",
 }
 
 _VALID_TEMPLATES = CANONICAL_TEMPLATES

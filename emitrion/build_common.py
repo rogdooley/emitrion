@@ -294,6 +294,9 @@ def _load_template(name: str) -> PayloadTemplate:
         "ir_copy_to_userdir": "emitrion.workflow.reference.IRCopyToUserdirTemplate",
         "ir_move_to_userdir": "emitrion.workflow.reference.IRMoveToUserdirTemplate",
         "ir_http_download_to_userdir": "emitrion.workflow.reference.IRHttpDownloadToUserdirTemplate",
+        "ir_url_download":        "emitrion.workflow.reference.IRUrlDownloadTemplate",
+        "ir_url_download_to_userdir": "emitrion.workflow.reference.IRUrlDownloadToUserdirTemplate",
+        "ir_registry_persistence": "emitrion.workflow.reference.IRRegistryPersistenceTemplate",
     }
     if name not in registry:
         raise ValueError(

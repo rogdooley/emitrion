@@ -429,6 +429,14 @@ API_DATABASE: dict[str, APIRecord] = {
             Argument("lpString2", "LPCSTR", "source string"),
         ],
     ),
+    "lstrlenA": APIRecord(
+        module="kernel32.dll",
+        category="string",
+        prototype="int lstrlenA(LPCSTR lpString)",
+        arguments=[
+            Argument("lpString", "LPCSTR", "pointer to null-terminated string"),
+        ],
+    ),
     "lstrcatA": APIRecord(
         module="kernel32.dll",
         category="string",

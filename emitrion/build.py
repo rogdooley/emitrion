@@ -869,6 +869,12 @@ def main() -> None:
                         help=r"Path prefix for userdir templates (e.g. C:\Users\)")
     parser.add_argument("--path-suffix", default=None,
                         help=r"Path suffix for userdir templates (e.g. \Desktop\payload.exe)")
+    parser.add_argument("--reg-key-path", default=None,
+                        help=r"Registry key path for persistence (e.g. Software\Microsoft\Windows\CurrentVersion\Run)")
+    parser.add_argument("--reg-value-name", default=None,
+                        help="Registry value name for persistence")
+    parser.add_argument("--exe-path", default=None,
+                        help=r"Executable path for registry persistence (e.g. C:\Users\Public\payload.exe)")
     parser.add_argument("--payload-file", default=None, metavar="PATH",
                         help="Local file being served; sets VirtualAlloc size "
                              "to match (rounded up to page boundary)")
@@ -932,6 +938,9 @@ def main() -> None:
         alloc_size=alloc_size,
         path_prefix=args.path_prefix,
         path_suffix=args.path_suffix,
+        reg_key_path=args.reg_key_path,
+        reg_value_name=args.reg_value_name,
+        exe_path=args.exe_path,
         process_name=args.process_name,
         service_name=args.service_name,
         exit_strategy=args.exit_strategy,
