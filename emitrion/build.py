@@ -35,7 +35,7 @@ from .build_common import (
 )
 from .doc_gen import emit_full_contract_md
 from .payload_templates.base import PayloadTemplate, TemplateConfig
-from .schema import Manifest
+from .schema import CANONICAL_TEMPLATES, Manifest
 from .schema import load as load_manifest
 from .stack_alloc import StackLayout, build_layout
 from .string_emitter import emit_all_strings
@@ -848,7 +848,7 @@ def main() -> None:
     parser.add_argument("manifest", help="Path to manifest YAML file")
     parser.add_argument(
         "--template",
-        choices=["ir_run_command", "ir_reverse_shell", "ir_bind_shell", "ir_copy_file", "ir_copy_then_run", "ir_move_then_run", "ir_check_path"],
+        choices=sorted(CANONICAL_TEMPLATES),
     )
     parser.add_argument("--out", default="emitter_out", help="Output directory")
     parser.add_argument("--lhost", default=None, metavar="IP|IFACE",
@@ -877,6 +877,13 @@ def main() -> None:
         "--raw", action="store_true",
         help="Skip inline badchar avoidance (smallest shellcode). "
              "Combine with --encode for whole-payload XOR encoding.",
+    )
+    parser.add_argument(
+        "--exit-strategy",
+        choices=["exit_process", "terminate_process", "thread_only"],
+        default="exit_process",
+        help="How the shellcode exits: exit_process (default), "
+             "terminate_process (uses pseudo-handle), or thread_only (hang).",
     )
 
     args = parser.parse_args()
@@ -921,6 +928,7 @@ def main() -> None:
         alloc_size=alloc_size,
         process_name=args.process_name,
         service_name=args.service_name,
+        exit_strategy=args.exit_strategy,
     )
 
     result = build(
