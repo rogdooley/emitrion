@@ -762,6 +762,7 @@ def build(
     assemble: bool = True,
     encode: bool = False,
     raw: bool = False,
+    extra_badchars: set[int] | None = None,
 ) -> BuildResult:
     """Run the full build pipeline. Returns a BuildResult.
 
@@ -775,18 +776,23 @@ def build(
     The manifest badchars are still recorded for post-assembly validation
     and XOR encoding. Use ``--raw --encode`` to produce the smallest
     shellcode with a whole-payload XOR wrapper.
+
+    *extra_badchars*, when provided, is merged into the manifest's
+    declared bad characters before the build begins.
     """
     from .scanner import scan
     from .xor_encoder import xor_encode
 
     manifest = load_manifest(manifest_path)
+    if extra_badchars:
+        manifest.badchars |= extra_badchars
     target = manifest.target
     if target.arch is Arch.X64:
         from .build_x64 import build_x64 as _build_x64
         return _build_x64(
             manifest_path, template_name=template_name,
             config=config, out_dir=out_dir, assemble=assemble,
-            encode=encode, raw=raw,
+            encode=encode, raw=raw, extra_badchars=extra_badchars,
         )
     config = config or TemplateConfig()
     config.target = target
@@ -910,6 +916,11 @@ def main() -> None:
              "Combine with --encode for whole-payload XOR encoding.",
     )
     parser.add_argument(
+        "--badchars", default=None, metavar="HEX,...",
+        help="Comma-separated hex bytes to add to the manifest badchars "
+             "(e.g. 00,0a,0d,20,25)",
+    )
+    parser.add_argument(
         "--exit-strategy",
         choices=["exit_process", "terminate_process", "thread_only"],
         default="exit_process",
@@ -967,6 +978,14 @@ def main() -> None:
         exit_strategy=args.exit_strategy,
     )
 
+    extra_badchars: set[int] | None = None
+    if args.badchars:
+        extra_badchars = set()
+        for token in args.badchars.split(","):
+            token = token.strip()
+            if token:
+                extra_badchars.add(int(token, 16))
+
     result = build(
         args.manifest,
         template_name=args.template,
@@ -975,6 +994,7 @@ def main() -> None:
         assemble=not args.no_assemble,
         encode=args.encode,
         raw=args.raw,
+        extra_badchars=extra_badchars,
     )
     write_outputs(result, args.out)
 

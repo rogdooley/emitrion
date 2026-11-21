@@ -1103,6 +1103,7 @@ def build_x64(
     assemble: bool = True,
     encode: bool = False,
     raw: bool = False,
+    extra_badchars: set[int] | None = None,
 ) -> BuildResult:
     """Run the full x64 build pipeline. Returns a BuildResult (same shape as x86).
 
@@ -1112,6 +1113,9 @@ def build_x64(
 
     When *raw* is True, inline badchar avoidance is skipped (no XOR-mask
     pairs for immediates). Use with *encode* for smallest shellcode.
+
+    *extra_badchars*, when provided, is merged into the manifest's
+    declared bad characters before the build begins.
     """
     from .build_common import (
         _apply_config_overrides,
@@ -1127,6 +1131,8 @@ def build_x64(
     from .workflow.reference import WorkflowTemplate
 
     manifest = load_manifest(manifest_path)
+    if extra_badchars:
+        manifest.badchars |= extra_badchars
     target = manifest.target
     if target.arch is not Arch.X64:
         raise ValueError(
@@ -1273,6 +1279,11 @@ def main_x64() -> None:
     parser.add_argument("--raw", action="store_true",
                         help="Skip inline badchar avoidance (smallest shellcode). "
                              "Combine with --encode for whole-payload XOR encoding.")
+    parser.add_argument(
+        "--badchars", default=None, metavar="HEX,...",
+        help="Comma-separated hex bytes to add to the manifest badchars "
+             "(e.g. 00,0a,0d,20,25)",
+    )
     parser.add_argument("--run-scenario", metavar="NAME",
                         help="Build from a named harness scenario and execute "
                              "(e.g. test_a_winexec, test_e_bind_shell, or 'all')")
@@ -1323,6 +1334,14 @@ def main_x64() -> None:
         arch="x64",
     )
 
+    extra_badchars: set[int] | None = None
+    if args.badchars:
+        extra_badchars = set()
+        for token in args.badchars.split(","):
+            token = token.strip()
+            if token:
+                extra_badchars.add(int(token, 16))
+
     result = build_x64(
         args.manifest,
         template_name=args.template,
@@ -1331,6 +1350,7 @@ def main_x64() -> None:
         assemble=not args.no_assemble,
         encode=args.encode,
         raw=args.raw,
+        extra_badchars=extra_badchars,
     )
     write_outputs(result, args.out)
 
