@@ -12,14 +12,15 @@ the Windows lab VM for execution.
 
 ```
 cd /path/to/emitera
-uv run pytest -q              # confirm 1523 pass
+uv run pytest -q              # record the result with the validation evidence
 ```
 
 ### Windows lab VM
 
 - WinDbg or x64dbg installed
 - Python 3.x with ctypes (for debug_runner.py)
-- Defender and firewall disabled (or excluded paths)
+- A documented, narrowly scoped lab policy for any security-control exclusions
+- Firewall rules limited to the isolated lab flows being tested
 - Network connectivity to the dev machine (for revshell + HTTP)
 - An SMB share or local staging directory (for copy/move tests)
 - Notepad, calc, or another harmless .exe to use as a test payload

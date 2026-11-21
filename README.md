@@ -1,172 +1,166 @@
 # Emitrion
 
-> **Status: alpha.** Emitrion is under active development and not yet stable;
-> interfaces, output, and behavior may change without notice. It grew out of
-> earlier work on the osed-toolkit emitter. As functionality stabilizes, the
-> status above and the notes below will be updated to reflect what is
-> considered reliable.
+> **Educational alpha: not ready for production or operational use.**
 >
-> **Stable:** (nothing yet)
-> **In progress:** x86 Windows backend, IR reverse shell and run-command
-> workflows, bad-character encoding, verification lane.
+> Emitrion generates and documents Windows shellcode artifacts for study in an
+> isolated lab. Its public API, generated output, supported workflows, and
+> behavior may change. Host-side tests and byte scans do **not** prove that an
+> artifact executes correctly on a native Windows target.
 
-Shellcode emitter with a typed intermediate representation, automatic
-bad-character encoding, and debugger-ready harnesses. The x86 Windows backend
-ships first; the IR is architecture-neutral by design.
+Emitrion is a typed workflow-to-assembly emitter for studying how a declared
+Windows API workflow becomes position-independent assembly, shellcode bytes,
+and reviewable documentation. It is designed for learners, educators, and
+researchers who want to inspect that chain rather than treat payload generation
+as a black box.
 
-Built for OSED certification prep: every generated payload avoids declared bad
-characters (null, CR, LF by default), and the debug runner drops straight into
-WinDbg for single-step validation.
+The project grew from OSED-oriented Windows lab work. Use it only in systems
+you own or are explicitly authorized to test, and only within an isolated lab.
 
-## Features
+## Current state
 
-- **YAML manifests** declare the payload: template, bad characters, Win32 APIs,
-  stack strings, and variables. The emitter handles the rest.
-- **Typed Workflow IR** models API call sequences as immutable, validated
-  dataclasses with control-flow branching, struct initialization, and
-  success predicates.
-- **Bad-character avoidance** across immediates, memory operands, and string
-  construction, using XOR-mask pairs or arithmetic sequences.
-- **Verification lane** generates, assembles, scans for violations, and writes
-  a JSON report, all in one command.
-- **Debug runner** is a self-contained Python script with embedded assembly that
-  assembles on the Windows VM, allocates RWX memory, prints a WinDbg
-  breakpoint address, and waits for you to attach before executing.
+| Area | Status |
+|---|---|
+| Windows x86 | Source-level alpha: manifest/IR validation, generated-artifact tests, and optional assembly/byte scans. Native Windows/WinDbg acceptance is incomplete. |
+| Windows x64 | Source-level alpha: separate ABI-aware lowering, layout, encoding, and harness paths. Native Windows x64 acceptance is incomplete. |
+| Linux and macOS | Not implemented. Manifests targeting either are rejected. |
 
-## Quick start
+The implementation has a substantial unit, lowering, and golden-artifact test
+suite, but native execution remains the release-critical evidence. Do not rely
+on generated output outside a controlled Windows lab.
 
-Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
+## What it provides
+
+- YAML manifests for target selection, bad characters, APIs, strings, and
+  workflow configuration.
+- A typed, validated Windows workflow IR with explicit control flow,
+  structures, API calls, and success predicates.
+- Windows x86 and x64 lowering paths, including ABI-appropriate stack layout
+  and API-resolution scaffolding.
+- Bad-character-aware construction plus optional whole-payload XOR encoding.
+- Generated assembly, a debugger-oriented runner, raw bytes when an assembler
+  is available, and a generated contract describing layout and APIs.
+- A three-tier verification path: source-level checks, assembly/byte checks,
+  and manual native validation with WinDbg.
+
+Emitrion is intentionally not a general-purpose assembly builder, an operator
+framework, or a cross-platform payload language.
+
+## Requirements
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/)
+- NASM or Keystone only when assembling bytes
+- An isolated Windows VM and debugger for native validation
+
+## Quick start: generate reviewable artifacts
+
+Install the development environment:
 
 ```bash
-# Install dependencies
 uv sync
+```
 
-# Generate a reverse shell (assembly source, debug runner, contract docs)
-uv run emitrion emitrion/manifests/revshell.yaml \
-  --template ir_reverse_shell \
-  --lhost 192.168.1.100 --lport 9001 \
-  --out emitter_out/
+Generate source artifacts without assembling them:
 
-# Generate without assembling (no assembler needed)
-uv run emitrion emitrion/manifests/revshell.yaml \
-  --template ir_reverse_shell \
-  --no-assemble \
-  --out emitter_out/
-
-# Run a command (calc.exe by default)
+```bash
+# Windows x86 example
 uv run emitrion emitrion/manifests/calc.yaml \
   --template ir_run_command \
   --no-assemble \
   --out emitter_out/
+
+# Windows x64 example (the main entry point reads arch: x64 from the manifest)
+uv run emitrion emitrion/manifests/x64/run_command_x64.yaml \
+  --template ir_run_command \
+  --no-assemble \
+  --out emitter_out-x64/
 ```
 
-Assembly (Keystone or NASM) is only available on the Windows lab VM. Use
-`--no-assemble` on Mac to produce the `.asm` source and debug runner.
+This produces artifacts to inspect; it does not establish native correctness.
+
+## Output
+
+The selected output directory contains:
+
+```text
+asm/generated.asm              Generated assembly source
+asm/debug_runner.py            Windows lab/debugger runner
+asm/code_snippet.py            Source-oriented code snippet
+Documentation/contract.md      Stack layout, API, and structure contract
+bin/shellcode.*                Raw artifacts, when assembly succeeds
+bin/test_harness.py            Generated harness, when assembly succeeds
+bin/xor_wrapper.py             Optional offline XOR wrapper
+```
+
+Assembly availability is environment-specific. `--no-assemble` is the
+recommended starting point on non-Windows development hosts.
+
+## Reference workflows
+
+All current workflow templates are IR-backed. Available templates include:
+
+| Template | Illustrates |
+|---|---|
+| `ir_run_command` | Process command execution and result branching |
+| `ir_reverse_shell`, `ir_bind_shell` | Winsock setup and process creation |
+| `ir_copy_file`, `ir_copy_then_run`, `ir_move_file`, `ir_move_then_run` | File operations and conditional flow |
+| `ir_check_path`, `ir_get_username` | Environment and path-oriented API use |
+| `ir_http_download`, `ir_url_download` | Download-oriented API workflows |
+| `ir_copy_to_userdir`, `ir_move_to_userdir`, `ir_http_download_to_userdir`, `ir_url_download_to_userdir` | Runtime user-directory path construction |
+| `ir_registry_persistence` | Registry API workflow modeling |
+
+Template availability means the workflow can be generated and tested at the
+source/artifact level; it is not a claim of native runtime acceptance.
 
 ## Verification
 
-```bash
-# Full verification pipeline (assemble + bad-char scan + JSON report)
-uv run python -m emitrion.verify emitrion/manifests/revshell.yaml \
-  --template ir_reverse_shell \
-  --lhost 10.0.0.1 --lport 9001
+Run the host-side quality gates:
 
-# JSON output for scripting
+```bash
+uv run pytest
+uv run ruff check .
+uv run mypy emitrion/workflow/
+```
+
+With an assembler available, run the verification pipeline:
+
+```bash
 uv run python -m emitrion.verify emitrion/manifests/calc.yaml \
-  --template ir_run_command --json
+  --template ir_run_command \
+  --json
 ```
 
-The verification lane has three tiers:
+Verification has three distinct tiers:
 
-1. **Cross-platform** (runs anywhere): generate assembly, scan for bad characters
-2. **Assembly + byte scan** (requires assembler): assemble, verify bytes, check determinism
-3. **Manual lab** (Windows VM + WinDbg): execute debug_runner.py, step through each API call
+1. **Cross-platform:** manifest loading, IR validation, deterministic generated
+   assembly, layouts, contracts, and host-side tests.
+2. **Assembly and byte scan:** assembled bytes, declared bad-character checks,
+   and byte determinism where an assembler is available.
+3. **Native Windows lab:** run the generated debugger runner, attach WinDbg,
+   observe expected control flow and API results, and record the outcome.
 
-## Windows lab workflow
+Only Tier 3 provides target-native evidence. See
+[the native workflow validation guide](Documentation/Development/NativeWorkflowValidation.md),
+[the verification guide](Documentation/Development/VerificationLane.md) and
+[the x86 lab test plan](Documentation/x86_test_plan.md) before making support
+claims.
 
-1. Copy `emitter_out/asm/debug_runner.py` to the Windows VM
-2. `pip install keystone-engine`
-3. Run `python debug_runner.py`
-4. Copy the printed shellcode address
-5. In WinDbg: `bp <address>`, then press Enter in the script
-6. Step through: PEB walk, hash resolution, API calls
+## Design and project boundaries
 
-## Payload templates
+The workflow IR currently models Windows behavior; it is not a promise of
+portable workflow semantics. Windows x86 and x64 have target-specific ABI,
+layout, resolver, encoding, and validation requirements. More detail is in the
+[product requirements document](Documentation/Design/PRD.md),
+[workflow IR design](Documentation/Design/WorkflowIR.md), and
+[x64 backend notes](Documentation/x64_backend.md).
 
-### IR workflows (typed, validated)
+## Contributing
 
-| Template | Description |
-|---|---|
-| `ir_run_command` | WinExec + ExitProcess with result branching |
-| `ir_reverse_shell` | WSAStartup, WSASocketA, connect, CreateProcessA |
-
-### Legacy templates
-
-`reverse_shell`, `run_command`, `bind_shell`, `copy_file`, `copy_then_run`,
-`move_then_run`, `tcp_download`, `tcp_stager`, `http_download`, `http_exfil`,
-`process_replace`, `service_persist`, `dll_inject`, `registry_persist`,
-`check_path`, `get_username`, `download_to_userpath`, `tcp_download_to_userpath`
-
-## Pipeline
-
-```
-manifest.yaml
-  -> schema.py         (load, validate)
-  -> stack_alloc.py    (assign EBP-relative slot offsets)
-  -> build.py          (orchestrate generation)
-       1. Framework stubs (PEB walk, hash resolver)
-       2. API resolution stubs per function
-       3. Module loading (LoadLibraryA calls)
-       4. String construction
-       5. Structure initialization
-       6. Payload assembly (template or IR workflow)
-  -> assembler         (Keystone or NASM)
-  -> doc_gen.py        (contract.md: stack map, API table, cheatsheet)
-```
-
-## Build outputs
-
-The emitter writes to `emitter_out/` (or `--out`):
-
-- `asm/generated.asm`: full assembly source
-- `asm/debug_runner.py`: standalone script for Windows lab testing
-- `bin/shellcode.bin`: raw bytes (when assembler is available)
-- `Documentation/contract.md`: stack layout, API table, struct layouts, cheatsheet
-
-## Tests
-
-```bash
-uv run pytest          # full suite (500+ tests)
-uv run ruff check .    # linting
-uv run mypy emitrion/workflow/   # strict type checking on IR module
-```
-
-Tests that require an assembler (`test_full_build_assembles`) are expected
-to skip on Mac.
-
-## Project structure
-
-```
-emitrion/
-  api_database.py       # Win32 API records, struct definitions, module load order
-  schema.py             # YAML manifest loader and validator
-  stack_alloc.py        # EBP-relative stack slot allocator
-  build.py              # Orchestrator, assembler backends, debug runner generation
-  encode.py             # Bad-character-safe encoding (XOR, arithmetic)
-  string_emitter.py     # Stack string construction (mov, push, shiftor, xor)
-  structure_emitter.py  # Struct initialization assembly
-  doc_gen.py            # Contract documentation generator
-  verify.py             # Verification lane (build, assemble, scan, report)
-  payload_templates/    # Legacy payload templates
-  workflow/
-    ir.py               # Typed IR: operations, blocks, workflows (frozen dataclasses)
-    catalog.py          # ABI catalog with typed argument descriptors
-    validator.py        # Control-flow-aware IR validation
-    x86_backend.py      # x86 lowering: IR to assembly
-    reference.py        # Reference workflows and WorkflowTemplate adapter
-  manifests/            # YAML payload manifests
-  tests/                # 500+ tests
-```
+Contributions should preserve artifact readability and keep target-specific
+claims evidence-based. At minimum, changes should include focused tests and
+pass linting and workflow type checks. A feature is not “supported” merely
+because it generates assembly or passes host-side tests; native lab evidence is
+required for that claim.
 
 ## License
 
