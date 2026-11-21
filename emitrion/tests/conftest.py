@@ -14,7 +14,7 @@ requires_assembler = pytest.mark.skipif(
 
 @pytest.fixture
 def manifest_dir() -> pathlib.Path:
-    return pathlib.Path(__file__).parent.parent / "manifests"
+    return pathlib.Path(__file__).parent.parent / "manifests" / "win-x86"
 
 
 @pytest.fixture

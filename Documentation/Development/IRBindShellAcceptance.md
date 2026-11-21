@@ -7,7 +7,7 @@ Windows x86 lab VM.
 
 ## Preconditions
 
-- Generate the payload from `emitrion/manifests/bindshell.yaml` using the
+- Generate the payload from `emitrion/manifests/win-x86/bindshell.yaml` using the
   `ir_bind_shell` template.
 - Treat the manifest `lport` as the listening port. The workflow binds
   `INADDR_ANY` (`0.0.0.0`), so the operator connects to the lab VM's reachable
@@ -38,7 +38,7 @@ rtk uv run pytest emitrion/tests/test_workflow_validator.py emitrion/tests/test_
 ```
 
 ```bash
-rtk uv run python -m emitrion.verify emitrion/manifests/bindshell.yaml --template ir_bind_shell --out verify_out
+rtk uv run python -m emitrion.verify emitrion/manifests/win-x86/bindshell.yaml --template ir_bind_shell --out verify_out
 ```
 
 The verification report must show `passed: true`, `assembled: true`,

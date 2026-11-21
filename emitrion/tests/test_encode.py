@@ -242,7 +242,7 @@ class TestFrameSize:
 
         from emitrion.schema import load
         from emitrion.stack_alloc import build_layout
-        manifest_dir = pathlib.Path(__file__).parent.parent / "manifests"
+        manifest_dir = pathlib.Path(__file__).parent.parent / "manifests" / "win-x86"
         manifest = load(str(manifest_dir / "revshell.yaml"))
         layout = build_layout(manifest)
         assert layout.frame_size >= max(s.offset for s in layout.all_slots())

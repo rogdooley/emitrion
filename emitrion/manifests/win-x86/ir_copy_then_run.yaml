@@ -1,13 +1,11 @@
-# Copy then run (CopyFileA + WinExec) - x64
+template: ir_copy_then_run
 # IR workflow: CopyFileA + WinExec with exit strategy.
 #
 # Build:
-#   uv run emitrion-x64 emitrion/manifests/x64/copy_then_run_x64.yaml \
-#       --src "C:\source\payload.exe" --dst "C:\Windows\Temp\payload.exe" \
+#   uv run emitrion emitrion/manifests/win-x86/ir_copy_then_run.yaml \
+#       --src "C:\\source\\payload.exe" --dst "C:\\Windows\\Temp\\payload.exe" \
 #       --out emitter_out/
-arch: x64
-template: ir_copy_then_run
-badchars: ["00", "0A", "0D"]
+badchars: ["00", "0a", "0d"]
 
 functions:
   - CopyFileA
@@ -18,8 +16,8 @@ strings:
   - label: src_path
     value: "C:\\source\\payload.exe"
     method: mov
-    dest: rdi
+    dest: edi
   - label: dst_path
     value: "C:\\Windows\\Temp\\payload.exe"
     method: mov
-    dest: rdi
+    dest: edi

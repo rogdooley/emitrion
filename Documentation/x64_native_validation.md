@@ -72,7 +72,7 @@ python -m emitrion.native_harness_x64 shellcode.bin --timeout 5000
 python -m emitrion.native_harness_x64 shellcode.bin --interactive
 
 # Build from manifest and execute
-python -m emitrion.native_harness_x64 --manifest emitrion/manifests/x64/run_command_x64.yaml
+python -m emitrion.native_harness_x64 --manifest emitrion/manifests/win-x64/run_command_x64.yaml
 
 # Run a named scenario
 python -m emitrion.native_harness_x64 --scenario test_a_winexec
@@ -104,7 +104,7 @@ print(result.to_json())
 from emitrion.native_harness_x64 import execute_from_build, HarnessConfig
 
 result = execute_from_build(
-    "emitrion/manifests/x64/run_command_x64.yaml",
+    "emitrion/manifests/win-x64/run_command_x64.yaml",
     HarnessConfig(test_id="winexec_smoke"),
 )
 print(result.to_json())
@@ -346,7 +346,7 @@ python -m emitrion.native_harness_x64 all --json > results.json
 python -m emitrion.native_harness_x64 --scenario test_a_winexec --json
 
 # 5. Build and test from manifest
-python -m emitrion.native_harness_x64 --manifest emitrion/manifests/x64/run_command_x64.yaml --json
+python -m emitrion.native_harness_x64 --manifest emitrion/manifests/win-x64/run_command_x64.yaml --json
 
 # 6. Interactive debugging
 python -m emitrion.native_harness_x64 shellcode.bin --interactive

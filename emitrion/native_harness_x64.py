@@ -489,13 +489,13 @@ def execute_from_build(
 SCENARIOS: dict[str, dict] = {
     "test_a_winexec": {
         "description": "WinExec: API resolution and command execution",
-        "manifest": "emitrion/manifests/x64/run_command_x64.yaml",
+        "manifest": "emitrion/manifests/win-x64/run_command_x64.yaml",
         "timeout_ms": 10000,
         "expect_success": True,
     },
     "test_b_dll_load": {
         "description": "LoadLibraryA: secondary DLL loading (ws2_32)",
-        "manifest": "emitrion/manifests/x64/revshell_x64.yaml",
+        "manifest": "emitrion/manifests/win-x64/revshell_x64.yaml",
         "timeout_ms": 5000,
         "expect_success": False,
         "expect_note": (
@@ -506,7 +506,7 @@ SCENARIOS: dict[str, dict] = {
     },
     "test_c_multi_arg": {
         "description": "CreateProcessA: 10 arguments (4 reg + 6 stack)",
-        "manifest": "emitrion/manifests/x64/run_command_x64.yaml",
+        "manifest": "emitrion/manifests/win-x64/run_command_x64.yaml",
         "timeout_ms": 10000,
         "expect_success": True,
         "expect_note": (
@@ -526,7 +526,7 @@ SCENARIOS: dict[str, dict] = {
     },
     "test_e_bind_shell": {
         "description": "Bind shell: listen/accept socket pipeline",
-        "manifest": "emitrion/manifests/x64/bind_shell_x64.yaml",
+        "manifest": "emitrion/manifests/win-x64/bind_shell_x64.yaml",
         "timeout_ms": 10000,
         "expect_success": False,
         "expect_note": (
@@ -537,7 +537,7 @@ SCENARIOS: dict[str, dict] = {
     },
     "test_f_copy_file": {
         "description": "CopyFileA: file copy with ExitProcess",
-        "manifest": "emitrion/manifests/x64/copy_file_x64.yaml",
+        "manifest": "emitrion/manifests/win-x64/copy_file_x64.yaml",
         "timeout_ms": 10000,
         "expect_success": True,
         "expect_note": (
@@ -548,7 +548,7 @@ SCENARIOS: dict[str, dict] = {
     },
     "test_g_copy_then_run": {
         "description": "CopyFileA + WinExec: copy and execute",
-        "manifest": "emitrion/manifests/x64/copy_then_run_x64.yaml",
+        "manifest": "emitrion/manifests/win-x64/copy_then_run_x64.yaml",
         "timeout_ms": 10000,
         "expect_success": True,
         "expect_note": (
@@ -559,7 +559,7 @@ SCENARIOS: dict[str, dict] = {
     },
     "test_h_move_then_run": {
         "description": "MoveFileA + WinExec: move and execute",
-        "manifest": "emitrion/manifests/x64/move_then_run_x64.yaml",
+        "manifest": "emitrion/manifests/win-x64/move_then_run_x64.yaml",
         "timeout_ms": 10000,
         "expect_success": True,
         "expect_note": (
@@ -570,7 +570,7 @@ SCENARIOS: dict[str, dict] = {
     },
     "test_i_check_path": {
         "description": "GetFileAttributesA: path existence check",
-        "manifest": "emitrion/manifests/x64/check_path_x64.yaml",
+        "manifest": "emitrion/manifests/win-x64/check_path_x64.yaml",
         "timeout_ms": 10000,
         "expect_success": True,
         "expect_note": (

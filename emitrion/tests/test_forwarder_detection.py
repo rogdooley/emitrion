@@ -174,7 +174,7 @@ class TestForwarderDetectionInBuild:
     def test_x64_build_contains_forwarder_labels(self) -> None:
         from emitrion.build_x64 import build_x64
         result = build_x64(
-            "emitrion/manifests/x64/run_command_x64.yaml",
+            "emitrion/manifests/win-x64/run_command_x64.yaml",
             assemble=False,
         )
         assert "forwarded_export:" in result.asm

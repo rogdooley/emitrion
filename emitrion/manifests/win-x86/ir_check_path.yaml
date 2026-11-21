@@ -2,7 +2,7 @@ template: ir_check_path
 # IR workflow: GetFileAttributesA to test file existence.
 #
 # Build:
-#   uv run emitrion emitrion/manifests/ir_check_path.yaml \
+#   uv run emitrion emitrion/manifests/win-x86/ir_check_path.yaml \
 #       --dst "C:\\Windows\\System32\\cmd.exe" --out emitter_out/
 badchars: ["00", "0a", "0d"]
 

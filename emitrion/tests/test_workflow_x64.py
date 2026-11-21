@@ -369,7 +369,7 @@ class TestX64EndToEnd:
 
         from emitrion.build_x64 import build_x64
         manifest_path = str(
-            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "run_command_x64.yaml"
+            pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "run_command_x64.yaml"
         )
         result = build_x64(manifest_path, assemble=False)
         assert result.asm
@@ -383,7 +383,7 @@ class TestX64EndToEnd:
 
         from emitrion.build_x64 import build_x64
         manifest_path = str(
-            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml"
+            pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "revshell_x64.yaml"
         )
         result = build_x64(manifest_path, assemble=False)
         assert result.asm
@@ -398,7 +398,7 @@ class TestX64EndToEnd:
 
         from emitrion.build import build
         manifest_path = str(
-            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "run_command_x64.yaml"
+            pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "run_command_x64.yaml"
         )
         result = build(manifest_path, assemble=False)
         assert "[BITS 64]" in result.asm
@@ -509,7 +509,7 @@ class TestX64MoveFileEndToEnd:
         import pathlib
         from emitrion.build_x64 import build_x64
         manifest_path = str(
-            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "move_file_x64.yaml"
+            pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "move_file_x64.yaml"
         )
         result = build_x64(manifest_path, assemble=False)
         assert result.asm
@@ -544,7 +544,7 @@ class TestX64GetUsernameEndToEnd:
         import pathlib
         from emitrion.build_x64 import build_x64
         manifest_path = str(
-            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "get_username_x64.yaml"
+            pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "get_username_x64.yaml"
         )
         result = build_x64(manifest_path, assemble=False)
         assert result.asm
@@ -581,7 +581,7 @@ class TestX64HttpDownloadEndToEnd:
         import pathlib
         from emitrion.build_x64 import build_x64
         manifest_path = str(
-            pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "http_download_x64.yaml"
+            pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "http_download_x64.yaml"
         )
         result = build_x64(manifest_path, assemble=False)
         assert result.asm

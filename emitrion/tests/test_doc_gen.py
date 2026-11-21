@@ -68,7 +68,7 @@ def test_hash_from_ror13_not_hardcoded():
     from emitrion.hash_gen import ror13
     from emitrion.schema import load
     from emitrion.stack_alloc import build_layout
-    manifest_dir = pathlib.Path(__file__).parent.parent / "manifests"
+    manifest_dir = pathlib.Path(__file__).parent.parent / "manifests" / "win-x86"
     manifest = load(str(manifest_dir / "revshell.yaml"))
     layout = build_layout(manifest)
     doc = emit_api_contracts_md(manifest, layout)

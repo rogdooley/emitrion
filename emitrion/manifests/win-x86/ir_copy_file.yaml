@@ -2,7 +2,7 @@ template: ir_copy_file
 # IR workflow: CopyFileA(src, dst, FALSE) with exit strategy.
 #
 # Build:
-#   uv run emitrion emitrion/manifests/ir_copy_file.yaml \
+#   uv run emitrion emitrion/manifests/win-x86/ir_copy_file.yaml \
 #       --src "C:\\source.txt" --dst "C:\\dest.txt" --out emitter_out/
 badchars: ["00", "0a", "0d"]
 

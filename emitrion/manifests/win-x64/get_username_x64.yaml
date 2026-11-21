@@ -2,7 +2,7 @@
 # IR workflow: GetUserNameA then WinExec with exit strategy.
 #
 # Build:
-#   uv run emitrion-x64 emitrion/manifests/x64/get_username_x64.yaml \
+#   uv run emitrion-x64 emitrion/manifests/win-x64/get_username_x64.yaml \
 #       --command "whoami" --out emitter_out/
 arch: x64
 template: ir_get_username

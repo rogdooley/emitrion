@@ -39,13 +39,13 @@ uv run pytest emitrion/tests/test_verify.py -v
 Or via the verification script directly:
 
 ```bash
-uv run python -m emitrion.verify emitrion/manifests/calc.yaml --template ir_run_command
+uv run python -m emitrion.verify emitrion/manifests/win-x86/calc.yaml --template ir_run_command
 ```
 
 The `--json` flag outputs the report as structured JSON for CI integration:
 
 ```bash
-uv run python -m emitrion.verify emitrion/manifests/calc.yaml --template ir_run_command --json
+uv run python -m emitrion.verify emitrion/manifests/win-x86/calc.yaml --template ir_run_command --json
 ```
 
 Exit code is 0 for pass, 1 for fail.
@@ -58,7 +58,7 @@ Manual verification in the isolated lab environment. Never automated in CI.
    artifacts:
 
    ```bash
-   uv run python -m emitrion.verify emitrion/manifests/calc.yaml \
+   uv run python -m emitrion.verify emitrion/manifests/win-x86/calc.yaml \
        --template ir_run_command --out verify_out
    ```
 
@@ -121,7 +121,7 @@ test-assembly:
     - run: sudo apt-get install -y nasm
     - run: uv run pytest emitrion/tests/test_verify.py -v
     - run: |
-        uv run python -m emitrion.verify emitrion/manifests/calc.yaml \
+        uv run python -m emitrion.verify emitrion/manifests/win-x86/calc.yaml \
             --template ir_run_command --json > report.json
     - uses: actions/upload-artifact@v4
       with:
@@ -133,7 +133,7 @@ Tier 3 is manual and documented per release.
 
 ## Adding a New Manifest to Verification
 
-1. Add the manifest YAML to `emitrion/manifests/`.
+1. Add the manifest YAML to `emitrion/manifests/win-x86/` or `emitrion/manifests/win-x64/`.
 2. The `test_all_manifests_generate` and `test_all_manifests_assemble` tests
    pick it up automatically.
 3. For specific behavioral verification, add a dedicated test in

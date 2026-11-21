@@ -16,9 +16,10 @@ from emitrion.build import build, write_outputs
 from emitrion.build_x64 import build_x64, generate_xor_wrapper
 from emitrion.payload_templates.base import TemplateConfig
 
-MANIFEST_DIR = pathlib.Path(__file__).parent.parent / "manifests"
+MANIFEST_BASE = pathlib.Path(__file__).parent.parent / "manifests"
+MANIFEST_DIR = MANIFEST_BASE / "win-x86"
 X86_MANIFEST = str(MANIFEST_DIR / "revshell.yaml")
-X64_MANIFEST = str(MANIFEST_DIR / "x64" / "run_command_x64.yaml")
+X64_MANIFEST = str(MANIFEST_BASE / "win-x64" / "run_command_x64.yaml")
 
 
 # ---------------------------------------------------------------------------

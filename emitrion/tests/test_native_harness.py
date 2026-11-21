@@ -297,7 +297,7 @@ class TestBuildIntegration:
         from emitrion.native_harness_x64 import execute_from_build
         cfg = HarnessConfig(test_id="build_test")
         r = execute_from_build(
-            "emitrion/manifests/x64/run_command_x64.yaml",
+            "emitrion/manifests/win-x64/run_command_x64.yaml",
             cfg,
             assemble=False,
         )

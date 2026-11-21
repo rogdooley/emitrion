@@ -880,7 +880,7 @@ class TestWorkflowE2EBuildPipeline:
         import pathlib
 
         from emitrion.build_x64 import build_x64
-        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "run_command_x64.yaml")
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "run_command_x64.yaml")
         result = build_x64(path, assemble=False)
         assert result.asm
         assert "[BITS 64]" in result.asm
@@ -892,7 +892,7 @@ class TestWorkflowE2EBuildPipeline:
         import pathlib
 
         from emitrion.build_x64 import build_x64
-        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "revshell_x64.yaml")
         result = build_x64(path, assemble=False)
         assert result.asm
         assert "WSAStartup" in result.asm
@@ -926,7 +926,7 @@ class TestP0_2_DLLLoaderNoRSPMutation:
         import pathlib
 
         from emitrion.build_x64 import build_x64
-        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "revshell_x64.yaml")
         result = build_x64(path, assemble=False)
         dll_section = result.asm.split("Loading ws2_32.dll")[1].split("resolve")[0]
         for line in dll_section.splitlines():
@@ -939,7 +939,7 @@ class TestP0_2_DLLLoaderNoRSPMutation:
         import pathlib
 
         from emitrion.build_x64 import build_x64
-        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "revshell_x64.yaml")
         result = build_x64(path, assemble=False)
         dll_section = result.asm.split("Loading ws2_32.dll")[1].split("resolve")[0]
         assert "lea  rcx" in dll_section or "lea  ecx" in dll_section or \
@@ -949,7 +949,7 @@ class TestP0_2_DLLLoaderNoRSPMutation:
         import pathlib
 
         from emitrion.build_x64 import build_x64
-        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "revshell_x64.yaml")
         result = build_x64(path, assemble=False)
         dll_section = result.asm.split("Loading ws2_32.dll")[1].split("resolve")[0]
         for line in dll_section.splitlines():
@@ -996,7 +996,7 @@ class TestP0_4_PostAssemblyBadcharValidation:
         import pathlib
 
         from emitrion.build_x64 import build_x64
-        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "run_command_x64.yaml")
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "run_command_x64.yaml")
         result = build_x64(path, assemble=False)
         assert result.asm
 
@@ -1160,7 +1160,7 @@ class TestP1_4_NoDuplicateStructInit:
         import pathlib
 
         from emitrion.build_x64 import build_x64
-        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "x64" / "revshell_x64.yaml")
+        path = str(pathlib.Path(__file__).parent.parent / "manifests" / "win-x64" / "revshell_x64.yaml")
         result = build_x64(path, assemble=False)
         assert "handled by workflow IR" in result.asm
 

@@ -59,11 +59,11 @@ stack machinery.
 
 | Order | Workflow | x86 manifest | x64 manifest | Evidence it adds |
 |---:|---|---|---|---|
-| 1 | `ir_run_command` | `emitrion/manifests/calc.yaml` | `emitrion/manifests/x64/run_command_x64.yaml` | Entry, PEB walk, export resolution, basic API call, terminal path |
-| 2 | `ir_get_username` | `emitrion/manifests/get_username.yaml` | `emitrion/manifests/x64/get_username_x64.yaml` | Secondary-DLL loading, output buffer, string handling |
-| 3 | `ir_copy_file` | `emitrion/manifests/ir_copy_file.yaml` | `emitrion/manifests/x64/copy_file_x64.yaml` | Pointer arguments and file API behavior |
-| 4 | `ir_http_download` | `emitrion/manifests/http_download.yaml` | `emitrion/manifests/x64/http_download_x64.yaml` | Multi-call flow, buffers, handles, lab-local networking |
-| 5 | `ir_reverse_shell` | `emitrion/manifests/revshell.yaml` | `emitrion/manifests/x64/revshell_x64.yaml` | Winsock initialization, structures, process creation, failure path |
+| 1 | `ir_run_command` | `emitrion/manifests/win-x86/calc.yaml` | `emitrion/manifests/win-x64/run_command_x64.yaml` | Entry, PEB walk, export resolution, basic API call, terminal path |
+| 2 | `ir_get_username` | `emitrion/manifests/win-x86/get_username.yaml` | `emitrion/manifests/win-x64/get_username_x64.yaml` | Secondary-DLL loading, output buffer, string handling |
+| 3 | `ir_copy_file` | `emitrion/manifests/win-x86/ir_copy_file.yaml` | `emitrion/manifests/win-x64/copy_file_x64.yaml` | Pointer arguments and file API behavior |
+| 4 | `ir_http_download` | `emitrion/manifests/win-x86/http_download.yaml` | `emitrion/manifests/win-x64/http_download_x64.yaml` | Multi-call flow, buffers, handles, lab-local networking |
+| 5 | `ir_reverse_shell` | `emitrion/manifests/win-x86/revshell.yaml` | `emitrion/manifests/win-x64/revshell_x64.yaml` | Winsock initialization, structures, process creation, failure path |
 
 `ir_bind_shell`, user-directory, move, URL-download, and registry workflows
 should be validated after their dependencies above pass. Record them as
@@ -79,7 +79,7 @@ attach point, then waits for the debugger.
 Generate an x86 smoke-test artifact on the development host:
 
 ```bash
-uv run emitrion emitrion/manifests/calc.yaml \
+uv run emitrion emitrion/manifests/win-x86/calc.yaml \
   --template ir_run_command \
   --command "calc.exe" \
   --no-assemble \
@@ -103,7 +103,7 @@ For later x86 workflows, change only the manifest and inputs. For example,
 validate file copying with a harmless source and destination inside the VM:
 
 ```bash
-uv run emitrion emitrion/manifests/ir_copy_file.yaml \
+uv run emitrion emitrion/manifests/win-x86/ir_copy_file.yaml \
   --src "C:\\OSED\\input.txt" \
   --dst "C:\\OSED\\output.txt" \
   --no-assemble \
@@ -125,7 +125,7 @@ same revision used to generate the validation record:
 
 ```powershell
 python -m emitrion.native_harness_x64 `
-  --manifest emitrion/manifests/x64/run_command_x64.yaml `
+  --manifest emitrion/manifests/win-x64/run_command_x64.yaml `
   --json
 ```
 

@@ -3,7 +3,7 @@
 #              RegSetValueExA -> RegCloseKey -> exit
 #
 # Build:
-#   uv run emitrion emitrion/manifests/registry_persistence.yaml \
+#   uv run emitrion emitrion/manifests/win-x86/registry_persistence.yaml \
 #       --exe-path "C:\Users\Public\payload.exe" \
 #       --reg-value-name "WindowsUpdate" \
 #       --no-assemble --out emitter_out/

@@ -1,7 +1,7 @@
 """Assembly build pipeline: manifest -> generated.asm + generated_contract.md.
 
 Usage:
-    uv run emitrion emitrion/manifests/revshell.yaml \
+    uv run emitrion emitrion/manifests/win-x86/revshell.yaml \
         --lhost 192.168.1.116 --lport 9001 --out emitter_out/
 """
 from __future__ import annotations
