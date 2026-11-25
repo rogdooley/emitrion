@@ -88,20 +88,29 @@ class FrequencyResult:
         pairs.sort(key=lambda p: p[1], reverse=True)
         return pairs[:n]
 
-    def histogram(self, columns: int = 64) -> str:
+    def histogram(self, columns: int = 64, badchars_only: bool = False) -> str:
         """Render a text histogram of byte frequencies.
 
         Each row is one byte value. The bar is scaled to fit *columns*
         characters. Badchar rows are marked with a '!' prefix. Absent
-        bytes are omitted.
+        bytes are omitted unless *badchars_only* is True, in which case
+        only badchar bytes are shown (including absent ones, so you can
+        see which badchars the payload actually contains).
         """
-        max_count = max(self.counts) if self.payload_size > 0 else 1
+        show_bytes = sorted(self.badchars) if badchars_only else range(256)
+        visible_counts = [self.counts[b] for b in show_bytes if self.counts[b] > 0]
+        max_count = max(visible_counts) if visible_counts else 1
         lines: list[str] = []
         lines.append(f"Payload: {self.payload_size} bytes")
         lines.append(f"Distinct values: {sum(1 for c in self.counts if c > 0)}/256")
         if self.badchars:
             lines.append(
                 f"Badchars: {' '.join(f'{b:02x}' for b in sorted(self.badchars))}"
+            )
+            present = self.present_badchars
+            lines.append(
+                f"Present: {len(present)}/{len(self.badchars)} "
+                f"({', '.join(f'{b:02x}' for b in present) if present else 'none'})"
             )
             if self.unnecessary_badchars:
                 lines.append(
@@ -112,18 +121,24 @@ class FrequencyResult:
         lines.append(f"{'Byte':>4}  {'Count':>5}  {'%':>5}  Bar")
         lines.append(f"{'----':>4}  {'-----':>5}  {'-----':>5}  " + "-" * columns)
 
-        for b in range(256):
+        for b in show_bytes:
             count = self.counts[b]
-            if count == 0:
+            if count == 0 and not badchars_only:
                 continue
-            pct = 100.0 * count / self.payload_size
-            bar_len = max(1, round(columns * count / max_count))
+            pct = 100.0 * count / self.payload_size if self.payload_size > 0 else 0.0
+            bar_len = max(1, round(columns * count / max_count)) if count > 0 else 0
             marker = "!" if b in self.badchars else " "
             bar_char = "#" if b in self.badchars else "="
+            bar = bar_char * bar_len if count > 0 else "-"
             lines.append(
-                f"{marker}{b:02x}   {count:5d}  {pct:5.1f}  {bar_char * bar_len}"
+                f"{marker}{b:02x}   {count:5d}  {pct:5.1f}  {bar}"
             )
         return "\n".join(lines)
+
+
+    def badchars_histogram(self, columns: int = 64) -> str:
+        """Shorthand for histogram(badchars_only=True)."""
+        return self.histogram(columns=columns, badchars_only=True)
 
 
 def frequency(payload: bytes, badchars: set[int] | None = None) -> FrequencyResult:
@@ -154,6 +169,10 @@ def main() -> None:
     parser.add_argument(
         "--top", type=int, default=0, metavar="N",
         help="Show only the top N most frequent bytes",
+    )
+    parser.add_argument(
+        "--badchars-only", action="store_true",
+        help="Show only badchar byte frequencies (requires --badchars)",
     )
     parser.add_argument(
         "--columns", type=int, default=50,
@@ -200,7 +219,7 @@ def main() -> None:
                     f"{' '.join(f'0x{b:02x}' for b in result.present_badchars)}"
                 )
     else:
-        print(result.histogram(columns=args.columns))
+        print(result.histogram(columns=args.columns, badchars_only=args.badchars_only))
 
 
 if __name__ == "__main__":

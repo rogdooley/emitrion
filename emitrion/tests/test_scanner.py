@@ -128,6 +128,27 @@ class TestFrequency:
         assert "00" in hist
         assert "0d" in hist
 
+    def test_badchars_only_shows_only_badchar_rows(self):
+        result = frequency(b"\x00\x41\x41\x42\x0a", {0x00, 0x0A, 0x0D})
+        hist = result.badchars_histogram()
+        assert "!00" in hist
+        assert "!0a" in hist
+        assert "!0d" in hist
+        assert " 41" not in hist
+        assert " 42" not in hist
+
+    def test_badchars_only_shows_absent_badchars(self):
+        result = frequency(b"\x41\x42", {0x00, 0x0D})
+        hist = result.badchars_histogram()
+        assert "!00" in hist and "0" in hist
+        assert "!0d" in hist
+        assert "-" in hist
+
+    def test_badchars_only_present_summary(self):
+        result = frequency(b"\x00\x41\x0a", {0x00, 0x0A, 0x0D})
+        hist = result.badchars_histogram()
+        assert "Present: 2/3" in hist
+
     def test_no_badchars(self):
         result = frequency(b"\x41\x42\x43")
         assert result.unnecessary_badchars == []
