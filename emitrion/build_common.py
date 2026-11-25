@@ -303,6 +303,8 @@ def _load_template(name: str) -> PayloadTemplate:
         "ir_process_inject":   "emitrion.workflow.reference.IRProcessInjectTemplate",
         "ir_messagebox":       "emitrion.workflow.reference.IRMessageBoxTemplate",
         "ir_file_write":       "emitrion.workflow.reference.IRFileWriteTemplate",
+        "ir_folder_path_exec": "emitrion.workflow.reference.IRFolderPathExecTemplate",
+        "ir_profile_dir_exec": "emitrion.workflow.reference.IRProfileDirExecTemplate",
     }
     if name not in registry:
         raise ValueError(

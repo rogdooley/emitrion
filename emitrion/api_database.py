@@ -758,6 +758,41 @@ API_DATABASE: dict[str, APIRecord] = {
             Argument("pcbBuffer", "LPDWORD", "pointer to DWORD: in=buffer size, out=chars copied including null"),
         ],
     ),
+    # --- advapi32.dll : token ---
+    "OpenProcessToken": APIRecord(
+        module="advapi32.dll",
+        category="token",
+        prototype="BOOL OpenProcessToken(HANDLE ProcessHandle, DWORD DesiredAccess, PHANDLE TokenHandle)",
+        arguments=[
+            Argument("ProcessHandle", "HANDLE", "process handle; (HANDLE)-1 = current process"),
+            Argument("DesiredAccess", "DWORD", "TOKEN_QUERY = 0x0008"),
+            Argument("TokenHandle", "PHANDLE", "pointer to HANDLE output"),
+        ],
+    ),
+    # --- userenv.dll : identity ---
+    "GetUserProfileDirectoryA": APIRecord(
+        module="userenv.dll",
+        category="identity",
+        prototype="BOOL GetUserProfileDirectoryA(HANDLE hToken, LPSTR lpProfileDir, LPDWORD lpcchSize)",
+        arguments=[
+            Argument("hToken", "HANDLE", "token from OpenProcessToken"),
+            Argument("lpProfileDir", "LPSTR", "buffer receiving profile path"),
+            Argument("lpcchSize", "LPDWORD", "pointer to DWORD: in=buffer size, out=chars copied"),
+        ],
+    ),
+    # --- shell32.dll : filesystem ---
+    "SHGetFolderPathA": APIRecord(
+        module="shell32.dll",
+        category="filesystem",
+        prototype="HRESULT SHGetFolderPathA(HWND hwnd, int csidl, HANDLE hToken, DWORD dwFlags, LPSTR pszPath)",
+        arguments=[
+            Argument("hwnd", "HWND", "NULL"),
+            Argument("csidl", "int", "CSIDL_DESKTOP=0x00, CSIDL_APPDATA=0x1A, CSIDL_PERSONAL=0x05"),
+            Argument("hToken", "HANDLE", "NULL for current user"),
+            Argument("dwFlags", "DWORD", "0"),
+            Argument("pszPath", "LPSTR", "buffer receiving path; must be MAX_PATH (260) chars"),
+        ],
+    ),
     # --- advapi32.dll : registry ---
     "RegOpenKeyExA": APIRecord(
         module="advapi32.dll",
@@ -919,6 +954,8 @@ MODULE_LOAD_ORDER: list[ModuleInfo] = [
     ModuleInfo(dll="advapi32.dll", load_via="LoadLibraryA"),
     ModuleInfo(dll="urlmon.dll",   load_via="LoadLibraryA"),
     ModuleInfo(dll="user32.dll",  load_via="LoadLibraryA"),
+    ModuleInfo(dll="userenv.dll", load_via="LoadLibraryA"),
+    ModuleInfo(dll="shell32.dll", load_via="LoadLibraryA"),
 ]
 
 
