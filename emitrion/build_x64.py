@@ -686,8 +686,24 @@ if __name__ == "__main__":
 
 def generate_debug_runner_x64(asm: str) -> str:
     """Generate a self-contained Python debug script for x64 shellcode."""
+    from .build import _extract_configurable_strings
+    config_strings = _extract_configurable_strings(asm)
     asm = asm.replace(";", "#")
     escaped_asm = asm.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+
+    string_ref_lines = ""
+    if config_strings:
+        string_ref_lines = "\nConfigurable strings (search CODE for the label to find the push block):\n"
+        for label, value in config_strings:
+            string_ref_lines += f"  {label}: \"{value}\"\n"
+        string_ref_lines += (
+            "\nTo change a string (e.g. IP address in src_path or url):\n"
+            "  1. Search this file for '# --- <label>' to find the push block\n"
+            "  2. Generate a replacement with strings.py:\n"
+            "       python strings.py --string '<new value>' --method push --badchars 00\n"
+            "  3. Replace the push instructions between the comment and 'mov esi, esp'\n"
+        )
+
     return f'''\
 #!/usr/bin/env python3
 """Debug runner for emitter-generated x64 shellcode.
@@ -697,7 +713,7 @@ Copy this file to the Windows lab VM, then:
 
 Requires: pip install keystone-engine
 This runner assembles 64-bit x64 shellcode. Run it under 64-bit Python.
-"""
+{string_ref_lines}"""
 import ctypes
 import sys
 

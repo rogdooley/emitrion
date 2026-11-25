@@ -292,6 +292,7 @@ def _load_template(name: str) -> PayloadTemplate:
         "ir_get_username":  "emitrion.workflow.reference.IRGetUsernameTemplate",
         "ir_http_download": "emitrion.workflow.reference.IRHttpDownloadTemplate",
         "ir_copy_to_userdir": "emitrion.workflow.reference.IRCopyToUserdirTemplate",
+        "ir_copy_to_userdir_ex": "emitrion.workflow.reference.IRCopyToUserdirExTemplate",
         "ir_move_to_userdir": "emitrion.workflow.reference.IRMoveToUserdirTemplate",
         "ir_http_download_to_userdir": "emitrion.workflow.reference.IRHttpDownloadToUserdirTemplate",
         "ir_url_download":        "emitrion.workflow.reference.IRUrlDownloadTemplate",

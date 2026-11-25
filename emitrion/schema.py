@@ -25,6 +25,7 @@ CANONICAL_TEMPLATES = {
     "ir_get_username",
     "ir_http_download",
     "ir_copy_to_userdir",
+    "ir_copy_to_userdir_ex",
     "ir_move_to_userdir",
     "ir_http_download_to_userdir",
     "ir_url_download",

