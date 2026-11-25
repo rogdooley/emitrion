@@ -4,7 +4,7 @@
 ; Generated: 1970-01-01 00:00:00
 
     _start:
-        jmp short _stub_trampoline1
+        jmp _stub_trampoline1
 
 ; -- Framework Stubs --
 
@@ -32,7 +32,7 @@ next:
     sub  eax, 0x10
     jmp find_kernel32_entry
 _stub_trampoline1:
-    jmp short _stub_trampoline2
+    jmp _stub_trampoline2
 
 find_module:
     call get_first_ldr_entry
@@ -63,7 +63,7 @@ save_export_context:
     mov  [ebp-0x14], ecx
     ret
 _stub_trampoline2:
-    jmp short main
+    jmp main
 
 compute_hash:
     xor eax, eax

@@ -47,14 +47,15 @@ from .structure_emitter import emit_all_structures
 # Layout is null-free: callees are placed before callers so that every
 # `call` instruction uses a negative (backward) relative offset whose
 # upper bytes are 0xFF, never 0x00.  The entry point uses a two-hop
-# `jmp short` trampoline (1-byte offset, inherently null-free) to skip
-# past the stubs and reach `main`.
+# `jmp near` trampoline to skip past the stubs and reach `main`.
+# Near jumps use a 4-byte displacement (0xE9 rel32) which tolerates
+# large framework stubs produced by aggressive badchar encoding.
 # ---------------------------------------------------------------------------
 
 def _emit_framework_stubs_part1a(badchars: set[int]) -> str:
     """Generate Part 1a stubs (PEB walk + kernel32 find) with badchar-safe encoding.
 
-    Must fit within 127 bytes of a jmp short from _start.
+    Part 1a of the framework stubs (PEB walk, kernel32 find).
     """
     from .encode import (
         _disp_has_badchar,
@@ -683,17 +684,17 @@ def compose_asm(
         f"; Generated: {_build_timestamp()}",
         "",
         "    _start:",
-        "        jmp short _stub_trampoline1",
+        "        jmp _stub_trampoline1",
         "",
         "; -- Framework Stubs --",
         "",
         _emit_framework_stubs_part1a(config.badchars),
         "_stub_trampoline1:",
-        "    jmp short _stub_trampoline2",
+        "    jmp _stub_trampoline2",
         "",
         _emit_framework_stubs_part1b(config.badchars),
         "_stub_trampoline2:",
-        "    jmp short main",
+        "    jmp main",
         "",
         _emit_framework_stubs_part2(config.badchars),
         "; -- Main --",
