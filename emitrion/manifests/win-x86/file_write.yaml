@@ -1,0 +1,9 @@
+# File write via CreateFileA (7 args) + WriteFile + CloseHandle
+# IR workflow: CreateFileA(CREATE_ALWAYS) -> lstrlenA -> WriteFile -> CloseHandle
+# Demonstrates full CreateFileA and WriteFile API chains.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/win-x86/file_write.yaml \
+#       --dst "C:\Users\Public\output.txt" --no-assemble --out emitter_out/
+template: ir_file_write
+badchars: ["00", "0A", "0D"]

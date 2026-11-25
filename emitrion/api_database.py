@@ -665,6 +665,18 @@ API_DATABASE: dict[str, APIRecord] = {
             Argument("hInternet", "HINTERNET", "any HINTERNET handle to close"),
         ],
     ),
+    # --- user32.dll : ui ---
+    "MessageBoxA": APIRecord(
+        module="user32.dll",
+        category="ui",
+        prototype="int MessageBoxA(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType)",
+        arguments=[
+            Argument("hWnd", "HWND", "NULL for no owner window"),
+            Argument("lpText", "LPCSTR", "message body string"),
+            Argument("lpCaption", "LPCSTR", "title bar string"),
+            Argument("uType", "UINT", "MB_OK = 0, MB_ICONINFORMATION = 0x40"),
+        ],
+    ),
     # --- advapi32.dll : service ---
     "OpenSCManagerA": APIRecord(
         module="advapi32.dll",
@@ -906,6 +918,7 @@ MODULE_LOAD_ORDER: list[ModuleInfo] = [
     ModuleInfo(dll="wininet.dll",  load_via="LoadLibraryA"),
     ModuleInfo(dll="advapi32.dll", load_via="LoadLibraryA"),
     ModuleInfo(dll="urlmon.dll",   load_via="LoadLibraryA"),
+    ModuleInfo(dll="user32.dll",  load_via="LoadLibraryA"),
 ]
 
 

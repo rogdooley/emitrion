@@ -1,0 +1,9 @@
+# MessageBoxA proof-of-concept
+# IR workflow: LoadLibraryA(user32.dll) -> MessageBoxA(NULL, text, title, MB_OK)
+# Simple PoC for validating shellcode execution on target.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/win-x86/messagebox.yaml \
+#       --no-assemble --out emitter_out/
+template: ir_messagebox
+badchars: ["00", "0A", "0D"]

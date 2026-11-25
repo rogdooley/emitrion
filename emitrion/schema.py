@@ -31,6 +31,11 @@ CANONICAL_TEMPLATES = {
     "ir_url_download",
     "ir_url_download_to_userdir",
     "ir_registry_persistence",
+    "ir_create_process",
+    "ir_service_persist",
+    "ir_process_inject",
+    "ir_messagebox",
+    "ir_file_write",
 }
 
 _VALID_TEMPLATES = CANONICAL_TEMPLATES

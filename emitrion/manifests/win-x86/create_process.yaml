@@ -1,0 +1,9 @@
+# CreateProcessA with STARTUPINFOA and PROCESS_INFORMATION structs
+# IR workflow: ZeroStruct -> CreateProcessA (10 args) -> ExitProcess
+# Demonstrates full struct initialization and multi-arg API call.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/win-x86/create_process.yaml \
+#       --command "cmd.exe" --no-assemble --out emitter_out/
+template: ir_create_process
+badchars: ["00", "0A", "0D"]
