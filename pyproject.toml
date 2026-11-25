@@ -10,6 +10,7 @@ dependencies = [
 [project.scripts]
 emitrion = "emitrion.build:main"
 emitrion-x64 = "emitrion.build_x64:main_x64"
+emitrion-freq = "emitrion.scanner:main"
 
 [build-system]
 requires = ["hatchling"]
