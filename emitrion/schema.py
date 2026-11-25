@@ -33,7 +33,7 @@ CANONICAL_TEMPLATES = {
     "ir_registry_persistence",
     "ir_create_process",
     "ir_service_persist",
-    "ir_process_inject",
+
     "ir_messagebox",
     "ir_file_write",
     "ir_folder_path_exec",

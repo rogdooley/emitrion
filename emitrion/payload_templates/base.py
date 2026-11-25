@@ -33,7 +33,6 @@ class TemplateConfig:
     service_display_name: str | None = None
     message_text: str | None = None
     message_title: str | None = None
-    target_pid: int | None = None
     file_content: str | None = None
     badchars: set[int] = field(default_factory=lambda: {0x00})
     exit_strategy: str = "exit_process"
