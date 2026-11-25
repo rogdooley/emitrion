@@ -208,6 +208,11 @@ def emit_api_contracts_md(manifest: Manifest, layout: StackLayout) -> str:
                 lines.append(_table(["#", "Parameter", "Type", "Notes"], arg_rows))
             else:
                 lines.append("_No parameters._")
+            if rec.example:
+                lines.append("")
+                lines.append("**Example (x86 shellcode):**")
+                lines.append("")
+                lines.append(f"```asm\n{rec.example}\n```")
             lines.append("")
             lines.append("---")
 
