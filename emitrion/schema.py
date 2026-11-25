@@ -38,6 +38,8 @@ CANONICAL_TEMPLATES = {
     "ir_file_write",
     "ir_folder_path_exec",
     "ir_profile_dir_exec",
+    "ir_staged_socket",
+    "ir_download_persist",
 }
 
 _VALID_TEMPLATES = CANONICAL_TEMPLATES
