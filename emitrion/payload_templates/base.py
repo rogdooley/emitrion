@@ -36,6 +36,7 @@ class TemplateConfig:
     file_content: str | None = None
     badchars: set[int] = field(default_factory=lambda: {0x00})
     exit_strategy: str = "exit_process"
+    compact: bool = False
     arch: str = "x86"
     target: TargetSpec | None = None
 

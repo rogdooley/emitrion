@@ -85,6 +85,8 @@ def lower_workflow(
     lines.append(f"; -- Workflow: {workflow.name} --")
     lines.append("")
 
+    compact = getattr(config, "compact", False)
+
     # Lower each block in original order so that DefineConstant and
     # AllocateStruct ops (declared in the entry block) are recorded before
     # later blocks reference them.
@@ -99,7 +101,22 @@ def lower_workflow(
     terminal = [b.name for b in workflow.blocks if _is_terminal(b)]
     normal = [b.name for b in workflow.blocks if not _is_terminal(b)]
 
-    if terminal and workflow.entry in normal:
+    if compact:
+        # Compact: Compare ops are elided so execution falls through
+        # block-to-block. Keep terminal blocks that are on the success
+        # path (true_block targets of any Compare). Drop error-only
+        # terminal blocks (those only reachable as false_block targets).
+        success_targets: set[str] = set()
+        for block in workflow.blocks:
+            for op in block.operations:
+                if isinstance(op, Compare):
+                    success_targets.add(op.true_block)
+        keep_terminal = [n for n in terminal if n in success_targets]
+        for name in normal:
+            lines.extend(lowered[name])
+        for name in keep_terminal:
+            lines.extend(lowered[name])
+    elif terminal and workflow.entry in normal:
         lines.append(f"    jmp  wf_{workflow.entry}")
         lines.append("")
         for name in terminal:
@@ -327,7 +344,7 @@ class _LoweringContext:
         return lines
 
     def _lower_zero_struct(self, op: ZeroStruct) -> list[str]:
-        """Zero-initialize a struct on the stack via dword loop."""
+        """Zero-initialize a struct on the stack via dword loop or rep stosd."""
         stype = self.struct_types.get(op.name)
         if stype is None:
             return [f"    ; ERROR: ZeroStruct '{op.name}' has no known type"]
@@ -341,27 +358,42 @@ class _LoweringContext:
         offset = -slot.offset
 
         dwords = size // 4
+        compact = getattr(self.config, "compact", False)
         lines: list[str] = []
         lines.append(f"    ; zero {op.name} ({stype}, 0x{size:x} bytes)")
         lines.append("    xor  eax, eax")
         lines.extend(safe_lea("edi", "ebp", offset, self.bc))
 
-        if dwords <= 4:
-            for i in range(dwords):
-                lines.extend(safe_dword_store("edi", i * 4, "eax", self.bc, tmp="ecx"))
-        else:
+        if compact or dwords > 4:
             lines.append("    xor  ecx, ecx")
             lines.extend(encode_byte(dwords, self.bc, "cl"))
-            loop_label = f"wf_zero_{op.name}"
-            lines.append(f"{loop_label}:")
-            lines.append("    mov  [edi], eax")
-            lines.append("    add  edi, 4")
-            lines.append(f"    loop {loop_label}")
+            if compact:
+                lines.append("    cld")
+                lines.append("    rep stosd")
+            else:
+                loop_label = f"wf_zero_{op.name}"
+                lines.append(f"{loop_label}:")
+                lines.append("    mov  [edi], eax")
+                lines.append("    add  edi, 4")
+                lines.append(f"    loop {loop_label}")
+        else:
+            for i in range(dwords):
+                lines.extend(safe_dword_store("edi", i * 4, "eax", self.bc, tmp="ecx"))
 
         return lines
 
     def _lower_compare(self, op: Compare) -> list[str]:
-        """Lower a Compare to test/cmp + conditional jump."""
+        """Lower a Compare to test/cmp + conditional jump.
+
+        In compact mode, skip the check entirely: execution falls through
+        to the true_block (success path) unconditionally. On API failure
+        the shellcode will crash, which is acceptable for size-optimized
+        payloads.
+        """
+        compact = getattr(self.config, "compact", False)
+        if compact:
+            return [f"    ; (compact: skip {op.value} check)"]
+
         lines: list[str] = []
         offset = -self.layout.slot(op.value).offset
 
