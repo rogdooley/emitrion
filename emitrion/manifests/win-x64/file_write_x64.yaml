@@ -1,0 +1,8 @@
+# File write via CreateFileA + WriteFile + CloseHandle - x64
+# IR workflow: CreateFileA(CREATE_ALWAYS) -> lstrlenA -> WriteFile -> CloseHandle
+#
+# Build:
+#   uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/win-x64/file_write_x64.yaml', assemble=False); print(r.asm[:200])"
+arch: x64
+template: ir_file_write
+badchars: ["00", "0A", "0D"]

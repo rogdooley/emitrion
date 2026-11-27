@@ -1,0 +1,8 @@
+# OpenProcessToken + GetUserProfileDirectoryA + MoveFileA + CreateProcessA - x64
+# IR workflow: profile directory discovery + file move + execution
+#
+# Build:
+#   uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/win-x64/profile_dir_exec_x64.yaml', assemble=False); print(r.asm[:200])"
+arch: x64
+template: ir_profile_dir_exec
+badchars: ["00", "0A", "0D"]

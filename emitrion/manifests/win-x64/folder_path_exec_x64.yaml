@@ -1,0 +1,8 @@
+# SHGetFolderPathA + CopyFileA + WinExec - x64
+# IR workflow: SHGetFolderPathA (Desktop/AppData) -> CopyFileA -> WinExec
+#
+# Build:
+#   uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/win-x64/folder_path_exec_x64.yaml', assemble=False); print(r.asm[:200])"
+arch: x64
+template: ir_folder_path_exec
+badchars: ["00", "0A", "0D"]

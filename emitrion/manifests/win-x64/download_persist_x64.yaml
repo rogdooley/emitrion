@@ -1,0 +1,8 @@
+# Download + registry persistence - x64
+# IR workflow: URLDownloadToFileA + RegOpenKeyExA + RegSetValueExA
+#
+# Build:
+#   uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/win-x64/download_persist_x64.yaml', assemble=False); print(r.asm[:200])"
+arch: x64
+template: ir_download_persist
+badchars: ["00", "0A", "0D"]

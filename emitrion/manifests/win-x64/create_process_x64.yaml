@@ -1,0 +1,8 @@
+# CreateProcessA with STARTUPINFOA and PROCESS_INFORMATION - x64
+# IR workflow: ZeroStruct -> CreateProcessA (10 args) -> ExitProcess
+#
+# Build:
+#   uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/win-x64/create_process_x64.yaml', assemble=False); print(r.asm[:200])"
+arch: x64
+template: ir_create_process
+badchars: ["00", "0A", "0D"]

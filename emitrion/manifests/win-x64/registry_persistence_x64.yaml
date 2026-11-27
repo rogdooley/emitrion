@@ -1,0 +1,9 @@
+# Registry persistence via HKCU Run key - x64
+# IR workflow: LoadLibraryA(advapi32) -> RegOpenKeyExA -> lstrlenA ->
+#              RegSetValueExA -> RegCloseKey -> exit
+#
+# Build:
+#   uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/win-x64/registry_persistence_x64.yaml', assemble=False); print(r.asm[:200])"
+arch: x64
+template: ir_registry_persistence
+badchars: ["00", "0A", "0D"]

