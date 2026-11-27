@@ -50,7 +50,7 @@ SHADOW_SPACE = 0x20
 
 MODULE_BASE_START_X64 = 0x40
 
-STRUCT_ZONE_START_X64 = 0x100
+STRUCT_ZONE_START_X64 = 0x180
 
 # Framework stubs save export context at [rbp-0x08..rbp-0x30] (6 qwords).
 # After 'mov rbp, rsp; sub rsp, frame_size', those addresses map to
