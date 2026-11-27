@@ -42,7 +42,12 @@ CANONICAL_TEMPLATES = {
     "ir_download_persist",
 }
 
-_VALID_TEMPLATES = CANONICAL_TEMPLATES
+CANONICAL_LINUX_TEMPLATES = {
+    "ir_linux_execve_shell",
+    "ir_linux_reverse_shell",
+}
+
+_VALID_TEMPLATES = CANONICAL_TEMPLATES | CANONICAL_LINUX_TEMPLATES
 
 
 @dataclass
@@ -85,9 +90,11 @@ def load(path: str) -> Manifest:
     raw_os = data.get("os", "windows")
     if raw_os not in _VALID_TARGET_OSES:
         errors.append(f"Unknown target OS: '{raw_os}'. Available: {sorted(_VALID_TARGET_OSES)}")
-    elif raw_os != TargetOS.WINDOWS.value:
+    is_linux = raw_os == TargetOS.LINUX.value
+    is_windows = raw_os == TargetOS.WINDOWS.value
+    if not is_linux and not is_windows and raw_os in _VALID_TARGET_OSES:
         errors.append(
-            f"Target OS '{raw_os}' is not supported yet; only 'windows' is currently available."
+            f"Target OS '{raw_os}' is not supported yet; only 'windows' and 'linux' are available."
         )
 
     raw_arch = data.get("arch", "x86")
@@ -113,23 +120,27 @@ def load(path: str) -> Manifest:
     raw_functions: list[str] = data.get("functions", [])
     functions: list[str] = []
     seen_funcs: set[str] = set()
-    known_modules = {m.dll for m in MODULE_LOAD_ORDER}
 
-    for name in raw_functions:
-        if name not in API_DATABASE:
-            errors.append(f"Unknown API: '{name}'. Not in API_DATABASE.")
-            continue
-        if name in seen_funcs:
-            errors.append(f"Duplicate function: '{name}'.")
-            continue
-        seen_funcs.add(name)
-        functions.append(name)
-        record = API_DATABASE[name]
-        if record.module not in known_modules:
-            errors.append(
-                f"API '{name}' belongs to module '{record.module}'"
-                f" which has no entry in MODULE_LOAD_ORDER."
-            )
+    if is_linux:
+        if raw_functions:
+            errors.append("Linux manifests should not declare 'functions' (Win32 APIs).")
+    else:
+        known_modules = {m.dll for m in MODULE_LOAD_ORDER}
+        for name in raw_functions:
+            if name not in API_DATABASE:
+                errors.append(f"Unknown API: '{name}'. Not in API_DATABASE.")
+                continue
+            if name in seen_funcs:
+                errors.append(f"Duplicate function: '{name}'.")
+                continue
+            seen_funcs.add(name)
+            functions.append(name)
+            record = API_DATABASE[name]
+            if record.module not in known_modules:
+                errors.append(
+                    f"API '{name}' belongs to module '{record.module}'"
+                    f" which has no entry in MODULE_LOAD_ORDER."
+                )
 
     # --- strings ---
     raw_strings: list[dict] = data.get("strings", [])
@@ -181,13 +192,25 @@ def load(path: str) -> Manifest:
     raw_template = data.get("template", None)
     template: str | None = None
     if raw_template is not None:
-        if raw_template not in _VALID_TEMPLATES:
-            errors.append(
-                f"Unknown template: '{raw_template}'. "
-                f"Available: {sorted(_VALID_TEMPLATES)}"
-            )
+        if is_linux:
+            if raw_template not in CANONICAL_LINUX_TEMPLATES:
+                errors.append(
+                    f"Unknown Linux template: '{raw_template}'. "
+                    f"Available: {sorted(CANONICAL_LINUX_TEMPLATES)}"
+                )
+            else:
+                template = raw_template
         else:
-            template = raw_template
+            if raw_template not in _VALID_TEMPLATES:
+                errors.append(
+                    f"Unknown template: '{raw_template}'. "
+                    f"Available: {sorted(_VALID_TEMPLATES)}"
+                )
+            else:
+                template = raw_template
+
+    if is_linux and arch != "x64":
+        errors.append("Linux shellcode currently supports x64 only.")
 
     if errors:
         raise ValueError("\n".join(errors))

@@ -34,6 +34,7 @@ from .ir import (
     Jump,
     NameRef,
     StoreLocal,
+    Syscall,
     ValueRef,
     Workflow,
     WriteStructField,
@@ -348,6 +349,21 @@ def _validate_block(
                 _check_unique_name(op.result, all_names, block.name, errors)
                 defs.values.add(op.result)
                 defs.result_apis[op.result] = op.api_name
+
+        elif isinstance(op, Syscall):
+            if len(op.arguments) > 6:
+                errors.append(
+                    f"Block '{block.name}': Syscall {op.number} has "
+                    f"{len(op.arguments)} arguments (max 6)"
+                )
+            for arg in op.arguments:
+                _validate_value_ref(
+                    arg, defs.values, defs.allocations,
+                    block.name, errors,
+                )
+            if op.result is not None:
+                _check_unique_name(op.result, all_names, block.name, errors)
+                defs.values.add(op.result)
 
         elif isinstance(op, Compare):
             if op.value not in defs.values:

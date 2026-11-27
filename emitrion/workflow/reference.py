@@ -56,6 +56,7 @@ from .ir import (
     NameRef,
     StoreLocal,
     SuccessPredicate,
+    Syscall,
     Terminate,
     TerminateStyle,
     ValueRef,
@@ -167,10 +168,15 @@ class WorkflowTemplate(PayloadTemplate):
 
     def emit(self, layout: StackLayout | StackLayoutX64, config: TemplateConfig) -> str:
         """Lower against the selected target's physical stack layout."""
+        from ..arch import TargetOS
         workflow = self._resolve_workflow(config)
-        if config.effective_target.arch is Arch.X64:
-            # RecordingLayoutX64 shares the lowering layout protocol but is not
-            # a StackLayoutX64 subclass; it is used during requirement probing.
+        target = config.effective_target
+        if target.os is TargetOS.LINUX:
+            from .linux_x64_backend import lower_workflow_linux_x64
+            return lower_workflow_linux_x64(
+                workflow, layout, config.badchars, config,
+            )
+        if target.arch is Arch.X64:
             return lower_workflow_x64(
                 workflow, cast(StackLayoutX64, layout), config.badchars, config,
             )
@@ -190,6 +196,12 @@ class WorkflowTemplate(PayloadTemplate):
             for op in block.operations:
                 if isinstance(op, CallAPI):
                     _add(op.api_name)
+                    if op.result is not None:
+                        _add(op.result)
+                    for arg in op.arguments:
+                        self._collect_value_refs(arg, _add)
+
+                elif isinstance(op, Syscall):
                     if op.result is not None:
                         _add(op.result)
                     for arg in op.arguments:

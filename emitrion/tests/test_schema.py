@@ -46,10 +46,18 @@ def test_manifest_x64_target_selects_windows_x64_abi(tmp_path):
 
 
 def test_recognized_but_unsupported_target_os_is_rejected(tmp_path):
-    manifest_file = tmp_path / "linux.yaml"
-    manifest_file.write_text("os: linux\nbadchars: ['00']\nfunctions: []\nstrings: []\n")
+    manifest_file = tmp_path / "macos.yaml"
+    manifest_file.write_text("os: macos\nbadchars: ['00']\nfunctions: []\nstrings: []\n")
 
     with pytest.raises(ValueError, match="not supported yet"):
+        load(str(manifest_file))
+
+
+def test_linux_requires_x64(tmp_path):
+    manifest_file = tmp_path / "linux_x86.yaml"
+    manifest_file.write_text("os: linux\narch: x86\nbadchars: ['00']\nfunctions: []\nstrings: []\n")
+
+    with pytest.raises(ValueError, match="x64 only"):
         load(str(manifest_file))
 
 

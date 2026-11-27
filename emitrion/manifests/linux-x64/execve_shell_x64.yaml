@@ -1,0 +1,9 @@
+# Linux execve shell - x64
+# Syscall workflow: execve("/bin/sh", NULL, NULL)
+#
+# Build:
+#   uv run python -c "from emitrion.build_linux_x64 import build_linux_x64; r = build_linux_x64('emitrion/manifests/linux-x64/execve_shell_x64.yaml', assemble=False); print(r.asm[:200])"
+arch: x64
+os: linux
+template: ir_linux_execve_shell
+badchars: ["00", "0A", "0D"]

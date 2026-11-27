@@ -1,8 +1,11 @@
-"""Immutable typed data model for Windows API workflows.
+"""Immutable typed data model for shellcode workflows.
 
 A workflow is an ordered set of blocks, each containing typed operations
-that model API calls, value definitions, structure manipulation, and
-control flow.  Values are references, not formatted assembly strings.
+that model API calls, syscalls, value definitions, structure manipulation,
+and control flow.  Values are references, not formatted assembly strings.
+
+Windows workflows use CallAPI (resolved via PEB walk + hash matching).
+Linux workflows use Syscall (direct syscall instruction).
 """
 from __future__ import annotations
 
@@ -147,6 +150,19 @@ class CallAPI:
 
 
 @dataclass(frozen=True)
+class Syscall:
+    """Invoke a Linux syscall by number with explicit ordered arguments.
+
+    Arguments are in source order (left to right as in the man page).
+    The backend places them into RDI, RSI, RDX, R10, R8, R9.
+    The syscall number goes into RAX.
+    """
+    number: int
+    arguments: tuple[ValueRef, ...]
+    result: str | None = None
+
+
+@dataclass(frozen=True)
 class Compare:
     """Branch on a named value using a success predicate."""
     value: str
@@ -180,7 +196,7 @@ class CallBuffer:
 Operation = (
     DefineConstant | ConstructString | AllocateLocal | AllocateStruct
     | ZeroStruct | WriteStructField | StoreLocal
-    | CallAPI | Compare | Jump | Terminate | CallBuffer
+    | CallAPI | Syscall | Compare | Jump | Terminate | CallBuffer
 )
 
 TERMINATOR_TYPES = (Compare, Jump, Terminate, CallBuffer)

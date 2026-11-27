@@ -307,6 +307,9 @@ def _load_template(name: str) -> PayloadTemplate:
         "ir_profile_dir_exec": "emitrion.workflow.reference.IRProfileDirExecTemplate",
         "ir_staged_socket":    "emitrion.workflow.reference.IRStagedSocketTemplate",
         "ir_download_persist": "emitrion.workflow.reference.IRDownloadPersistTemplate",
+
+        "ir_linux_execve_shell":  "emitrion.workflow.linux_reference.IRLinuxExecveShellTemplate",
+        "ir_linux_reverse_shell": "emitrion.workflow.linux_reference.IRLinuxReverseShellTemplate",
     }
     if name not in registry:
         raise ValueError(

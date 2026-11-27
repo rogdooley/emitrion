@@ -1,8 +1,8 @@
 """Typed target identity for the shellcode emitter.
 
-The current implementation supports Windows x86 and x64 only.  Keeping the
-operating system and ABI beside the instruction-set architecture prevents
-future targets from being modelled as architecture-only special cases.
+Supports Windows x86/x64 and Linux x64. Keeping the operating system and
+ABI beside the instruction-set architecture prevents future targets from
+being modelled as architecture-only special cases.
 """
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ class CallingConvention(Enum):
 
     WINDOWS_X86_STDCALL = "windows_x86_stdcall"
     WINDOWS_X64 = "windows_x64"
+    LINUX_X64_SYSCALL = "linux_x64_syscall"
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,10 @@ class TargetSpec:
     @property
     def calling_convention(self) -> CallingConvention:
         """Return the ABI implied by a currently supported target."""
+        if self.os is TargetOS.LINUX:
+            if self.arch is Arch.X64:
+                return CallingConvention.LINUX_X64_SYSCALL
+            raise ValueError(f"Linux {self.arch.value} is not yet supported")
         if self.os is not TargetOS.WINDOWS:
             raise ValueError(f"No calling convention is defined for target OS '{self.os.value}'")
         if self.arch is Arch.X86:
@@ -66,4 +71,6 @@ class TargetSpec:
     @property
     def is_currently_supported(self) -> bool:
         """Whether the current emitter has a pipeline for this target."""
+        if self.os is TargetOS.LINUX and self.arch is Arch.X64:
+            return True
         return self.os is TargetOS.WINDOWS
